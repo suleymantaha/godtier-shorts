@@ -15,7 +15,7 @@
 ### Kurulum
 
 ```bash
-# Projeyi indirip dizine girin
+git clone https://github.com/suleymantaha/godtier-shorts.git
 cd godtier-shorts
 
 pip install -r requirements.txt

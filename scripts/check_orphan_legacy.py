@@ -23,7 +23,7 @@ if legacy_renderer.exists():
 
 # 2) Ensure imports don't reference ambiguous top-level module path.
 for path in ROOT.rglob("*.py"):
-    if ".venv" in path.parts:
+    if ".git" in path.parts or ".venv" in path.parts:
         continue
     if path.name == "check_orphan_legacy.py":
         continue
