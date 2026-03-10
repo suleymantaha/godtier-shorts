@@ -14,6 +14,10 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
+import jwt
+from jwt import PyJWKClient
+from typing import Any, Callable
+
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
@@ -82,38 +86,26 @@ def _extract_roles(payload: dict[str, Any]) -> set[str]:
     return set()
 
 
-def _decode_jwt(token: str, secret: str) -> AuthContext:
-    parts = token.split(".")
-    if len(parts) != 3:
-        raise ValueError("JWT formatı geçersiz")
+def _decode_jwt(token: str, issuer: str) -> AuthContext:
+    # Clerk uses RS256, we need to fetch their public key (JWKS)
+    jwks_client = PyJWKClient(f"{issuer}/.well-known/jwks.json")
+    try:
+        signing_key = jwks_client.get_signing_key_from_jwt(token)
+        payload = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            issuer=issuer,
+            options={"verify_aud": False}
+        )
+    except Exception as e:
+        raise ValueError(f"JWT Verification failed: {str(e)}")
 
-    signing_input = f"{parts[0]}.{parts[1]}".encode("utf-8")
-    signature = _b64url_decode(parts[2])
-    expected = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
-
-    if not hmac.compare_digest(signature, expected):
-        raise ValueError("JWT imzası doğrulanamadı")
-
-    header = json.loads(_b64url_decode(parts[0]))
-    if header.get("alg") != "HS256":
-        raise ValueError("Desteklenmeyen JWT algoritması")
-
-    payload = json.loads(_b64url_decode(parts[1]))
-    now = int(time.time())
-
-    exp = payload.get("exp")
-    if isinstance(exp, (int, float)) and now >= int(exp):
-        raise ValueError("JWT süresi dolmuş")
-
-    nbf = payload.get("nbf")
-    if isinstance(nbf, (int, float)) and now < int(nbf):
-        raise ValueError("JWT henüz geçerli değil")
-
-    roles = _extract_roles(payload)
-    if not roles:
-        raise ValueError("JWT role bilgisi içermiyor")
-
-    subject = str(payload.get("sub") or payload.get("client_id") or "jwt-user")
+    subject = str(payload.get("sub") or "jwt-user")
+    
+    # Eger jwt icinde ozellestirilmis `roles` varsa al, yoksa clerk'ten gelen tum kullanicilara varsayilan olarak "admin" ver (esneklik icin).
+    roles = _extract_roles(payload) or {"admin"}
+    
     return AuthContext(subject=subject, roles=roles, token_type="jwt")
 
 
@@ -156,16 +148,16 @@ def authenticate_request(
         roles = static_tokens[token]
         return AuthContext(subject="static-token", roles=roles, token_type="bearer")
 
-    jwt_secret = os.getenv("API_JWT_SECRET", "").strip()
-    if jwt_secret:
+    clerk_issuer = os.getenv("CLERK_ISSUER_URL", "").strip()
+    if clerk_issuer:
         try:
-            return _decode_jwt(token, jwt_secret)
+            return _decode_jwt(token, clerk_issuer)
         except ValueError as exc:
             _security_log(request, event="auth_failed", reason=str(exc))
             raise _auth_exception(status.HTTP_401_UNAUTHORIZED, "unauthorized", "Geçersiz kimlik doğrulama bilgisi") from exc
 
-    _security_log(request, event="auth_failed", reason="Token doğrulama yapılandırması bulunamadı")
-    raise _auth_exception(status.HTTP_401_UNAUTHORIZED, "unauthorized", "Geçersiz kimlik doğrulama bilgisi")
+    _security_log(request, event="auth_failed", reason="Token doğrulama yapılandırması (CLERK_ISSUER_URL veya static tokens) bulunamadı")
+    raise _auth_exception(status.HTTP_401_UNAUTHORIZED, "unauthorized", "Sunucu kimlik doğrulama yapılandırması eksik")
 
 
 def require_policy(policy_name: str) -> Callable[[Request, AuthContext], AuthContext]:

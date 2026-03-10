@@ -80,6 +80,8 @@ async def run_gpu_job(job_id: str, request: JobRequest) -> None:
                 _finalize_job(job_id, "cancelled")
                 logger.warning(f"🛑 İptal edildi: {job_id}")
                 raise
+            finally:
+                await asyncio.to_thread(orchestrator.cleanup_gpu)
 
     except asyncio.CancelledError:
         _finalize_job(job_id, "cancelled")

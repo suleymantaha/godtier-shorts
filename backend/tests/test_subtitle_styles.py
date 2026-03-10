@@ -111,11 +111,23 @@ class TestStyleManager:
         assert "PODCAST" in presets
         assert "CORPORATE" in presets
         assert "HIGHCARE" in presets
+        
+        # En yeni presetler
+        assert "CYBER_PUNK" in presets
+        assert "STORY_TELLER" in presets
+        assert "GLOW_KARAOKE" in presets
+        assert "GLASS_MORPH" in presets
+    
+        # En son presetler
+        assert "ALI_ABDAAL" in presets
+        assert "RETRO_WAVE" in presets
+        assert "HACKER_TERMINAL" in presets
+        assert "CINEMATIC_FILM" in presets
     
     def test_preset_count(self):
         """Toplam preset sayısı doğru olmalı."""
         presets = StyleManager.list_presets()
-        assert len(presets) == 8  # 3 mevcut + 5 yeni
+        assert len(presets) == 16  # 3 mevcut + 5 yeni + 4 en yeni + 4 en en yeni
     
     def test_new_presets_have_categories(self):
         """Yeni presetler doğru kategoride olmalı."""
@@ -130,6 +142,9 @@ class TestStyleManager:
         
         highcare = StyleManager.get_preset("HIGHCARE")
         assert highcare.category == SubtitleCategory.ACCESSIBLE
+        
+        cyber_punk = StyleManager.get_preset("CYBER_PUNK")
+        assert cyber_punk.category == SubtitleCategory.CREATIVE
 
     def test_presets_use_bottom_safe_alignment(self):
         """Tüm presetler alt güvenli bölgeyi kullanmalı."""

@@ -70,12 +70,14 @@ async def process_batch_clips(
     }
 
     async def _run() -> None:
-        try:
-            async with manager.gpu_lock:
-                manager.jobs[job_id]["status"] = "processing"
-                cb = lambda s: thread_safe_broadcast(s, job_id)
-                orchestrator = GodTierShortsCreator(ui_callback=cb)
-                
+        thread_safe_broadcast({"message": "GPU sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
+        async with manager.gpu_lock:
+            manager.jobs[job_id]["status"] = "processing"
+            manager.jobs[job_id]["last_message"] = "Toplu üretim başladı..."
+            thread_safe_broadcast({"message": "Toplu üretim başladı...", "progress": 1, "status": "processing"}, job_id)
+            cb = lambda s: thread_safe_broadcast(s, job_id)
+            orchestrator = GodTierShortsCreator(ui_callback=cb)
+            try:
                 path = get_project_path(request.project_id, "transcript.json") if request.project_id else VIDEO_METADATA
                 if path.exists():
                     with open(path, "r", encoding="utf-8") as f:
@@ -94,10 +96,12 @@ async def process_batch_clips(
                     request.layout,
                 )
                 finalize_job_success(job_id, "Toplu klip üretimi tamamlandı.")
-        except (RuntimeError, ValueError, OSError) as exc:
-            mapped_error = JobExecutionError("Toplu üretim başarısız", details=str(exc))
-            logger.error(f"Toplu üretim hatası ({job_id}): {mapped_error.message}")
-            finalize_job_error(job_id, mapped_error)
+            except (RuntimeError, ValueError, OSError) as exc:
+                mapped_error = JobExecutionError("Toplu üretim başarısız", details=str(exc))
+                logger.error(f"Toplu üretim hatası ({job_id}): {mapped_error.message}")
+                finalize_job_error(job_id, mapped_error)
+            finally:
+                await asyncio.to_thread(orchestrator.cleanup_gpu)
 
     asyncio.create_task(_run())
     return {"status": "started", "job_id": job_id}
@@ -162,10 +166,12 @@ async def manual_cut_upload(
     }
 
     async def _run() -> None:
+        thread_safe_broadcast({"message": "GPU sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
         try:
             async with manager.gpu_lock:
                 manager.jobs[job_id]["status"] = "processing"
-                thread_safe_broadcast({"message": "Video hazırlanıyor...", "progress": 1}, job_id)
+                manager.jobs[job_id]["last_message"] = "Video hazırlanıyor..."
+                thread_safe_broadcast({"message": "Video hazırlanıyor...", "progress": 1, "status": "processing"}, job_id)
 
                 await asyncio.to_thread(
                     ensure_project_transcript,
@@ -178,85 +184,91 @@ async def manual_cut_upload(
 
                 cb = lambda s: thread_safe_broadcast(s, job_id)
                 orchestrator = GodTierShortsCreator(ui_callback=cb)
+                try:
+                    if use_cut_points:
+                        assert pts is not None  # use_cut_points implies pts is not None
+                        output_paths = await asyncio.to_thread(
+                            orchestrator.run_manual_clips_from_cut_points,
+                            pts,
+                            transcript_data,
+                            style_name,
+                            project_id,
+                            DEFAULT_MANUAL_CUT_LAYOUT,
+                            skip_subtitles,
+                            cut_as_short,
+                        )
+                        if not output_paths:
+                            manager.jobs[job_id]["status"] = "empty"
+                            manager.jobs[job_id]["progress"] = 100
+                            manager.jobs[job_id]["last_message"] = "Kesim tamamlandı ancak çıktı üretilemedi."
+                            manager.jobs[job_id]["output_paths"] = []
+                            manager.jobs[job_id]["output_path"] = None
+                            thread_safe_broadcast({"message": "Kesim tamamlandı ancak çıktı üretilemedi.", "progress": 100}, job_id)
+                            return
 
-                if use_cut_points:
-                    assert pts is not None  # use_cut_points implies pts is not None
-                    output_paths = await asyncio.to_thread(
-                        orchestrator.run_manual_clips_from_cut_points,
-                        pts,
-                        transcript_data,
-                        style_name,
-                        project_id,
-                        DEFAULT_MANUAL_CUT_LAYOUT,
-                        skip_subtitles,
-                        cut_as_short,
-                    )
-                    if not output_paths:
-                        manager.jobs[job_id]["status"] = "empty"
-                        manager.jobs[job_id]["progress"] = 100
-                        manager.jobs[job_id]["last_message"] = "Kesim tamamlandı ancak çıktı üretilemedi."
-                        manager.jobs[job_id]["output_paths"] = []
-                        manager.jobs[job_id]["output_path"] = None
-                        thread_safe_broadcast({"message": "Kesim tamamlandı ancak çıktı üretilemedi.", "progress": 100}, job_id)
-                        return
+                        first_name = os.path.basename(output_paths[0])
+                        manager.jobs[job_id]["clip_name"] = first_name
+                        manager.jobs[job_id]["output_url"] = build_secure_clip_url(project_id, first_name)
+                        manager.jobs[job_id]["output_paths"] = output_paths
+                        manager.jobs[job_id]["output_path"] = output_paths[0]
+                        manager.jobs[job_id]["num_clips"] = len(output_paths)
+                    elif is_batch:
+                        output_paths = await asyncio.to_thread(
+                            orchestrator.run_batch_manual_clips,
+                            request.start_time,
+                            request.end_time,
+                            num_clips,
+                            transcript_data,
+                            style_name,
+                            project_id,
+                            DEFAULT_MANUAL_CUT_LAYOUT,
+                            skip_subtitles,
+                            cut_as_short,
+                        )
+                        if not output_paths:
+                            manager.jobs[job_id]["status"] = "empty"
+                            manager.jobs[job_id]["progress"] = 100
+                            manager.jobs[job_id]["last_message"] = "Toplu kesim tamamlandı ancak çıktı üretilemedi."
+                            manager.jobs[job_id]["output_paths"] = []
+                            manager.jobs[job_id]["output_path"] = None
+                            thread_safe_broadcast({"message": "Toplu kesim tamamlandı ancak çıktı üretilemedi.", "progress": 100}, job_id)
+                            return
 
-                    first_name = os.path.basename(output_paths[0])
-                    manager.jobs[job_id]["clip_name"] = first_name
-                    manager.jobs[job_id]["output_url"] = build_secure_clip_url(project_id, first_name)
-                    manager.jobs[job_id]["output_paths"] = output_paths
-                    manager.jobs[job_id]["output_path"] = output_paths[0]
-                    manager.jobs[job_id]["num_clips"] = len(output_paths)
-                elif is_batch:
-                    output_paths = await asyncio.to_thread(
-                        orchestrator.run_batch_manual_clips,
-                        request.start_time,
-                        request.end_time,
-                        num_clips,
-                        transcript_data,
-                        style_name,
-                        project_id,
-                        DEFAULT_MANUAL_CUT_LAYOUT,
-                        skip_subtitles,
-                        cut_as_short,
-                    )
-                    if not output_paths:
-                        manager.jobs[job_id]["status"] = "empty"
-                        manager.jobs[job_id]["progress"] = 100
-                        manager.jobs[job_id]["last_message"] = "Toplu kesim tamamlandı ancak çıktı üretilemedi."
-                        manager.jobs[job_id]["output_paths"] = []
-                        manager.jobs[job_id]["output_path"] = None
-                        thread_safe_broadcast({"message": "Toplu kesim tamamlandı ancak çıktı üretilemedi.", "progress": 100}, job_id)
-                        return
+                        first_name = os.path.basename(output_paths[0])
+                        manager.jobs[job_id]["clip_name"] = first_name
+                        manager.jobs[job_id]["output_url"] = build_secure_clip_url(project_id, first_name)
+                        manager.jobs[job_id]["output_paths"] = output_paths
+                        manager.jobs[job_id]["output_path"] = output_paths[0]
+                        manager.jobs[job_id]["num_clips"] = len(output_paths)
+                    else:
+                        output_path = await asyncio.to_thread(
+                            orchestrator.run_manual_clip,
+                            request.start_time,
+                            request.end_time,
+                            None,
+                            style_name,
+                            project_id,
+                            None,
+                            DEFAULT_MANUAL_CUT_LAYOUT,
+                            clip_name,
+                            skip_subtitles,
+                            cut_as_short,
+                        )
+                        manager.jobs[job_id]["output_path"] = output_path
+                        if output_path:
+                            final_name = os.path.basename(output_path)
+                            manager.jobs[job_id]["clip_name"] = final_name
+                            manager.jobs[job_id]["output_url"] = build_secure_clip_url(project_id, final_name)
+                            manager.jobs[job_id]["output_paths"] = [output_path]
+                            manager.jobs[job_id]["num_clips"] = 1
 
-                    first_name = os.path.basename(output_paths[0])
-                    manager.jobs[job_id]["clip_name"] = first_name
-                    manager.jobs[job_id]["output_url"] = build_secure_clip_url(project_id, first_name)
-                    manager.jobs[job_id]["output_paths"] = output_paths
-                    manager.jobs[job_id]["output_path"] = output_paths[0]
-                    manager.jobs[job_id]["num_clips"] = len(output_paths)
-                else:
-                    output_path = await asyncio.to_thread(
-                        orchestrator.run_manual_clip,
-                        request.start_time,
-                        request.end_time,
-                        None,
-                        style_name,
-                        project_id,
-                        None,
-                        DEFAULT_MANUAL_CUT_LAYOUT,
-                        clip_name,
-                        skip_subtitles,
-                        cut_as_short,
-                    )
-                    manager.jobs[job_id]["output_path"] = output_path
-                    if output_path:
-                        final_name = os.path.basename(output_path)
-                        manager.jobs[job_id]["clip_name"] = final_name
-                        manager.jobs[job_id]["output_url"] = build_secure_clip_url(project_id, final_name)
-                        manager.jobs[job_id]["output_paths"] = [output_path]
-                        manager.jobs[job_id]["num_clips"] = 1
-
-                finalize_job_success(job_id, "Otomatik manual cut işlemi tamamlandı.")
+                    finalize_job_success(job_id, "Otomatik manual cut işlemi tamamlandı.")
+                except (RuntimeError, ValueError, OSError) as exc:
+                    mapped_error = JobExecutionError("Otomatik manual cut başarısız", details=str(exc))
+                    logger.error(f"Otomatik manual cut hatası ({job_id}): {mapped_error.message}")
+                    finalize_job_error(job_id, mapped_error)
+                finally:
+                    await asyncio.to_thread(orchestrator.cleanup_gpu)
         except (RuntimeError, ValueError, OSError) as exc:
             mapped_error = JobExecutionError("Otomatik manual cut başarısız", details=str(exc))
             logger.error(f"Otomatik manual cut hatası ({job_id}): {mapped_error.message}")
@@ -333,11 +345,14 @@ async def process_manual_clip(
     }
 
     async def _run() -> None:
-        try:
-            async with manager.gpu_lock:
-                manager.jobs[job_id]["status"] = "processing"
-                cb = lambda s: thread_safe_broadcast(s, job_id)
-                orchestrator = GodTierShortsCreator(ui_callback=cb)
+        thread_safe_broadcast({"message": "GPU sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
+        async with manager.gpu_lock:
+            manager.jobs[job_id]["status"] = "processing"
+            manager.jobs[job_id]["last_message"] = "Manuel render başladı..."
+            thread_safe_broadcast({"message": "Manuel render başladı...", "progress": 1, "status": "processing"}, job_id)
+            cb = lambda s: thread_safe_broadcast(s, job_id)
+            orchestrator = GodTierShortsCreator(ui_callback=cb)
+            try:
                 await asyncio.to_thread(
                     orchestrator.run_manual_clip,
                     request.start_time,
@@ -349,10 +364,12 @@ async def process_manual_clip(
                     request.layout,
                 )
                 finalize_job_success(job_id, "Manuel render tamamlandı.")
-        except (RuntimeError, ValueError, OSError) as exc:
-            mapped_error = JobExecutionError("Manuel render başarısız", details=str(exc))
-            logger.error(f"Manuel render hatası ({job_id}): {mapped_error.message}")
-            finalize_job_error(job_id, mapped_error)
+            except (RuntimeError, ValueError, OSError) as exc:
+                mapped_error = JobExecutionError("Manuel render başarısız", details=str(exc))
+                logger.error(f"Manuel render hatası ({job_id}): {mapped_error.message}")
+                finalize_job_error(job_id, mapped_error)
+            finally:
+                await asyncio.to_thread(orchestrator.cleanup_gpu)
 
     asyncio.create_task(_run())
     return {"status": "started", "job_id": job_id}
@@ -383,11 +400,14 @@ async def reburn_clip(
     }
 
     async def _run() -> None:
-        try:
-            async with manager.gpu_lock:
-                manager.jobs[job_id]["status"] = "processing"
-                cb = lambda s: thread_safe_broadcast(s, job_id)
-                orchestrator = GodTierShortsCreator(ui_callback=cb)
+        thread_safe_broadcast({"message": "GPU sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
+        async with manager.gpu_lock:
+            manager.jobs[job_id]["status"] = "processing"
+            manager.jobs[job_id]["last_message"] = "Altyazı yeniden basım başladı..."
+            thread_safe_broadcast({"message": "Altyazı yeniden basım başladı...", "progress": 1, "status": "processing"}, job_id)
+            cb = lambda s: thread_safe_broadcast(s, job_id)
+            orchestrator = GodTierShortsCreator(ui_callback=cb)
+            try:
                 await asyncio.to_thread(
                     orchestrator.reburn_subtitles,
                     request.clip_name,
@@ -396,10 +416,12 @@ async def reburn_clip(
                     request.style_name,
                 )
                 finalize_job_success(job_id, "Altyazı yeniden basımı tamamlandı.")
-        except (RuntimeError, ValueError, OSError) as exc:
-            mapped_error = JobExecutionError("Reburn işlemi başarısız", details=str(exc))
-            logger.error(f"Reburn hatası ({job_id}): {mapped_error.message}")
-            finalize_job_error(job_id, mapped_error)
+            except (RuntimeError, ValueError, OSError) as exc:
+                mapped_error = JobExecutionError("Reburn işlemi başarısız", details=str(exc))
+                logger.error(f"Reburn hatası ({job_id}): {mapped_error.message}")
+                finalize_job_error(job_id, mapped_error)
+            finally:
+                await asyncio.to_thread(orchestrator.cleanup_gpu)
 
     asyncio.create_task(_run())
     return {"status": "started", "job_id": job_id}

@@ -6,7 +6,7 @@
  * dağınık hardcoded URL'ler yok.
  */
 
-import { API_BASE, API_KEY } from '../config';
+import { API_BASE } from '../config';
 import type {
     Job,
     Clip,
@@ -19,14 +19,39 @@ import type {
     BatchJobPayload,
 } from '../types';
 
+// ─── Kimlik Doğrulama (Clerk Token Injection) ──────────────────────────────────
+export let activeToken: string | null = null;
+
+export const setApiToken = (token: string | null) => {
+    activeToken = token;
+};
+
+// Clerk'ten dinamik olarak en güncel tokeni çekmek için yardımcı fonksiyon
+export async function getFreshToken(): Promise<string | null> {
+    // @ts-ignore - Clerk global objesi
+    if (typeof window !== "undefined" && window.Clerk && window.Clerk.session) {
+        // @ts-ignore
+        const token = await window.Clerk.session.getToken();
+        activeToken = token;
+        return token;
+    }
+    return activeToken;
+}
+
 // ─── Tip yardımcıları ────────────────────────────────────────────────────────
 
 
-function withApiHeaders(headers?: HeadersInit): HeadersInit {
-    return { 'x-api-key': API_KEY, ...headers };
+function withApiHeaders(headers?: HeadersInit): Record<string, string> {
+    const result: Record<string, string> = {};
+    if (activeToken) result.Authorization = `Bearer ${activeToken}`;
+    if (headers && typeof headers === 'object' && !Array.isArray(headers) && !(headers instanceof Headers)) {
+        Object.assign(result, headers as Record<string, string>);
+    }
+    return result;
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+    await getFreshToken();
     const response = await fetch(`${API_BASE}${path}`, {
         headers: { 'Content-Type': 'application/json', ...withApiHeaders(init?.headers) },
         ...init,
@@ -91,7 +116,7 @@ export const clipsApi = {
     upload: (file: File): Promise<{ status: string; job_id: string; project_id?: string; message?: string }> => {
         const form = new FormData();
         form.append('file', file);
-        return fetch(`${API_BASE}/api/upload`, { method: 'POST', headers: withApiHeaders(), body: form })
+        return getFreshToken().then(() => fetch(`${API_BASE}/api/upload`, { method: 'POST', headers: withApiHeaders(), body: form }))
             .then(async (response) => {
                 if (!response.ok) {
                     const text = await response.text();
@@ -186,7 +211,7 @@ export const editorApi = {
             form.append('cut_points', JSON.stringify(payload.cut_points));
         }
 
-        return fetch(`${API_BASE}/api/manual-cut-upload`, { method: 'POST', headers: withApiHeaders(), body: form })
+        return getFreshToken().then(() => fetch(`${API_BASE}/api/manual-cut-upload`, { method: 'POST', headers: withApiHeaders(), body: form }))
             .then(async (response) => {
                 if (!response.ok) {
                     const text = await response.text();

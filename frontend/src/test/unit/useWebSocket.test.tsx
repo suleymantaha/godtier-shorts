@@ -1,6 +1,5 @@
 import { act, render } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import React from 'react';
 
 import { useWebSocket } from '../../hooks/useWebSocket';
 
@@ -16,11 +15,15 @@ vi.mock('../../store/useJobStore', () => ({
 
 class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
+  url: string;
   onopen: (() => void) | null = null;
   onmessage: ((e: { data: string }) => void) | null = null;
   onclose: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  constructor(public url: string) { FakeWebSocket.instances.push(this); }
+  constructor(url: string) {
+    this.url = url;
+    FakeWebSocket.instances.push(this);
+  }
   close() { this.onclose?.(); }
 }
 

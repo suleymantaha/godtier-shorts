@@ -115,6 +115,13 @@ class VideoProcessor:
                 torch.cuda.empty_cache()
             logger.info("♻️ YOLO modeli VRAM'den boşaltıldı.")
 
+    def cleanup_gpu(self) -> None:
+        """YOLO modelini ve GPU belleğini temizler."""
+        self.unload_model()
+        gc.collect()
+        if self._device == "cuda" and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        logger.info("🧹 VideoProcessor GPU cleanup tamamlandı.")
 
     # ------------------------------------------------------------------
     # Yardımcı
@@ -196,6 +203,7 @@ class VideoProcessor:
         try:
             ffmpeg_proc = subprocess.Popen(
                 ["ffmpeg", "-y",
+                 "-loglevel", "error",
                  "-f", "rawvideo", "-vcodec", "rawvideo",
                  "-s", f"{target_w}x{target_h}",
                  "-pix_fmt", "bgr24", "-r", str(orig_fps),
@@ -296,10 +304,17 @@ class VideoProcessor:
                     crop = frame[0:orig_h, x1:x2]
                     final_frame = cv2.resize(crop, (1080, 1920))
 
-                stdin.write(final_frame.tobytes())
+                try:
+                    stdin.write(final_frame.tobytes())
+                except (BrokenPipeError, OSError) as exc:
+                    stderr_tail = ""
+                    if ffmpeg_proc.stderr is not None:
+                        stderr_tail = ffmpeg_proc.stderr.read().decode("utf-8", errors="replace")[-500:]
+                    raise RuntimeError(f"FFmpeg encode pipe kırıldı: {stderr_tail or str(exc)}") from exc
 
             cap.release()
             stdin.close()
+            ffmpeg_proc.stdin = None
             _, ffmpeg_stderr = ffmpeg_proc.communicate()
 
             if ffmpeg_proc.returncode != 0:

@@ -598,17 +598,26 @@ async def upload_local_video(
     }
 
     async def _run() -> None:
-        try:
-            manager.jobs[job_id]["status"] = "processing"
-            await asyncio.to_thread(
-                ensure_project_transcript,
-                project,
-                lambda msg, pct: thread_safe_broadcast({"message": msg, "progress": pct}, job_id),
-            )
-            finalize_job_success(job_id, "Transkripsiyon tamamlandı.")
-        except (MediaSubprocessError, FileOperationError, JobExecutionError, TranscriptionError) as exc:
-            logger.error(f"Upload transkripsiyon hatası ({job_id}): {exc.message}")
-            finalize_job_error(job_id, exc)
+        manager.jobs[job_id]["status"] = "queued"
+        manager.jobs[job_id]["last_message"] = "GPU sırası bekleniyor..."
+        thread_safe_broadcast({"message": "GPU sırası bekleniyor...", "progress": 0}, job_id)
+
+        async with manager.gpu_lock:
+            try:
+                manager.jobs[job_id]["status"] = "processing"
+                manager.jobs[job_id]["last_message"] = "Transkripsiyon başladı..."
+                thread_safe_broadcast({"message": "Transkripsiyon başladı...", "progress": 1}, job_id)
+
+                await asyncio.to_thread(
+                    ensure_project_transcript,
+                    project,
+                    lambda msg, pct: thread_safe_broadcast({"message": msg, "progress": pct}, job_id),
+                )
+
+                finalize_job_success(job_id, "Transkripsiyon tamamlandı.")
+            except Exception as exc:
+                logger.error(f"Upload transkripsiyon hatası ({job_id}): {exc}")
+                finalize_job_error(job_id, exc)
 
     asyncio.create_task(_run())
     return {"status": "uploaded", "job_id": job_id, "message": "Video yüklendi, transkripsiyon başladı.", "project_id": project_id}

@@ -16,6 +16,7 @@ import {
 import { editorApi } from '../api/client';
 import { API_BASE } from '../config';
 import { getClipUrl } from '../utils/url';
+import { getQueuePosition, isProjectBusy } from '../utils/jobQueue';
 import { useJobStore } from '../store/useJobStore';
 import { STYLE_OPTIONS, isStyleName } from '../config/subtitleStyles';
 import type { StyleName } from '../config/subtitleStyles';
@@ -85,6 +86,8 @@ export const AutoCutEditor: React.FC = () => {
         void syncJobs();
     }, []);
 
+    const busy = isProjectBusy(projectId, jobs);
+    const queuePosition = currentJobId ? getQueuePosition(currentJobId, jobs) : null;
     const hasTerminalJob = currentJob?.status === 'completed'
         || currentJob?.status === 'cancelled'
         || currentJob?.status === 'error';
@@ -533,6 +536,12 @@ export const AutoCutEditor: React.FC = () => {
                         </div>
                     ) : null}
 
+                    {queuePosition != null && queuePosition > 1 && (
+                        <div className="rounded-md border border-white/10 px-3 py-2 text-sm text-muted-foreground">
+                            GPU kuyruğunda sıra: {queuePosition}
+                        </div>
+                    )}
+
                     {errorMessage && (
                         <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-3 text-xs text-red-300">
                             <AlertCircle className="w-4 h-4 shrink-0" />
@@ -587,10 +596,15 @@ export const AutoCutEditor: React.FC = () => {
 
                 <button
                     onClick={() => void handleRender()}
-                    disabled={processing || !selectedFile || duration === 0}
+                    disabled={busy || processing || !selectedFile || duration === 0}
                     className="btn-primary w-full tracking-[0.25em] font-black flex items-center justify-center gap-3 disabled:opacity-40"
                 >
-                    {processing ? (
+                    {busy ? (
+                        <>
+                            <Clock className="w-4 h-4" />
+                            Sırada / İşleniyor
+                        </>
+                    ) : processing ? (
                         <>
                             <Loader2 className="w-4 h-4 animate-spin" />
                             RENDER...

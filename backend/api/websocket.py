@@ -90,14 +90,19 @@ class ConnectionManager:
         message: str,
         progress: int,
         job_id: Optional[str] = None,
+        status: Optional[str] = None,
     ) -> None:
         payload: Dict[str, Any] = {"message": message, "progress": progress}
+        if status:
+            payload["status"] = status
 
         if job_id:
             payload["job_id"] = job_id
             if job_id in self.jobs:
-                status = "error" if progress < 0 else "completed" if progress >= 100 else "processing"
-                self.jobs[job_id]["status"]       = status
+                resolved_status = status or (
+                    "error" if progress < 0 else "completed" if progress >= 100 else "processing"
+                )
+                self.jobs[job_id]["status"]       = resolved_status
                 self.jobs[job_id]["progress"]     = progress
                 self.jobs[job_id]["last_message"] = message
 
@@ -167,7 +172,12 @@ def thread_safe_broadcast(status: dict, job_id: Optional[str] = None) -> None:
 
         try:
             future = asyncio.run_coroutine_threadsafe(
-                manager.broadcast_progress(status["message"], status["progress"], job_id),
+                manager.broadcast_progress(
+                    status["message"], 
+                    status["progress"], 
+                    job_id,
+                    status.get("status")
+                ),
                 loop,
             )
             future.add_done_callback(lambda fut: _log_broadcast_result(fut, bucket))

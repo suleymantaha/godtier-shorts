@@ -65,6 +65,18 @@ class SubtitleRenderer:
 
     def _generate_ass_header(self) -> str:
         s = self.style
+        
+        is_opaque_box = s.background_color and s.background_color.upper() != "&H00000000"
+        border_style = 3 if is_opaque_box else 1
+        back_color = s.background_color if is_opaque_box else s.shadow_color
+        
+        bold_val = "-1" if s.font_weight >= 600 else "0"
+        italic_val = "-1" if s.italic else "0"
+        underline_val = "-1" if s.underline else "0"
+        
+        margin_l = int(s.position_x * 1080) if s.position_x != 0.5 else 10
+        margin_r = int((1.0 - s.position_x) * 1080) if s.position_x != 0.5 else 10
+        
         # Shorts için her zaman 1080x1920 referans alalım (Burn-in sırasında ölçeklenir)
         return f"""[Script Info]
 ScriptType: v4.00+
@@ -73,7 +85,7 @@ PlayResY: 1920
 WrapStyle: 1
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Main,{s.font_name},{s.font_size},{s.primary_color},&H000000FF,{s.outline_color},{s.shadow_color},-1,0,0,0,100,100,0,0,1,{s.outline_width},{s.shadow_depth},{s.alignment},10,10,{s.margin_v},1
+Style: Main,{s.font_name},{s.font_size},{s.primary_color},&H000000FF,{s.outline_color},{back_color},{bold_val},{italic_val},{underline_val},0,100,100,0,0,{border_style},{s.outline_width},{s.shadow_depth},{s.alignment},{margin_l},{margin_r},{s.margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -120,6 +132,29 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                    
         elif self.style.animation_type == "fade":
             return fr"{{\fad(100,100)}}"
+            
+        elif self.style.animation_type == "shake":
+            c_hi = self.style.highlight_color
+            c_pri = self.style.primary_color
+            
+            init = r"{\fscx100\fscy100}"
+            active = fr"{{\t({relative_start_ms},{relative_start_ms+25},\c{c_hi}\frz5\frx10)\t({relative_start_ms+25},{relative_start_ms+50},\frz-5\frx-10)\t({relative_start_ms+50},{relative_start_ms+75},\frz0\frx0)}}"
+            post = fr"{{\t({pop_end_ms},{pop_end_ms+100},\c{c_pri})}}"
+            return init + active + post
+            
+        elif self.style.animation_type == "typewriter":
+            c_pri = self.style.primary_color
+            init = r"{\alpha&HFF&}"
+            active = fr"{{\t({relative_start_ms},{relative_start_ms+1},\alpha&H00&)}}"
+            post = fr"{{\c{c_pri}}}"
+            return init + active + post
+            
+        elif self.style.animation_type == "slide_up":
+            c_pri = self.style.primary_color
+            init = r"{\fscy0\alpha&HFF&}"
+            active = fr"{{\t({relative_start_ms},{relative_start_ms+100},\fscy100\alpha&H00&)}}"
+            post = fr"{{\c{c_pri}}}"
+            return init + active + post
             
         return ""
 
@@ -287,7 +322,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 c_pri = self.style.primary_color
                 
                 # Her kelimenin başına reset tag koyalım
-                reset_tag = fr"{{\r\c{c_pri}}}"
+                if self.style.blur > 0:
+                    reset_tag = fr"{{\r\blur{self.style.blur}\c{c_pri}}}"
+                else:
+                    reset_tag = fr"{{\r\c{c_pri}}}"
                 
                 dialogue_text += f"{reset_tag}{anim_tags}{word_text} "
 
@@ -317,7 +355,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         ass_abs = os.path.abspath(ass_file).replace("\\", "/")
         cmd_nvenc = [
             "ffmpeg", "-y",
-            "-hwaccel", "cuda",
+            "-loglevel", "error",
             "-i", input_video,
             "-vf", f"ass='{ass_abs}'",
             "-c:v", "h264_nvenc",

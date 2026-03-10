@@ -20,7 +20,7 @@ from backend.config import (
     MASTER_VIDEO, MASTER_AUDIO, VIDEO_METADATA, YOLO_MODEL_PATH,
     ProjectPaths,
 )
-from backend.services.transcription    import run_transcription
+from backend.services.transcription    import run_transcription, release_whisper_models
 from backend.services.viral_analyzer   import ViralAnalyzer
 from backend.services.video_processor  import VideoProcessor
 from backend.services.subtitle_styles  import StyleManager
@@ -51,6 +51,16 @@ class GodTierShortsCreator:
             model_version=str(YOLO_MODEL_PATH),
             device="cuda",
         )
+
+    def cleanup_gpu(self) -> None:
+        try:
+            release_whisper_models()
+        except Exception:
+            pass
+        try:
+            self.video_processor.cleanup_gpu()
+        except Exception:
+            pass
 
     def _check_cancelled(self) -> None:
         if self.cancel_event.is_set():
@@ -228,18 +238,21 @@ class GodTierShortsCreator:
         center_x: Optional[float] = None,
         cut_as_short: bool = True,
     ) -> None:
-        """Video keser, altyazı varsa yakar yoksa taşır. Ortak render bloğu."""
+        """Video keser, tracking yapar, sonra gerekiyorsa altyazıyı yakar."""
         if cut_as_short:
-            self.video_processor.create_viral_short(
-                input_video=master_video,
-                start_time=start_t,
-                end_time=end_t,
-                output_filename=temp_cropped,
-                smoothness=0.1,
-                manual_center_x=center_x,
-                layout=layout,
-                cancel_event=self.cancel_event,
-            )
+            try:
+                self.video_processor.create_viral_short(
+                    input_video=master_video,
+                    start_time=start_t,
+                    end_time=end_t,
+                    output_filename=temp_cropped,
+                    smoothness=0.1,
+                    manual_center_x=center_x,
+                    layout=layout,
+                    cancel_event=self.cancel_event,
+                )
+            finally:
+                self.video_processor.cleanup_gpu()
         else:
             self.video_processor.cut_segment_only(
                 input_video=master_video,
@@ -248,10 +261,16 @@ class GodTierShortsCreator:
                 output_filename=temp_cropped,
                 cancel_event=self.cancel_event,
             )
+
         if subtitle_engine is not None and os.path.exists(ass_file):
             raw_path = final_output.replace(".mp4", "_raw.mp4")
             shutil.copy2(temp_cropped, raw_path)
-            subtitle_engine.burn_subtitles_to_video(temp_cropped, ass_file, final_output, cancel_event=self.cancel_event)
+            subtitle_engine.burn_subtitles_to_video(
+                temp_cropped,
+                ass_file,
+                final_output,
+                cancel_event=self.cancel_event,
+            )
         else:
             shutil.move(temp_cropped, final_output)
 
@@ -320,6 +339,7 @@ class GodTierShortsCreator:
                     status_callback=lambda msg, pct: self._update_status(msg, pct),
                     cancel_event=self.cancel_event,
                 )
+                release_whisper_models()
             except Exception as e:
                 logger.error(f"❌ WhisperX hatası: {e}")
                 self._update_status(f"WhisperX hatası: {e}", -1)

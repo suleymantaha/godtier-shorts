@@ -15,6 +15,7 @@
     "test:smoke": "vitest run src/test/smoke.test.ts"
   },
   "dependencies": {
+    "@clerk/clerk-react": "^5.61.3",
     "@tailwindcss/vite": "^4.2.1",
     "clsx": "^2.1.1",
     "framer-motion": "^12.34.3",

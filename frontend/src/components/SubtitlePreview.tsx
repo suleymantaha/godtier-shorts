@@ -20,11 +20,23 @@ const STYLE_LABELS: Record<StyleName, string> = {
   PODCAST: 'Podcast',
   CORPORATE: 'Kurumsal',
   HIGHCARE: 'Yuksek Kontrast',
+  CYBER_PUNK: 'Cyber Glitch',
+  STORY_TELLER: 'Storyteller',
+  GLOW_KARAOKE: 'Neon Karaoke',
+  GLASS_MORPH: 'Glassmorphism',
+  ALI_ABDAAL: 'Productivity Vlog',
+  RETRO_WAVE: '80s Synthwave',
+  HACKER_TERMINAL: 'Terminal Code',
+  CINEMATIC_FILM: 'Documentary Film',
   CUSTOM: 'Ozel',
 };
 
-function buildTextShadow(outlineColor: string, width: number): string {
-  if (width <= 0) return 'none';
+function buildTextShadow(outlineColor: string, width: number, isGlow: boolean = false): string {
+  if (width <= 0 && !isGlow) return 'none';
+  if (isGlow) {
+    return `0 0 10px ${outlineColor}, 0 0 20px ${outlineColor}, 0 0 30px ${outlineColor}`;
+  }
+
   const px = Math.min(width, 6);
   const spread = `${px}px`;
   return [
@@ -42,18 +54,29 @@ function buildTextShadow(outlineColor: string, width: number): string {
 export const SubtitlePreview = ({ styleName, disabled }: SubtitlePreviewProps) => {
   const resolvedStyle: StyleName = isStyleName(styleName) ? styleName : 'HORMOZI';
   const s = SUBTITLE_INLINE_STYLES[resolvedStyle];
-  const textShadow = buildTextShadow(s.outlineColor, s.outlineWidth);
+  
+  const isGlow = resolvedStyle === 'GLOW_KARAOKE';
+  const isGlass = resolvedStyle === 'GLASS_MORPH';
+  const isTypewriter = resolvedStyle === 'STORY_TELLER';
 
-  const baseStyle: CSSProperties = {
+  const textShadowPrimary = buildTextShadow(isGlow ? s.primaryColor : s.outlineColor, s.outlineWidth, isGlow);
+  const textShadowHighlight = buildTextShadow(isGlow ? s.highlightColor : s.outlineColor, s.outlineWidth, isGlow);
+
+  const baseStylePrimary: CSSProperties = {
     fontSize: s.fontSize,
     fontWeight: s.fontWeight,
     fontFamily: s.fontFamily,
-    textShadow,
+    textShadow: textShadowPrimary,
     lineHeight: 1.3,
+    color: s.primaryColor,
+    ...(isGlass ? { color: 'rgba(255,255,255,0.9)' } : {})
   };
 
-  const primaryStyle: CSSProperties = { ...baseStyle, color: s.primaryColor };
-  const highlightStyle: CSSProperties = { ...baseStyle, color: s.highlightColor };
+  const baseStyleHighlight: CSSProperties = {
+    ...baseStylePrimary,
+    textShadow: textShadowHighlight,
+    color: s.highlightColor,
+  };
 
   const containerBg = s.backgroundColor ?? 'transparent';
   const hasBg = s.backgroundColor !== null;
@@ -82,14 +105,28 @@ export const SubtitlePreview = ({ styleName, disabled }: SubtitlePreviewProps) =
           </div>
         ) : (
           <div
-            className="relative text-center px-5 py-3 rounded"
-            style={{ backgroundColor: hasBg ? containerBg : 'transparent' }}
+            className={`relative text-center px-5 py-3 rounded ${
+              isGlass ? 'bg-white/10 backdrop-blur-md border border-white/20 shadow-xl' : ''
+            }`}
+             style={{ 
+               backgroundColor: hasBg && !isGlass ? containerBg : undefined,
+             }}
           >
-            {PREVIEW_WORDS.map((word, i) => (
-              <span key={i} style={i === HIGHLIGHT_INDEX ? highlightStyle : primaryStyle}>
-                {word}{i < PREVIEW_WORDS.length - 1 ? ' ' : ''}
-              </span>
-            ))}
+            {PREVIEW_WORDS.map((word, i) => {
+              const styleToUse = i === HIGHLIGHT_INDEX ? baseStyleHighlight : baseStylePrimary;
+              
+              return (
+                <span 
+                  key={i} 
+                  style={{
+                    ...styleToUse,
+                    ...(isTypewriter && i > HIGHLIGHT_INDEX ? { opacity: 0 } : {})
+                  }}
+                >
+                  {word}{i < PREVIEW_WORDS.length - 1 ? ' ' : ''}
+                </span>
+              );
+            })}
           </div>
         )}
       </div>

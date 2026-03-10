@@ -14,7 +14,8 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Clip } from './types';
 import { useJobStore } from './store/useJobStore';
 import { readStored } from './utils/storage';
-
+import { SignedIn, SignedOut, SignIn, UserButton, useAuth } from '@clerk/clerk-react';
+import { setApiToken } from './api/client';
 const APP_STATE_STORAGE_KEY = 'godtier-app-state';
 const DEFAULT_APP_STATE = { viewMode: 'config' as const, editingClip: null as Clip | null };
 
@@ -40,6 +41,16 @@ function App() {
 
   const handleStyleChange = useCallback((s: string) => setCurrentStyle(s), []);
   const handleSkipSubtitlesChange = useCallback((v: boolean) => setSubtitlesDisabled(v), []);
+  
+  const { getToken, isLoaded, isSignedIn } = useAuth();
+
+  useEffect(() => {
+    if (isLoaded && isSignedIn) {
+       getToken().then(token => setApiToken(token));
+    } else {
+       setApiToken(null);
+    }
+  }, [isLoaded, isSignedIn, getToken]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -54,8 +65,30 @@ function App() {
 
   return (
     <div className="min-h-screen bg-transparent px-4 py-4 md:px-8 md:py-6 lg:px-12 lg:py-8 space-y-8 mx-auto w-full">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between px-2">
-        <div className="flex flex-col">
+      <SignedOut>
+        <div className="flex w-full h-[80vh] items-center justify-center animate-in fade-in duration-1000">
+            <SignIn appearance={{
+              elements: {
+                rootBox: "mx-auto shadow-2xl shadow-primary/20",
+                card: "bg-card backdrop-blur-3xl border border-white/10 rounded-2xl",
+                headerTitle: "text-foreground font-outfit text-2xl font-bold",
+                headerSubtitle: "text-muted-foreground",
+                socialButtonsBlockButton: "border-white/10 text-foreground hover:bg-white/5",
+                dividerLine: "bg-white/10",
+                dividerText: "text-muted-foreground",
+                formFieldLabel: "text-foreground",
+                formFieldInput: "bg-white/5 border border-white/10 text-foreground",
+                formButtonPrimary: "bg-primary text-primary-foreground hover:bg-primary/90 transition-all font-bold",
+                footerActionText: "text-muted-foreground",
+                footerActionLink: "text-primary hover:text-primary/80"
+              }
+            }} />
+        </div>
+      </SignedOut>
+
+      <SignedIn>
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between px-2">
+          <div className="flex flex-col">
           <h1 className="text-2xl sm:text-4xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white via-white to-white/40 flex items-center gap-3">
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-primary rounded-xl flex items-center justify-center rotate-3 border-r-4 border-b-4 border-white shrink-0">
               <Layers className="text-black w-5 h-5 sm:w-6 sm:h-6" />
@@ -96,9 +129,16 @@ function App() {
               SUBTITLE EDIT
             </button>
           </nav>
-          <div className="hidden sm:flex gap-2 border-l border-white/10 pl-4">
+          <div className="hidden sm:flex items-center gap-3 border-l border-white/10 pl-4">
             <IconButton label="GitHub" icon={<Github className="w-4 h-4" />} href="https://github.com" variant="ghost" />
             <IconButton label="Twitter" icon={<Twitter className="w-4 h-4" />} href="https://twitter.com" variant="ghost" />
+            <div className="pl-2 flex items-center justify-center">
+              <UserButton appearance={{
+                elements: {
+                  userButtonAvatarBox: "w-8 h-8 ring-2 ring-primary/50 hover:ring-primary transition-all duration-300"
+                }
+              }} />
+            </div>
           </div>
         </div>
       </header>
@@ -157,6 +197,7 @@ function App() {
         <p className="text-[11px] font-mono uppercase tracking-widest">&copy; 2026 GOD-TIER SHORTS. AI_ARCHITECT_ENABLED</p>
         <ConnectionChip status={wsStatus} />
       </footer>
+      </SignedIn>
     </div>
   );
 }

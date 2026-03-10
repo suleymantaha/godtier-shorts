@@ -225,6 +225,125 @@ class StyleManager:
             margin_v=220,
             animation_type="none",
         ),
+        "CYBER_PUNK": SubtitleStyle(
+            name="Cyber Glitch",
+            category=SubtitleCategory.CREATIVE,
+            font_name="Orbitron Bold",
+            font_size=120,
+            primary_color="&H00FFFFFF",
+            outline_color="&H00FF00FF",   # Macenta çerçeve
+            outline_width=4.0,
+            shadow_color="&H00FFFF00",    # Cyan (Turkuaz) gölge - Glitch efekti için
+            shadow_depth=6.0,
+            gradient_colors=["&H00FFFFFF", "&H0000FFFF"],
+            gradient_direction="vertical",
+            animation_type="shake",       # Titreme animasyonu
+        ),
+        "STORY_TELLER": SubtitleStyle(
+            name="Storyteller",
+            category=SubtitleCategory.CREATIVE,
+            font_name="Courier New",      # Daktilo fontu
+            font_size=40,
+            font_weight=400,
+            primary_color="&H00E0E0E0",
+            alignment=1,                  # 1 = Sol alt köşe
+            margin_v=150,
+            position_x=0.1,               # Ekranın solundan başlasın
+            animation_type="typewriter",  # Yeni animasyon tipi
+            animation_duration=0.05,
+        ),
+        "GLOW_KARAOKE": SubtitleStyle(
+            name="Neon Karaoke",
+            category=SubtitleCategory.CREATIVE,
+            font_name="Montserrat ExtraBold",
+            font_size=110,
+            primary_color="&H80FFFFFF",   # %50 Transparan beyaz (arka plan kelimeler için)
+            highlight_color="&H0000FFFF", # Parlak Sarı (vurgu rengi)
+            outline_width=2.0,
+            blur=4.0,                     # Hafif bir ışık hüzmesi efekti
+            animation_type="pop",
+            animation_duration=0.1,
+            margin_v=280
+        ),
+        "GLASS_MORPH": SubtitleStyle(
+            name="Glassmorphism",
+            category=SubtitleCategory.CREATIVE,
+            font_name="Inter SemiBold",
+            font_size=45,
+            primary_color="&H20FFFFFF",    # Çok şeffaf beyaz
+            background_color="&H80FFFFFF", # Arkadaki videoyu bulanıklaştıran beyaz buzlu cam
+            outline_width=1.0,
+            outline_color="&H40000000",
+            blur=10.0,                     # Arkayı bulanık gösteren temel efekt
+            border_radius=15.0,            # Köşeleri yuvarlatılmış şık bir kutu
+            alignment=2,
+            margin_v=100
+        ),
+        "ALI_ABDAAL": SubtitleStyle(
+            name="Productivity Vlog",
+            category=SubtitleCategory.MINIMAL,
+            font_name="Outfit Bold",
+            font_size=55,
+            primary_color="&H00FFFFFF",
+            highlight_color="&H0032CD32",  # Hoş bir pastel/lime yeşili
+            outline_width=0.0,
+            shadow_depth=3.0,
+            shadow_color="&H60000000",     # Çok yumuşak %40 siyah gölge
+            margin_v=240,
+            animation_type="pop",
+            animation_duration=0.1,        # Çok hızlı pop
+        ),
+        "RETRO_WAVE": SubtitleStyle(
+            name="80s Synthwave",
+            category=SubtitleCategory.CREATIVE,
+            font_name="Vampire",           # Retro/Sci-Fi font (veya Impact)
+            font_size=100,
+            primary_color="&H00FF00FF",    # Neon Pembe
+            highlight_color="&H0000FFFF",  # Cyan (Camgöbeği)
+            outline_width=6.0,
+            outline_color="&H00000000",
+            blur=6.0,                      # Güçlü neon parlaklık
+            gradient_colors=["&H00FF00FF", "&H0000FFFF"],
+            gradient_direction="horizontal",
+            margin_v=260,
+            animation_type="slide_up",
+            animation_duration=0.2,
+        ),
+        "HACKER_TERMINAL": SubtitleStyle(
+            name="Terminal Code",
+            category=SubtitleCategory.CREATIVE,
+            font_name="Consolas",
+            font_size=38,
+            primary_color="&H0000FF00",    # Matrix Yesili
+            highlight_color="&H00FFFFFF",  # Beyaz (vurgular)
+            background_color="&HB0000000", # Neredeyse mat siyah arka plan
+            outline_width=0.0,
+            shadow_depth=0.0,
+            border_radius=0.0,             # Keskin terminal köşesi
+            alignment=7,                   # 7 = Sol Üst köşeye yakın (ancak margin ile)
+            margin_v=140,
+            position_x=0.05,
+            position_y=0.15,
+            animation_type="typewriter",
+            animation_duration=0.03,       # Çok hızlı terminal yazısı
+        ),
+        "CINEMATIC_FILM": SubtitleStyle(
+            name="Documentary Film",
+            category=SubtitleCategory.MINIMAL,
+            font_name="Times New Roman",
+            font_size=42,
+            italic=True,
+            primary_color="&H00E6E6E6",    # Hafif kırık sinematik beyaz
+            highlight_color="&H00D4AF37",  # Soluk altın sarısı
+            outline_width=1.0,
+            outline_color="&H40000000",
+            shadow_depth=2.0,
+            shadow_color="&H90000000",
+            alignment=2,
+            margin_v=80,                   # Ekranda en aşağı noktalardan birine iner
+            animation_type="fade",
+            animation_duration=0.4,        # Ağır ve dramatik geçiş
+        ),
     }
 
     @classmethod

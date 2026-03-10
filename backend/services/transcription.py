@@ -4,8 +4,9 @@ backend/services/transcription.py
 faster-whisper ile ses transkripsiyon servisi.
 (Systran/faster-whisper-large-v3 modeli HuggingFace cache'inde mevcut)
 """
-import os
+import gc
 import json
+import os
 import threading
 from pathlib import Path
 
@@ -29,6 +30,24 @@ LOCAL_MODEL_REQUIRED_FILES = ("model.bin", "config.json", "tokenizer.json", "voc
 
 # Model cache: (model_size, device) -> WhisperModel (tekrarlı transkripsiyonlarda bellek/disk tasarrufu)
 _model_cache: dict[tuple[str, str], faster_whisper.WhisperModel] = {}
+
+
+def release_whisper_models() -> None:
+    """Whisper modellerini VRAM'den boşaltır (YOLO için alan açar)."""
+    global _model_cache
+    for _key, model in list(_model_cache.items()):
+        try:
+            del model
+        except Exception:
+            pass
+    _model_cache.clear()
+    gc.collect()
+    if torch.cuda.is_available():
+        try:
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+
 
 # Loglama
 logger.add(
@@ -152,65 +171,65 @@ def run_transcription(
     _status(f"faster-whisper modeli ({model_size}) yükleniyor...", 31)
     _check_cancelled()
 
-    model = _load_whisper_model(model_size)
-
-    _status("Ses analiz ediliyor (konuşma → metin)...", 33)
-    _check_cancelled()
-    
-    # Transkripsiyon
     try:
-        segments, info = model.transcribe(
-            audio_file,
-            language=language,
-            beam_size=5,
-            word_timestamps=True,
-            vad_filter=True,
-            vad_parameters=dict(min_silence_duration_ms=500)
-        )
-    except (RuntimeError, ValueError, OSError) as exc:
-        raise TranscriptionError("Ses transkripsiyonu başarısız oldu", details=str(exc)) from exc
-    
-    logger.info(f"✅ Transkript tamamlandı. Dil: {info.language}, {info.language_probability:.2f}")
-    
-    # Segmentleri liste olarak topla
-    segment_list = []
-    for seg in segments:
+        model = _load_whisper_model(model_size)
+
+        _status("Ses analiz ediliyor (konuşma → metin)...", 33)
         _check_cancelled()
-        words = []
-        for word in getattr(seg, "words", []) or []:
-            if word.start is None or word.end is None:
-                continue
 
-            token = (word.word or "").strip()
-            if not token:
-                continue
+        try:
+            segments, info = model.transcribe(
+                audio_file,
+                language=language,
+                beam_size=5,
+                word_timestamps=True,
+                vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=500)
+            )
+        except (RuntimeError, ValueError, OSError) as exc:
+            raise TranscriptionError("Ses transkripsiyonu başarısız oldu", details=str(exc)) from exc
 
-            words.append({
-                "word": token,
-                "start": float(word.start),
-                "end": float(word.end),
-                "score": float(getattr(word, "probability", 1.0) or 1.0),
+        logger.info(f"✅ Transkript tamamlandı. Dil: {info.language}, {info.language_probability:.2f}")
+
+        segment_list = []
+        for seg in segments:
+            _check_cancelled()
+            words = []
+            for word in getattr(seg, "words", []) or []:
+                if word.start is None or word.end is None:
+                    continue
+
+                token = (word.word or "").strip()
+                if not token:
+                    continue
+
+                words.append({
+                    "word": token,
+                    "start": float(word.start),
+                    "end": float(word.end),
+                    "score": float(getattr(word, "probability", 1.0) or 1.0),
+                })
+
+            segment_list.append({
+                "start": float(seg.start),
+                "end": float(seg.end),
+                "text": seg.text.strip(),
+                "speaker": "Unknown",
+                "words": words,
             })
 
-        segment_list.append({
-            "start": float(seg.start),
-            "end": float(seg.end),
-            "text": seg.text.strip(),
-            "speaker": "Unknown",
-            "words": words,
-        })
-    
-    logger.success(f"✅ {len(segment_list)} segment işlendi.")
+        logger.success(f"✅ {len(segment_list)} segment işlendi.")
 
-    # 2. JSON'a kaydet
-    _status("Transkript sonuçları diske yazılıyor...", 41)
-    _check_cancelled()
-    try:
-        Path(output_json).parent.mkdir(parents=True, exist_ok=True)
-        with open(output_json, "w", encoding="utf-8") as f:
-            json.dump(segment_list, f, ensure_ascii=False, indent=4)
-    except OSError as exc:
-        raise FileOperationError("Transkript dosyası yazılamadı", details=str(exc)) from exc
+        _status("Transkript sonuçları diske yazılıyor...", 41)
+        _check_cancelled()
+        try:
+            Path(output_json).parent.mkdir(parents=True, exist_ok=True)
+            with open(output_json, "w", encoding="utf-8") as f:
+                json.dump(segment_list, f, ensure_ascii=False, indent=4)
+        except OSError as exc:
+            raise FileOperationError("Transkript dosyası yazılamadı", details=str(exc)) from exc
 
-    logger.success(f"🎉 Transkript oluşturuldu → {output_json}")
-    return output_json
+        logger.success(f"🎉 Transkript oluşturuldu → {output_json}")
+        return output_json
+    finally:
+        release_whisper_models()
