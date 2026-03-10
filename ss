@@ -1,0 +1,100 @@
+{
+    "mcpServers": {
+        "MCP_DOCKER": {
+            "command": "/usr/local/bin/docker",
+            "args": [
+                "mcp",
+                "gateway",
+                "run"
+            ],
+            "disabledTools": [
+                "browser_file_upload",
+                "browser_fill_form",
+                "browser_handle_dialog",
+                "browser_hover",
+                "read_graph"
+            ],
+            "disabled": false,
+            "alwaysAllow": [
+                "sequentialthinking",
+                "search_nodes",
+                "space_search",
+                "symbol_to_artifact",
+                "tdd_refactoring_guidance",
+                "search_cloudflare_documentation",
+                "paper_search",
+                "open_nodes",
+                "migrate_pages_to_workers_guide",
+                "mcp-find",
+                "mcp-exec",
+                "mcp-config-set",
+                "mcp-add",
+                "list_source_contents",
+                "hub_repo_details",
+                "hub_repo_search",
+                "hf_whoami",
+                "hf_doc_search",
+                "hf_doc_fetch",
+                "gr1_z_image_turbo_generate",
+                "get_source_contents",
+                "get_package_metrics",
+                "get_latest_version",
+                "get_javadoc_symbol_contents",
+                "get_javadoc_content_list",
+                "get_extraction_guidance",
+                "find_package_issues",
+                "find_long_functions",
+                "fetch",
+                "execute_code",
+                "delete_relations",
+                "delete_observations",
+                "delete_entities",
+                "create_relations",
+                "create_entities",
+                "code-mode",
+                "analyze_test_coverage",
+                "analyze_security_and_patterns",
+                "analyze_python_package",
+                "analyze_python_file",
+                "add_observations"
+            ]
+        },
+        "dart-mcp-server": {
+            "command": "/snap/bin/dart",
+            "args": [
+                "mcp-server"
+            ],
+            "env": {},
+            "alwaysAllow": [
+                "read_package_uris",
+                "launch_app",
+                "stop_app",
+                "list_devices",
+                "get_app_logs",
+                "list_running_apps",
+                "connect_dart_tooling_daemon",
+                "get_runtime_errors",
+                "get_active_location",
+                "hot_restart",
+                "hot_reload",
+                "get_widget_tree",
+                "get_selected_widget",
+                "set_widget_selection_mode",
+                "flutter_driver",
+                "pub_dev_search",
+                "remove_roots",
+                "add_roots",
+                "dart_fix",
+                "dart_format",
+                "run_tests",
+                "create_project",
+                "pub",
+                "analyze_files",
+                "resolve_workspace_symbol",
+                "signature_help",
+                "hover"
+            ],
+            "disabled": false
+        }
+    }
+}

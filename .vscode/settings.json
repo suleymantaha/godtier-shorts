@@ -1,0 +1,19 @@
+{
+    "python.defaultInterpreterPath": "/home/arch/miniconda3/envs/godtier-shorts/bin/python",
+    "python.pythonPath": "/home/arch/miniconda3/envs/godtier-shorts/bin/python",
+    "python.analysis.extraPaths": [
+        "/home/arch/godtier-shorts",
+        "/home/arch/miniconda3/envs/godtier-shorts/lib/python3.10/site-packages"
+    ],
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.autoImportCompletions": true,
+    "pyre2.lspArguments": [
+        "--site-package-path",
+        "/home/arch/miniconda3/envs/godtier-shorts/lib/python3.10/site-packages",
+        "--search-path",
+        "/home/arch/godtier-shorts"
+    ],
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.python"
+    }
+}

@@ -1,0 +1,8 @@
+{
+  "plugins": {
+    "huggingface-skills": {
+      "enabled": true
+    }
+  },
+  "python.defaultInterpreterPath": "/home/arch/godtier-shorts/.conda/bin/python"
+}

@@ -1,0 +1,30 @@
+# Secrets
+.env
+
+# Python cache
+*.pyc
+__pycache__/
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# Runtime workspace (downloads, outputs, temp files, logs)
+workspace/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Python venv
+venv/
+.venv/
+
+# Large models
+*.pt
+*.bin
+models/
+
+# OS / IDE
+.DS_Store
+*.swp
+*.swo

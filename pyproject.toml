@@ -1,0 +1,18 @@
+[tool.pyre]
+python_version = "3.10"
+python_interpreter = "/home/arch/miniconda3/envs/godtier-shorts/bin/python"
+search_path = [
+    ".",
+    "/home/arch/miniconda3/envs/godtier-shorts/lib/python3.10/site-packages"
+]
+site_package_search_strategy = "all"
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+pythonpath = ["."]
+addopts = "-v --tb=short"
+markers = [
+    "integration: integration tests (require workspace/video)",
+    "unit: fast unit tests",
+    "smoke: minimum CI smoke tests",
+]

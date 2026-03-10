@@ -1,0 +1,141 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800;900&family=Outfit:wght@400;500;600;700;800&family=Poppins:wght@400;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-background: #0a0a0b;
+  --color-foreground: #f8f8f8;
+  --color-primary: #00f2ff;
+  --color-primary-foreground: #0a0a0b;
+  --color-secondary: #9d4edd;
+  --color-secondary-foreground: #f8f8f8;
+  --color-accent: #ff007f;
+  --color-accent-foreground: #f8f8f8;
+  --color-muted: #1a1a1c;
+  --color-muted-foreground: #a1a1aa;
+  --color-card: rgba(26, 26, 28, 0.8);
+  --color-card-foreground: #f8f8f8;
+
+  --font-inter: "Inter", sans-serif;
+  --font-outfit: "Outfit", sans-serif;
+
+  --animate-pulse-slow: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-glow: glow 2s ease-in-out infinite alternate;
+
+  @keyframes glow {
+    0% {
+      box-shadow: 0 0 5px rgba(0, 242, 255, 0.2);
+    }
+
+    100% {
+      box-shadow: 0 0 20px rgba(0, 242, 255, 0.6);
+    }
+  }
+}
+
+@layer base {
+  :root {
+    --background: var(--color-background);
+    --foreground: var(--color-foreground);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-inter);
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+    background-image:
+      radial-gradient(at 0% 0%, hsla(253, 16%, 7%, 1) 0, transparent 50%),
+      radial-gradient(at 50% 0%, hsla(225, 39%, 10%, 1) 0, transparent 50%),
+      radial-gradient(at 100% 0%, hsla(339, 49%, 10%, 1) 0, transparent 50%);
+    min-height: 100vh;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-outfit);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@utility glass-card {
+  background-color: var(--color-card);
+  backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.01));
+}
+
+@utility btn-primary {
+  background-color: var(--color-primary);
+  color: var(--color-primary-foreground);
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.75rem;
+  font-weight: 700;
+  transition: all 0.3s;
+  box-shadow: 0 0 20px rgba(0, 242, 255, 0.3);
+
+  &:hover {
+    scale: 1.05;
+    box-shadow: 0 0 30px rgba(0, 242, 255, 0.5);
+  }
+
+  &:active {
+    scale: 0.95;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+@utility input-field {
+  background-color: rgba(26, 26, 28, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  color: var(--color-foreground);
+  transition: all 0.2s;
+
+  &:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    border-color: rgba(0, 242, 255, 0.5);
+  }
+}
+
+@utility holo-text {
+  text-shadow: 0 0 10px rgba(0, 242, 255, 0.5);
+}
+
+@utility gradient-text {
+  background-clip: text;
+  color: transparent;
+  background-image: linear-gradient(to right, var(--color-primary), var(--color-secondary), var(--color-accent));
+}
