@@ -4,11 +4,11 @@ backend/core/orchestrator.py
 Tüm sistemi tek bir arayüz altında toplayan ana orkestratör.
 (eski: src/main.py → GodTierShortsCreator)
 """
+import asyncio
 import json
 import os
 import re
 import shutil
-import subprocess
 import threading
 import time
 from typing import Callable, Optional
@@ -66,34 +66,86 @@ class GodTierShortsCreator:
         if self.cancel_event.is_set():
             raise RuntimeError("Job cancelled by user")
 
+    def _validate_youtube_url(self, url: str) -> None:
+        """YouTube URL'sinin (veya 11 haneli video ID'sinin) güvenliğini ve doğruluğunu kontrol eder."""
+        # Check for bare 11-character video ID first
+        if re.match(r'^[0-9A-Za-z_-]{11}$', url):
+            return
+
+        # Check for full URL strictly
+        youtube_regex = re.compile(
+            r'^(https?://)?(www\.)?'
+            r'(youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)'
+            r'([0-9A-Za-z_-]{11})(&.*)?$'
+        )
+        if not youtube_regex.match(url):
+            raise ValueError(f"Geçersiz veya güvensiz YouTube URL formatı: {url}")
+
+    async def _run_command_with_cancel_async(
+        self,
+        cmd: list[str],
+        *,
+        timeout: float,
+        error_message: str,
+    ) -> tuple[int, str, str]:
+        """Runs a command asynchronously with cancellation support without blocking the event loop."""
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        async def _check_cancel():
+            while proc.returncode is None:
+                if self.cancel_event.is_set():
+                    try:
+                        proc.kill()
+                    except ProcessLookupError:
+                        pass
+                    raise RuntimeError("Job cancelled by user")
+                await asyncio.sleep(0.5)
+
+        cancel_task = asyncio.create_task(_check_cancel())
+
+        try:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            cancel_task.cancel()
+            return proc.returncode or 0, stdout_bytes.decode(errors='replace'), stderr_bytes.decode(errors='replace')
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            cancel_task.cancel()
+            raise RuntimeError(error_message)
+
+    # Note: Keeping synchronous signature temporarily backward-compat if anything calls it sync,
+    # but actual implementation blocks the current thread until the async work is done.
+    # We will update pipeline calls immediately after this.
     def _run_command_with_cancel(
         self,
         cmd: list[str],
         *,
         timeout: float,
         error_message: str,
-    ) -> subprocess.CompletedProcess[str]:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
+    ) -> asyncio.subprocess.Process:
+        """DEPRECATED: Use _run_command_with_cancel_async for new code."""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        rc, out, err = loop.run_until_complete(
+            self._run_command_with_cancel_async(cmd, timeout=timeout, error_message=error_message)
         )
-        start = time.time()
-        while True:
-            if self.cancel_event.is_set():
-                proc.kill()
-                proc.communicate()
-                raise RuntimeError("Job cancelled by user")
-            rc = proc.poll()
-            if rc is not None:
-                stdout, stderr = proc.communicate()
-                return subprocess.CompletedProcess(cmd, rc, stdout, stderr)
-            if time.time() - start > timeout:
-                proc.kill()
-                proc.communicate()
-                raise RuntimeError(error_message)
-            time.sleep(0.5)
+        loop.close()
+        
+        # Mock CompletedProcess for backward compatibility in the short term
+        class MockCompletedProcess:
+            def __init__(self, c, r, o, e):
+                self.args = c
+                self.returncode = r
+                self.stdout = o
+                self.stderr = e
+        return MockCompletedProcess(cmd, rc, out, err)
+
 
     @staticmethod
     def _normalize_transcript_payload(transcript_data: list) -> list[dict]:
@@ -142,39 +194,54 @@ class GodTierShortsCreator:
     # Video indirme
     # ------------------------------------------------------------------
 
-    def download_full_video(self, url: str, project_paths: Optional[ProjectPaths] = None) -> tuple[str, str]:
-        """En yüksek kalitede .mp4 indirir ve WAV sesini ayırır."""
+    async def download_full_video_async(self, url: str, project_paths: Optional[ProjectPaths] = None, resolution: str = "best") -> tuple[str, str]:
+        """En yüksek kalitede veya seçilmiş kalitede .mp4 indirir. Async versiyon."""
+        self._validate_youtube_url(url)
         self._update_status("YouTube'dan orijinal video indiriliyor...", 10)
 
         video_file = str(project_paths.master_video if project_paths else MASTER_VIDEO)
         audio_file = str(project_paths.master_audio if project_paths else MASTER_AUDIO)
 
+        if resolution != "best":
+            height = ''.join(filter(str.isdigit, resolution))
+            format_str = f"bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/mp4"
+        else:
+            format_str = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4"
+
         try:
-            result = self._run_command_with_cancel(
-                ["yt-dlp", "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4", "-o", video_file, url],
+            rc, stdout, stderr = await self._run_command_with_cancel_async(
+                ["yt-dlp", "-f", format_str, "-o", video_file, url],
                 timeout=1800,
                 error_message="Video indirme işlemi timeout oldu (30 dakika)",
             )
         except RuntimeError:
             raise
-        if result.returncode != 0 or not os.path.exists(video_file):
-            raise RuntimeError(f"Video indirilemedi: {url}\n{result.stderr}")
+        if rc != 0 or not os.path.exists(video_file):
+            raise RuntimeError(f"Video indirilemedi: {url}\n{stderr}")
 
         self._update_status("Video içinden ses ayrıştırılıyor...", 20)
         try:
-            audio_result = self._run_command_with_cancel(
+            arc, astout, astderr = await self._run_command_with_cancel_async(
                 ["ffmpeg", "-y", "-i", video_file, "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", audio_file],
                 timeout=900,
                 error_message="Ses ayrıştırma işlemi timeout oldu (15 dakika)",
             )
         except RuntimeError:
             raise
-        if audio_result.returncode != 0:
-            stderr_tail = (audio_result.stderr or "")[-300:]
+        if arc != 0:
+            stderr_tail = (astderr or "")[-300:]
             logger.error("Ses ayrıştırma hatası (stderr son 300 karakter): %s", stderr_tail)
             raise RuntimeError(f"Ses ayrıştırılamadı. ffmpeg stderr özeti: {stderr_tail}")
 
         return video_file, audio_file
+
+    def download_full_video(self, url: str, project_paths: Optional[ProjectPaths] = None, resolution: str = "best") -> tuple[str, str]:
+        """Geriye dönük uyumluluk için senkron sarmalayıcı."""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(self.download_full_video_async(url, project_paths, resolution))
+        loop.close()
+        return result
 
     # ------------------------------------------------------------------
     # Timestamp kaydırma
@@ -278,7 +345,7 @@ class GodTierShortsCreator:
     # Pipeline (tam otomatik)
     # ------------------------------------------------------------------
 
-    def run_pipeline(
+    async def run_pipeline_async(
         self,
         youtube_url: str,
         style_name: str = "HORMOZI",
@@ -287,22 +354,24 @@ class GodTierShortsCreator:
         num_clips: int = 8,
         duration_min: float = 120.0,
         duration_max: float = 180.0,
+        resolution: str = "best",
     ) -> None:
-        """Tek butondan tüm sistemi çalıştıran ana fonksiyon."""
+        """Tek butondan tüm sistemi çalıştıran ana fonksiyon. Async versiyon."""
+        self._validate_youtube_url(youtube_url)
         global_start = time.time()
         self._check_cancelled()
 
         # 1. Proje Hazırlığı (Video ID al ve klasör oluştur)
         self._update_status("Video ID alınıyor...", 5)
         try:
-            id_proc = self._run_command_with_cancel(
+            rc, stdout, stderr = await self._run_command_with_cancel_async(
                 ["yt-dlp", "--get-id", youtube_url],
                 timeout=120,
                 error_message="Video ID alma işlemi timeout oldu",
             )
-            if id_proc.returncode != 0:
-                raise RuntimeError(id_proc.stderr or "Video ID alınamadı")
-            video_id = id_proc.stdout.strip()
+            if rc != 0:
+                raise RuntimeError(stderr or "Video ID alınamadı")
+            video_id = stdout.strip()
             project_id = f"yt_{video_id}"
             self.project = ProjectPaths(project_id)
             logger.info(f"📁 Proje klasörü: {self.project.root}")
@@ -318,7 +387,7 @@ class GodTierShortsCreator:
             self._check_cancelled()
             self._update_status("Orijinal video indiriliyor...", 10)
             try:
-                master_video, master_audio = self.download_full_video(youtube_url, self.project)
+                master_video, master_audio = await self.download_full_video_async(youtube_url, self.project, resolution)
             except RuntimeError as e:
                 logger.error(f"Pipeline durduruldu: {e}")
                 self._update_status(f"HATA: {e}", -1)
@@ -333,13 +402,14 @@ class GodTierShortsCreator:
             self._check_cancelled()
             self._update_status("WhisperX ses haritası çıkarıyor...", 30)
             try:
-                metadata_file = run_transcription(
-                    audio_file=master_audio,
-                    output_json=str(self.project.transcript),
-                    status_callback=lambda msg, pct: self._update_status(msg, pct),
-                    cancel_event=self.cancel_event,
+                metadata_file = await asyncio.to_thread(
+                    run_transcription,
+                    master_audio,
+                    str(self.project.transcript),
+                    lambda msg, pct: self._update_status(msg, pct),
+                    self.cancel_event
                 )
-                release_whisper_models()
+                await asyncio.to_thread(release_whisper_models)
             except Exception as e:
                 logger.error(f"❌ WhisperX hatası: {e}")
                 self._update_status(f"WhisperX hatası: {e}", -1)
@@ -351,7 +421,8 @@ class GodTierShortsCreator:
         # 4. LLM analizi
         self._update_status("LLM viral klipleri seçiyor...", 50)
         self._check_cancelled()
-        viral_results = self.analyzer.analyze_metadata(
+        viral_results = await asyncio.to_thread(
+            self.analyzer.analyze_metadata,
             metadata_file,
             num_clips=num_clips,
             duration_min=duration_min,
@@ -443,7 +514,8 @@ class GodTierShortsCreator:
             if temp_cropped != final_output:
                 cleanup_files.append(temp_cropped)
             try:
-                self._cut_and_burn_clip(
+                await asyncio.to_thread(
+                    self._cut_and_burn_clip,
                     master_video, start_t, end_t, temp_cropped, final_output, ass_file,
                     subtitle_engine, layout=layout, center_x=None, cut_as_short=True,
                 )
@@ -458,11 +530,33 @@ class GodTierShortsCreator:
         self._update_status("TÜM İŞLEMLER BAŞARIYLA TAMAMLANDI!", 100)
         logger.success(f"🎉 {elapsed}s içinde {total} video üretildi!")
 
+    def run_pipeline(
+        self,
+        youtube_url: str,
+        style_name: str = "HORMOZI",
+        layout: str = "single",
+        skip_subtitles: bool = False,
+        num_clips: int = 8,
+        duration_min: float = 120.0,
+        duration_max: float = 180.0,
+        resolution: str = "best",
+    ) -> None:
+        """Tek butondan tüm sistemi çalıştıran ana fonksiyon senkron sarmalayıcı."""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(
+            self.run_pipeline_async(
+                youtube_url, style_name, layout, skip_subtitles,
+                num_clips, duration_min, duration_max, resolution
+            )
+        )
+        loop.close()
+
     # ------------------------------------------------------------------
     # Manuel klip
     # ------------------------------------------------------------------
 
-    def run_manual_clip(
+    async def run_manual_clip_async(
         self,
         start_t: float,
         end_t: float,
@@ -522,9 +616,10 @@ class GodTierShortsCreator:
         if not skip_subtitles:
             cleanup_files.append(ass_file)
         try:
-            self._cut_and_burn_clip(
+            await asyncio.to_thread(
+                self._cut_and_burn_clip,
                 master_video, start_t, end_t, temp_cropped, final_output, ass_file,
-                subtitle_engine, layout=layout, center_x=center_x, cut_as_short=cut_as_short,
+                subtitle_engine, layout, center_x, cut_as_short
             )
             meta_path = final_output.replace(".mp4", ".json")
             with open(shifted_json, "r", encoding="utf-8") as f:
@@ -561,7 +656,14 @@ class GodTierShortsCreator:
         self._update_status(f"Manuel klip hazır: {final_output}", 100)
         return final_output
 
-    def run_manual_clips_from_cut_points(
+    def run_manual_clip(self, *args, **kwargs) -> str:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        res = loop.run_until_complete(self.run_manual_clip_async(*args, **kwargs))
+        loop.close()
+        return res
+
+    async def run_manual_clips_from_cut_points_async(
         self,
         cut_points: list[float],
         transcript_data: list,
@@ -586,7 +688,7 @@ class GodTierShortsCreator:
             pct = 10 + int((i / total) * 85)
             self._update_status(f"Klip {clip_num}/{total}: {start_t:.1f}-{end_t:.1f} sn...", pct)
             output_name = f"cut_{clip_num}_{int(start_t)}_{int(end_t)}.mp4"
-            path = self.run_manual_clip(
+            path = await self.run_manual_clip_async(
                 start_t, end_t, transcript_data,
                 style_name, project_id, None, layout, output_name, skip_subtitles, cut_as_short,
             )
@@ -594,11 +696,18 @@ class GodTierShortsCreator:
         self._update_status("Tüm kesim noktaları işlendi!", 100)
         return results
 
+    def run_manual_clips_from_cut_points(self, *args, **kwargs) -> list[str]:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        res = loop.run_until_complete(self.run_manual_clips_from_cut_points_async(*args, **kwargs))
+        loop.close()
+        return res
+
     # ------------------------------------------------------------------
     # AI Toplu Klip (Batch)
     # ------------------------------------------------------------------
 
-    def run_batch_manual_clips(
+    async def run_batch_manual_clips_async(
         self,
         start_t: float,
         end_t: float,
@@ -627,7 +736,8 @@ class GodTierShortsCreator:
         sub_transcript = [s for s in transcript_data if s["start"] >= start_t and s["end"] <= end_t]
         
         # 2. Viral Analiz (Segment bazlı)
-        viral_results = self.analyzer.analyze_transcript_segment(
+        viral_results = await asyncio.to_thread(
+            self.analyzer.analyze_transcript_segment,
             transcript_data=sub_transcript,
             limit=num_clips,
             window_start=start_t,
@@ -713,9 +823,10 @@ class GodTierShortsCreator:
             if subtitle_engine is not None:
                 cleanup_files.extend([ass_file, temp_cropped])
             try:
-                self._cut_and_burn_clip(
+                await asyncio.to_thread(
+                    self._cut_and_burn_clip,
                     master_video, s_t, e_t, temp_cropped, final_output, ass_file,
-                    subtitle_engine, layout=layout, center_x=None, cut_as_short=cut_as_short,
+                    subtitle_engine, layout, None, cut_as_short
                 )
                 results.append(final_output)
             finally:
@@ -731,12 +842,19 @@ class GodTierShortsCreator:
         logger.success(f"🎉 Toplu üretim bitti: {len(results)} klip.")
         return results
 
+    def run_batch_manual_clips(self, *args, **kwargs) -> list[str]:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        res = loop.run_until_complete(self.run_batch_manual_clips_async(*args, **kwargs))
+        loop.close()
+        return res
+
     # ------------------------------------------------------------------
     # Altyazı yeniden yazma
     # ------------------------------------------------------------------
 
-    def reburn_subtitles(self, clip_name: str, transcript: list, project_id: Optional[str] = None, style_name: str = "HORMOZI") -> str:
-        """Mevcut bir klibin altyazılarını yeniden işler. _raw.mp4 varsa onu kullanır (çift altyazı önlenir)."""
+    async def reburn_subtitles_async(self, clip_name: str, transcript: list, project_id: Optional[str] = None, style_name: str = "HORMOZI") -> str:
+        """Mevcut bir klibin altyazılarını yeniden işler. _raw.mp4 varsa onu kullanır (çift altyazı önlenir). Async versiyon."""
         if project_id:
             project = ProjectPaths(project_id)
             input_video = str(project.outputs / clip_name)
@@ -762,10 +880,15 @@ class GodTierShortsCreator:
         with open(temp_json, "w", encoding="utf-8") as f:
             json.dump(normalized_transcript, f, ensure_ascii=False, indent=4)
 
+        # Runs sync primarily string ops
         subtitle_engine.generate_ass_file(temp_json, ass_file, max_words_per_screen=3)
 
         self._update_status("Videonun makyajı tazeleniyor...", 60)
-        subtitle_engine.burn_subtitles_to_video(source_video, ass_file, temp_output, cancel_event=self.cancel_event)
+        # Calling the potentially blocking ffmpeg shell script wrapper in another thread via to_thread.
+        await asyncio.to_thread(
+            subtitle_engine.burn_subtitles_to_video,
+            source_video, ass_file, temp_output, cancel_event=self.cancel_event
+        )
 
         os.replace(temp_output, input_video)
 
@@ -795,6 +918,13 @@ class GodTierShortsCreator:
 
         self._update_status("Klip başarıyla güncellendi!", 100)
         return input_video
+
+    def reburn_subtitles(self, *args, **kwargs) -> str:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        res = loop.run_until_complete(self.reburn_subtitles_async(*args, **kwargs))
+        loop.close()
+        return res
 
     # ------------------------------------------------------------------
     # Yerel video transkripsiyon

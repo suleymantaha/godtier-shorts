@@ -23,6 +23,7 @@ import type { StyleName } from '../config/subtitleStyles';
 import { RangeSlider } from './RangeSlider';
 import { SubtitlePreview } from './SubtitlePreview';
 import { VideoControls } from './ui/VideoControls';
+import { Select } from './ui/Select';
 import { toTimeStr } from '../utils/time';
 import { readStored } from '../utils/storage';
 
@@ -257,11 +258,11 @@ export const AutoCutEditor: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="mt-4 rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-muted-foreground">
+                <div className="mt-4 rounded-xl border border-border bg-foreground/5 px-4 py-3 text-xs text-muted-foreground">
                     {selectedFile ? (
-                        <span className="font-mono text-white/80">{selectedFile.name}</span>
+                        <span className="font-mono text-foreground/80">{selectedFile.name}</span>
                     ) : projectId ? (
-                        <span className="font-mono text-white/80">Proje: {projectId}</span>
+                        <span className="font-mono text-foreground/80">Proje: {projectId}</span>
                     ) : (
                         'Henüz video seçilmedi.'
                     )}
@@ -269,7 +270,7 @@ export const AutoCutEditor: React.FC = () => {
             </div>
 
             <div className="glass-card overflow-hidden border-primary/20 shadow-lg shadow-primary/5 ring-1 ring-primary/10">
-                <div className="aspect-video bg-black/60 relative group">
+                <div className="aspect-video bg-background/80 relative group">
                     {videoSrc ? (
                         <>
                             <video
@@ -296,9 +297,9 @@ export const AutoCutEditor: React.FC = () => {
                         </>
                     ) : (
                         <div className="absolute inset-0 flex items-center justify-center p-8">
-                            <div className="w-full max-w-xl rounded-2xl border border-dashed border-white/15 bg-black/20 px-6 py-10 text-center">
+                            <div className="w-full max-w-xl rounded-2xl border border-dashed border-border bg-foreground/5 px-6 py-10 text-center">
                                 <Scissors className="w-8 h-8 text-primary mx-auto mb-3" />
-                                <p className="text-sm font-semibold text-white">Bos baslangic hazir</p>
+                                <p className="text-sm font-semibold text-foreground">Bos baslangic hazir</p>
                                 <p className="mt-2 text-xs text-muted-foreground">
                                     Manual cut ekrani sadece video yuklendikten sonra aktif olur.
                                 </p>
@@ -307,7 +308,7 @@ export const AutoCutEditor: React.FC = () => {
                     )}
                 </div>
 
-                <div className="p-5 bg-black/30 space-y-6">
+                <div className="p-5 bg-foreground/5 space-y-6">
                     <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-muted-foreground">
                         <Clock className="w-3 h-3" />
                         <span>Kesim Araligi</span>
@@ -394,13 +395,13 @@ export const AutoCutEditor: React.FC = () => {
                                         {markers.map((m, i) => (
                                             <span
                                                 key={`${m}-${i}`}
-                                                className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-2 py-1 text-[11px] font-mono"
+                                                className="inline-flex items-center gap-1.5 rounded-lg bg-foreground/10 px-2 py-1 text-[11px] font-mono"
                                             >
                                                 {toTimeStr(m)}
                                                 <button
                                                     type="button"
                                                     onClick={() => setMarkers((prev) => prev.filter((_, j) => j !== i))}
-                                                    className="hover:bg-white/20 rounded p-0.5"
+                                                    className="hover:bg-foreground/20 rounded p-0.5"
                                                     aria-label="Sil"
                                                 >
                                                     <X className="w-3 h-3" />
@@ -412,7 +413,7 @@ export const AutoCutEditor: React.FC = () => {
                             )}
                         </>
                     ) : (
-                        <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-6 text-center text-xs text-muted-foreground">
+                        <div className="rounded-xl border border-border bg-foreground/5 px-4 py-6 text-center text-xs text-muted-foreground">
                             Zaman araligi secmek icin once video yukle.
                         </div>
                     )}
@@ -438,10 +439,10 @@ export const AutoCutEditor: React.FC = () => {
                                     aria-label="Short olarak kes"
                                     title="Yatay videolari dikey 9:16 formata donusturur. Kapaliyken orijinal boyut korunur."
                                     onClick={() => setCutAsShort((prev) => !prev)}
-                                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 transition-colors ${cutAsShort ? 'bg-primary/20 border-primary/40' : 'bg-white/10 border-white/20'}`}
+                                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 transition-colors ${cutAsShort ? 'bg-primary/20 border-primary/40' : 'bg-foreground/10 border-border'}`}
                                 >
                                     <span
-                                        className={`pointer-events-none inline-block h-4 w-4 rounded-full shadow-sm transition-transform ${cutAsShort ? 'translate-x-5 bg-primary' : 'translate-x-0.5 bg-white/60'}`}
+                                        className={`pointer-events-none inline-block h-4 w-4 rounded-full shadow-sm transition-transform ${cutAsShort ? 'translate-x-5 bg-primary' : 'translate-x-0.5 bg-foreground/60'}`}
                                     />
                                 </button>
                             </div>
@@ -460,16 +461,16 @@ export const AutoCutEditor: React.FC = () => {
                                     />
                                 </button>
                             </div>
-                            <select
+                            <Select
                                 value={style}
-                                onChange={(e) => setStyle(isStyleName(e.target.value) ? e.target.value : 'HORMOZI')}
+                                onChange={(val) => setStyle(isStyleName(val) ? val : 'HORMOZI')}
+                                options={STYLE_OPTIONS.filter((s) => s !== 'CUSTOM').map((s) => ({
+                                    value: s,
+                                    label: s
+                                }))}
                                 disabled={skipSubtitles}
-                                className={`input-field w-full text-xs ${skipSubtitles ? 'opacity-40 cursor-not-allowed' : ''}`}
-                            >
-                                {STYLE_OPTIONS.filter((s) => s !== 'CUSTOM').map((s) => (
-                                    <option key={s} value={s}>{s}</option>
-                                ))}
-                            </select>
+                                className={skipSubtitles ? 'opacity-40' : ''}
+                            />
                             {skipSubtitles && (
                                 <div className="flex items-center gap-1.5 text-[11px] font-mono text-red-400/80">
                                     <Subtitles className="w-3 h-3" />
@@ -523,7 +524,7 @@ export const AutoCutEditor: React.FC = () => {
                                 <span>{currentJob.last_message}</span>
                                 <span>{Math.round(currentJob.progress)}%</span>
                             </div>
-                            <div className="h-2 rounded-full bg-white/5 overflow-hidden">
+                            <div className="h-2 rounded-full bg-foreground/5 overflow-hidden">
                                 <div
                                     className="h-full bg-gradient-to-r from-primary to-accent transition-all duration-500"
                                     style={{ width: `${currentJob.progress}%` }}
@@ -537,7 +538,7 @@ export const AutoCutEditor: React.FC = () => {
                     ) : null}
 
                     {queuePosition != null && queuePosition > 1 && (
-                        <div className="rounded-md border border-white/10 px-3 py-2 text-sm text-muted-foreground">
+                        <div className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground">
                             GPU kuyruğunda sıra: {queuePosition}
                         </div>
                     )}
@@ -564,12 +565,12 @@ export const AutoCutEditor: React.FC = () => {
                             Tum klipler ClipGallery&apos;de goruntulenir. Ilk klip asagida.
                         </p>
                     )}
-                    <video src={resultVideoSrc} controls className="w-full rounded-xl bg-black/70" />
+                    <video src={resultVideoSrc} controls className="w-full rounded-xl bg-background/90" />
                     <a
                         href={resultVideoSrc}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-[11px] font-mono uppercase tracking-[0.2em] text-white/80 hover:bg-white/10"
+                        className="inline-flex items-center gap-2 rounded-lg border border-border bg-foreground/5 px-4 py-2 text-[11px] font-mono uppercase tracking-[0.2em] text-foreground/80 hover:bg-foreground/10"
                     >
                         Ciktiyi ac
                     </a>

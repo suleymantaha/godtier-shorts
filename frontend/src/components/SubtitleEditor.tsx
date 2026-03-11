@@ -12,6 +12,7 @@ import { STYLE_OPTIONS, isStyleName } from '../config/subtitleStyles';
 import type { StyleName } from '../config/subtitleStyles';
 import type { Clip, Segment } from '../types';
 import { VideoControls } from './ui/VideoControls';
+import { Select } from './ui/Select';
 import { RangeSlider } from './RangeSlider';
 import { toTimeStr } from '../utils/time';
 import { normalizeTranscript } from '../utils/transcript';
@@ -204,14 +205,14 @@ export const SubtitleEditor: React.FC = () => {
                             <button
                                 type="button"
                                 onClick={() => { setMode('project'); setSelectedClip(null); setSelectedProjectId(null); }}
-                                className={`px-4 py-2 rounded-lg text-[11px] font-mono uppercase border transition-all ${mode === 'project' ? 'bg-accent/20 border-accent/40 text-white' : 'bg-white/5 border-white/10 text-muted-foreground'}`}
+                                className={`px-4 py-2 rounded-lg text-[11px] font-mono uppercase border transition-all ${mode === 'project' ? 'bg-accent/20 border-accent/40 text-foreground' : 'bg-foreground/5 border-border text-muted-foreground'}`}
                             >
                                 Proje
                             </button>
                             <button
                                 type="button"
                                 onClick={() => { setMode('clip'); setSelectedProjectId(null); setSelectedClip(null); }}
-                                className={`px-4 py-2 rounded-lg text-[11px] font-mono uppercase border transition-all ${mode === 'clip' ? 'bg-accent/20 border-accent/40 text-white' : 'bg-white/5 border-white/10 text-muted-foreground'}`}
+                                className={`px-4 py-2 rounded-lg text-[11px] font-mono uppercase border transition-all ${mode === 'clip' ? 'bg-accent/20 border-accent/40 text-foreground' : 'bg-foreground/5 border-border text-muted-foreground'}`}
                             >
                                 Klip
                             </button>
@@ -222,35 +223,33 @@ export const SubtitleEditor: React.FC = () => {
                             {mode === 'project' ? 'Proje' : 'Klip'}
                         </label>
                         {mode === 'project' ? (
-                            <select
+                            <Select
                                 value={selectedProjectId ?? ''}
-                                onChange={(e) => setSelectedProjectId(e.target.value || null)}
-                                className="input-field w-full text-xs"
-                            >
-                                <option value="">Proje seçin</option>
-                                {projects.map((p) => (
-                                    <option key={p.id} value={p.id}>{p.id}</option>
-                                ))}
-                            </select>
+                                onChange={(val) => setSelectedProjectId(val || null)}
+                                options={[
+                                    { value: '', label: 'Proje seçin' },
+                                    ...projects.map((p) => ({ value: p.id, label: p.id }))
+                                ]}
+                                className="text-xs"
+                            />
                         ) : (
-                            <select
+                            <Select
                                 value={selectedClip ? `${selectedClip.project ?? 'legacy'}:${selectedClip.name}` : ''}
-                                onChange={(e) => {
-                                    const v = e.target.value;
+                                onChange={(v) => {
                                     if (!v) { setSelectedClip(null); return; }
                                     const [proj, name] = v.split(':');
                                     const c = clips.find((cl) => (cl.project ?? 'legacy') === proj && cl.name === name);
                                     setSelectedClip(c ?? null);
                                 }}
-                                className="input-field w-full text-xs"
-                            >
-                                <option value="">Klip seçin</option>
-                                {clips.map((c) => (
-                                    <option key={`${c.project ?? 'legacy'}:${c.name}`} value={`${c.project ?? 'legacy'}:${c.name}`}>
-                                        {c.name}
-                                    </option>
-                                ))}
-                            </select>
+                                options={[
+                                    { value: '', label: 'Klip seçin' },
+                                    ...clips.map((c) => ({
+                                        value: `${c.project ?? 'legacy'}:${c.name}`,
+                                        label: c.name
+                                    }))
+                                ]}
+                                className="text-xs"
+                            />
                         )}
                     </div>
                 </div>
@@ -271,7 +270,7 @@ export const SubtitleEditor: React.FC = () => {
             {hasSelection && (
                 <>
                     <div className="glass-card overflow-hidden border-primary/20">
-                        <div className="aspect-video bg-black/60 relative group">
+                        <div className="aspect-video bg-background/80 relative group">
                             {videoSrc && (
                                 <>
                                     <video
@@ -325,21 +324,21 @@ export const SubtitleEditor: React.FC = () => {
                                 <Film className="w-4 h-4 text-primary" />
                                 {loading ? 'Yükleniyor...' : `Altyazı (${visibleTranscript.length} / ${transcript.length} segment)`}
                             </h3>
-                            <select
+                            <Select
                                 value={style}
-                                onChange={(e) => setStyle(isStyleName(e.target.value) ? e.target.value : 'HORMOZI')}
-                                className="input-field w-32 text-xs"
-                            >
-                                {STYLE_OPTIONS.filter((s) => s !== 'CUSTOM').map((s) => (
-                                    <option key={s} value={s}>{s}</option>
-                                ))}
-                            </select>
+                                onChange={(val) => setStyle(isStyleName(val) ? val : 'HORMOZI')}
+                                options={STYLE_OPTIONS.filter((s) => s !== 'CUSTOM').map((s) => ({
+                                    value: s,
+                                    label: s
+                                }))}
+                                className="w-40 text-xs"
+                            />
                             {!loading && (
                                 <div className="flex gap-2">
                                     <button
                                         onClick={handleSave}
                                         disabled={saving || transcript.length === 0}
-                                        className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-[11px] font-mono uppercase transition-all flex items-center gap-2 disabled:opacity-50"
+                                        className="px-4 py-2 rounded-lg bg-foreground/5 border border-border hover:bg-foreground/10 text-[11px] font-mono uppercase transition-all flex items-center gap-2 disabled:opacity-50"
                                     >
                                         {saving ? <div className="w-3 h-3 border-2 border-primary border-t-transparent animate-spin rounded-full" /> : <Save className="w-3 h-3" />}
                                         {mode === 'clip' ? 'Kaydet + Reburn' : 'Kaydet'}
@@ -387,7 +386,7 @@ export const SubtitleEditor: React.FC = () => {
                                             value={sub.text}
                                             onChange={(e) => updateSubtitleText(realIdx, e.target.value)}
                                             onClick={(e) => e.stopPropagation()}
-                                            className={`flex-1 bg-white/5 border rounded-lg p-2.5 text-sm transition-all outline-none resize-none h-12 ${isActive ? 'border-primary/50 bg-white/10' : 'border-white/5 group-hover:border-white/10'}`}
+                                            className={`flex-1 bg-foreground/5 border rounded-lg p-2.5 text-sm transition-all outline-none resize-none h-12 ${isActive ? 'border-primary/50 bg-foreground/10' : 'border-border group-hover:border-border'}`}
                                         />
                                     </div>
                                 );

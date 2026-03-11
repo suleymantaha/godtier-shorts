@@ -23,8 +23,8 @@ interface IconButtonAsLink extends IconButtonBaseProps {
 export type IconButtonProps = IconButtonAsButton | IconButtonAsLink;
 
 const variantStyles: Record<NonNullable<IconButtonProps['variant']>, string> = {
-  ghost: 'bg-transparent hover:bg-white/10 text-muted-foreground hover:text-white',
-  subtle: 'bg-white/10 hover:bg-white/20 text-white',
+  ghost: 'bg-transparent hover:bg-foreground/10 text-muted-foreground hover:text-foreground',
+  subtle: 'bg-foreground/10 hover:bg-foreground/20 text-foreground',
   primary: 'bg-primary/20 hover:bg-primary/40 text-primary',
 };
 

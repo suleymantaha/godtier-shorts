@@ -91,6 +91,7 @@ export interface StartJobPayload {
     auto_mode?: boolean;
     duration_min?: number;
     duration_max?: number;
+    resolution?: string;
 }
 
 export interface ManualJobPayload {

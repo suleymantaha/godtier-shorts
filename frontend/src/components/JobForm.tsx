@@ -4,7 +4,8 @@ import { useJobStore } from '../store/useJobStore';
 import { jobsApi } from '../api/client';
 import { STYLE_OPTIONS, STYLE_LABELS } from '../config/subtitleStyles';
 import type { StyleName } from '../config/subtitleStyles';
-import { Play, Sparkles, Cpu, Zap, AlertCircle, Subtitles } from 'lucide-react';
+import { Play, Sparkles, Cpu, Zap, AlertCircle, Subtitles, Settings } from 'lucide-react';
+import { Select } from './ui/Select';
 
 interface JobFormProps {
     onStyleChange?: (style: string) => void;
@@ -20,6 +21,7 @@ export const JobForm = ({ onStyleChange, onSkipSubtitlesChange }: JobFormProps =
     const [autoMode, setAutoMode] = useState(true);
     const [durationMin, setDurationMin] = useState(120);
     const [durationMax, setDurationMax] = useState(180);
+    const [resolution, setResolution] = useState('best');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const { fetchJobs } = useJobStore();
@@ -30,6 +32,7 @@ export const JobForm = ({ onStyleChange, onSkipSubtitlesChange }: JobFormProps =
     const numClipsId = useId();
     const durationMinId = useId();
     const durationMaxId = useId();
+    const resId = useId();
 
     useEffect(() => { onStyleChange?.(style); }, [style, onStyleChange]);
     useEffect(() => { onSkipSubtitlesChange?.(skipSubtitles); }, [skipSubtitles, onSkipSubtitlesChange]);
@@ -53,6 +56,7 @@ export const JobForm = ({ onStyleChange, onSkipSubtitlesChange }: JobFormProps =
                 auto_mode: autoMode,
                 duration_min,
                 duration_max,
+                resolution,
             });
             await fetchJobs();
             setUrl('');
@@ -66,30 +70,51 @@ export const JobForm = ({ onStyleChange, onSkipSubtitlesChange }: JobFormProps =
 
     return (
         <form onSubmit={handleStart} className="space-y-6">
-            <div className="space-y-2">
-                <label htmlFor={urlId} className="text-sm font-medium text-muted-foreground uppercase tracking-widest ml-1">
-                    YouTube URL
-                </label>
-                <div className="relative group">
-                    <input
-                        id={urlId}
-                        type="url"
-                        value={url}
-                        onChange={(e) => setUrl(e.target.value)}
-                        placeholder="https://youtube.com/watch?v=..."
-                        className="input-field w-full pl-12 group-hover:border-primary/30 transition-all"
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="space-y-2 md:col-span-3">
+                    <label htmlFor={urlId} className="text-sm font-medium text-primary uppercase tracking-widest ml-1 holo-text">
+                        SOURCE FEED URL
+                    </label>
+                    <div className="relative group">
+                        <input
+                            id={urlId}
+                            type="url"
+                            value={url}
+                            onChange={(e) => setUrl(e.target.value)}
+                            placeholder="https://youtube.com/watch?v=..."
+                            className="input-field w-full pl-12 group-hover:border-primary/30 transition-all"
+                            disabled={isSubmitting}
+                            autoComplete="url"
+                        />
+                        <Play className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-primary/50 pointer-events-none" aria-hidden="true" />
+                    </div>
+                </div>
+
+                <div className="space-y-2 md:col-span-1">
+                    <label htmlFor={resId} className="text-sm font-medium text-primary uppercase tracking-widest ml-1 holo-text">
+                        RESOLUTION
+                    </label>
+                    <Select
+                        id={resId}
+                        value={resolution}
+                        onChange={setResolution}
+                        options={[
+                            { value: 'best', label: 'En İyi' },
+                            { value: '1080p', label: '1080p' },
+                            { value: '720p', label: '720p' },
+                            { value: '480p', label: '480p' },
+                        ]}
                         disabled={isSubmitting}
-                        autoComplete="url"
+                        icon={<Settings className="w-4 h-4 text-accent/50" />}
                     />
-                    <Play className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-primary/50 pointer-events-none" aria-hidden="true" />
                 </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                        <label htmlFor={styleId} className="text-sm font-medium text-muted-foreground uppercase tracking-widest ml-1">
-                            Visual Style
+                        <label htmlFor={styleId} className="text-sm font-medium text-secondary uppercase tracking-widest ml-1 holo-text">
+                            VISUAL STYLE
                         </label>
                         <button
                             type="button"
@@ -104,20 +129,18 @@ export const JobForm = ({ onStyleChange, onSkipSubtitlesChange }: JobFormProps =
                             />
                         </button>
                     </div>
-                    <div className="relative">
-                        <select
-                            id={styleId}
-                            value={style}
-                            onChange={(e) => setStyle(e.target.value as StyleName)}
-                            className={`input-field w-full appearance-none pr-10 transition-opacity ${skipSubtitles ? 'opacity-40 cursor-not-allowed' : ''}`}
-                            disabled={isSubmitting || skipSubtitles}
-                        >
-                            {STYLE_OPTIONS.filter((s) => s !== 'CUSTOM').map((s) => (
-                                <option key={s} value={s}>{STYLE_LABELS[s]}</option>
-                            ))}
-                        </select>
-                        <Sparkles className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary/50 pointer-events-none" aria-hidden="true" />
-                    </div>
+                    <Select
+                        id={styleId}
+                        value={style}
+                        onChange={(val) => setStyle(val as StyleName)}
+                        options={STYLE_OPTIONS.filter((s) => s !== 'CUSTOM').map((s) => ({
+                            value: s,
+                            label: STYLE_LABELS[s],
+                        }))}
+                        disabled={isSubmitting || skipSubtitles}
+                        icon={<Sparkles className="w-4 h-4 text-secondary/50" />}
+                        className={skipSubtitles ? 'opacity-40' : ''}
+                    />
                     {skipSubtitles && (
                         <div className="flex items-center gap-1.5 text-[11px] font-mono text-red-400/80">
                             <Subtitles className="w-3 h-3" aria-hidden="true" />
@@ -127,29 +150,29 @@ export const JobForm = ({ onStyleChange, onSkipSubtitlesChange }: JobFormProps =
                 </div>
 
                 <div className="space-y-2">
-                    <label htmlFor={engineId} className="text-sm font-medium text-muted-foreground uppercase tracking-widest ml-1">
-                        AI Engine
-                    </label>
-                    <div className="relative">
-                        <select
-                            id={engineId}
-                            value={engine}
-                            onChange={(e) => setEngine(e.target.value)}
-                            className="input-field w-full appearance-none pr-10"
-                            disabled={isSubmitting}
-                        >
-                            <option value="local">Local (Ollama)</option>
-                            <option value="lmstudio">Local (LM Studio)</option>
-                            <option value="cloud">Cloud (OpenAI API)</option>
-                        </select>
-                        <Cpu className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-accent/50 pointer-events-none" aria-hidden="true" />
+                    <div className="flex items-center gap-2">
+                        <label htmlFor={engineId} className="text-sm font-medium text-accent uppercase tracking-widest ml-1 holo-text">
+                            AI CORE ENGINE
+                        </label>
                     </div>
+                    <Select
+                        id={engineId}
+                        value={engine}
+                        onChange={setEngine}
+                        options={[
+                            { value: 'local', label: 'Local (Ollama)' },
+                            { value: 'lmstudio', label: 'Local (LM Studio)' },
+                            { value: 'cloud', label: 'Cloud (OpenAI API)' },
+                        ]}
+                        disabled={isSubmitting}
+                        icon={<Cpu className="w-4 h-4 text-accent/50" />}
+                    />
                 </div>
             </div>
 
             <div className="space-y-2">
-                <label htmlFor={numClipsId} className="text-sm font-medium text-muted-foreground uppercase tracking-widest ml-1">
-                    Video Sayısı
+                <label htmlFor={numClipsId} className="text-sm font-medium text-accent uppercase tracking-[0.2em] ml-1">
+                    TARGET CLONE COUNT
                 </label>
                 <input
                     id={numClipsId}
@@ -165,8 +188,8 @@ export const JobForm = ({ onStyleChange, onSkipSubtitlesChange }: JobFormProps =
 
             <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium text-muted-foreground uppercase tracking-widest ml-1">
-                        Otomatik mod (120-180 sn)
+                    <label className="text-sm font-medium text-accent/80 uppercase tracking-widest ml-1">
+                        AUTO PILOT (120-180s)
                     </label>
                     <button
                         type="button"
@@ -174,10 +197,10 @@ export const JobForm = ({ onStyleChange, onSkipSubtitlesChange }: JobFormProps =
                         aria-checked={autoMode}
                         aria-label="Otomatik mod"
                         onClick={() => setAutoMode((prev) => !prev)}
-                        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${autoMode ? 'bg-primary/20 border-primary/40' : 'bg-white/10 border-white/20'}`}
+                        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${autoMode ? 'bg-primary/20 border-primary/40' : 'bg-foreground/10 border-border'}`}
                     >
                         <span
-                            className={`pointer-events-none inline-block h-4 w-4 rounded-full shadow-sm transition-transform ${autoMode ? 'translate-x-5 bg-primary' : 'translate-x-0.5 bg-white/60'}`}
+                            className={`pointer-events-none inline-block h-4 w-4 rounded-full shadow-sm transition-transform ${autoMode ? 'translate-x-5 bg-primary' : 'translate-x-0.5 bg-foreground/60'}`}
                         />
                     </button>
                 </div>
@@ -236,8 +259,8 @@ export const JobForm = ({ onStyleChange, onSkipSubtitlesChange }: JobFormProps =
                     </>
                 ) : (
                     <>
-                        <Zap className="w-5 h-5" aria-hidden="true" />
-                        VİDEOYU ÜRET
+                        <Zap className="w-5 h-5 animate-pulse" aria-hidden="true" />
+                        INITIALIZE SEQUENCE
                     </>
                 )}
             </button>

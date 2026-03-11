@@ -7,6 +7,7 @@ YOLO + ffmpeg NVENC tabanlı video kırpma ve dikey dönüştürme servisi.
 import os
 import io
 import gc
+import uuid
 import subprocess
 import threading
 import time
@@ -166,8 +167,9 @@ class VideoProcessor:
         if manual_center_x is None:
             self._ensure_model_loaded()
 
-        temp_cut        = str(TEMP_DIR / f"cut_{os.getpid()}.mp4")
-        temp_video_only = str(TEMP_DIR / f"vonly_{os.getpid()}.mp4")
+        job_uuid = uuid.uuid4().hex[:8]
+        temp_cut        = str(TEMP_DIR / f"cut_{job_uuid}.mp4")
+        temp_video_only = str(TEMP_DIR / f"vonly_{job_uuid}.mp4")
 
         # --- Adım 1: Segment hassas kesimi (Senkron ve frame doğruluğu için re-encode) ---
         duration = end_time - start_time

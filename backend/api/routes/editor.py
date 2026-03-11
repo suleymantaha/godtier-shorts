@@ -187,15 +187,14 @@ async def manual_cut_upload(
                 try:
                     if use_cut_points:
                         assert pts is not None  # use_cut_points implies pts is not None
-                        output_paths = await asyncio.to_thread(
-                            orchestrator.run_manual_clips_from_cut_points,
-                            pts,
-                            transcript_data,
-                            style_name,
-                            project_id,
-                            DEFAULT_MANUAL_CUT_LAYOUT,
-                            skip_subtitles,
-                            cut_as_short,
+                        output_paths = await orchestrator.run_manual_clips_from_cut_points_async(
+                            cut_points=pts,
+                            transcript_data=transcript_data,
+                            style_name=style_name,
+                            project_id=project_id,
+                            layout=DEFAULT_MANUAL_CUT_LAYOUT,
+                            skip_subtitles=skip_subtitles,
+                            cut_as_short=cut_as_short,
                         )
                         if not output_paths:
                             manager.jobs[job_id]["status"] = "empty"
@@ -213,17 +212,16 @@ async def manual_cut_upload(
                         manager.jobs[job_id]["output_path"] = output_paths[0]
                         manager.jobs[job_id]["num_clips"] = len(output_paths)
                     elif is_batch:
-                        output_paths = await asyncio.to_thread(
-                            orchestrator.run_batch_manual_clips,
-                            request.start_time,
-                            request.end_time,
-                            num_clips,
-                            transcript_data,
-                            style_name,
-                            project_id,
-                            DEFAULT_MANUAL_CUT_LAYOUT,
-                            skip_subtitles,
-                            cut_as_short,
+                        output_paths = await orchestrator.run_batch_manual_clips_async(
+                            start_t=request.start_time,
+                            end_t=request.end_time,
+                            num_clips=num_clips,
+                            transcript_data=transcript_data,
+                            style_name=style_name,
+                            project_id=project_id,
+                            layout=DEFAULT_MANUAL_CUT_LAYOUT,
+                            skip_subtitles=skip_subtitles,
+                            cut_as_short=cut_as_short,
                         )
                         if not output_paths:
                             manager.jobs[job_id]["status"] = "empty"
@@ -241,18 +239,17 @@ async def manual_cut_upload(
                         manager.jobs[job_id]["output_path"] = output_paths[0]
                         manager.jobs[job_id]["num_clips"] = len(output_paths)
                     else:
-                        output_path = await asyncio.to_thread(
-                            orchestrator.run_manual_clip,
-                            request.start_time,
-                            request.end_time,
-                            None,
-                            style_name,
-                            project_id,
-                            None,
-                            DEFAULT_MANUAL_CUT_LAYOUT,
-                            clip_name,
-                            skip_subtitles,
-                            cut_as_short,
+                        output_path = await orchestrator.run_manual_clip_async(
+                            start_t=request.start_time,
+                            end_t=request.end_time,
+                            transcript_data=None,
+                            style_name=style_name,
+                            project_id=project_id,
+                            center_x=None,
+                            layout=DEFAULT_MANUAL_CUT_LAYOUT,
+                            output_name=clip_name,
+                            skip_subtitles=skip_subtitles,
+                            cut_as_short=cut_as_short,
                         )
                         manager.jobs[job_id]["output_path"] = output_path
                         if output_path:
@@ -274,7 +271,8 @@ async def manual_cut_upload(
             logger.error(f"Otomatik manual cut hatası ({job_id}): {mapped_error.message}")
             finalize_job_error(job_id, mapped_error)
 
-    asyncio.create_task(_run())
+    task = asyncio.create_task(_run())
+    manager.jobs[job_id]["task"] = task
     return {
         "status": "started",
         "job_id": job_id,
@@ -353,15 +351,14 @@ async def process_manual_clip(
             cb = lambda s: thread_safe_broadcast(s, job_id)
             orchestrator = GodTierShortsCreator(ui_callback=cb)
             try:
-                await asyncio.to_thread(
-                    orchestrator.run_manual_clip,
-                    request.start_time,
-                    request.end_time,
-                    request.transcript,
-                    request.style_name,
-                    request.project_id,
-                    request.center_x,
-                    request.layout,
+                await orchestrator.run_manual_clip_async(
+                    start_t=request.start_time,
+                    end_t=request.end_time,
+                    transcript_data=request.transcript,
+                    style_name=request.style_name,
+                    project_id=request.project_id,
+                    center_x=request.center_x,
+                    layout=request.layout,
                 )
                 finalize_job_success(job_id, "Manuel render tamamlandı.")
             except (RuntimeError, ValueError, OSError) as exc:
@@ -371,7 +368,8 @@ async def process_manual_clip(
             finally:
                 await asyncio.to_thread(orchestrator.cleanup_gpu)
 
-    asyncio.create_task(_run())
+    task = asyncio.create_task(_run())
+    manager.jobs[job_id]["task"] = task
     return {"status": "started", "job_id": job_id}
 
 
@@ -408,12 +406,11 @@ async def reburn_clip(
             cb = lambda s: thread_safe_broadcast(s, job_id)
             orchestrator = GodTierShortsCreator(ui_callback=cb)
             try:
-                await asyncio.to_thread(
-                    orchestrator.reburn_subtitles,
-                    request.clip_name,
-                    request.transcript,
-                    request.project_id,
-                    request.style_name,
+                await orchestrator.reburn_subtitles_async(
+                    clip_name=request.clip_name,
+                    transcript=request.transcript,
+                    project_id=request.project_id,
+                    style_name=request.style_name,
                 )
                 finalize_job_success(job_id, "Altyazı yeniden basımı tamamlandı.")
             except (RuntimeError, ValueError, OSError) as exc:
@@ -423,5 +420,6 @@ async def reburn_clip(
             finally:
                 await asyncio.to_thread(orchestrator.cleanup_gpu)
 
-    asyncio.create_task(_run())
+    task = asyncio.create_task(_run())
+    manager.jobs[job_id]["task"] = task
     return {"status": "started", "job_id": job_id}

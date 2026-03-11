@@ -22,14 +22,14 @@ export const JobQueue: React.FC = () => {
             )}
             {activeOrQueuedJobs.length > 0 && (
         <section className="glass-card p-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <h2 className="text-sm uppercase tracking-[0.2em] font-bold mb-4 flex items-center gap-2 text-primary/80">
+            <h2 className="text-sm uppercase tracking-[0.2em] font-bold mb-4 flex items-center gap-2 text-primary holo-text">
                 <Clock className="w-4 h-4" />
-                Mission Queue
+                ORBITAL MISSION QUEUE
             </h2>
 
             <div className="space-y-4">
                 {activeOrQueuedJobs.map((job) => (
-                    <div key={job.job_id} className="relative group border-b border-white/5 pb-4 last:border-0 last:pb-0">
+                    <div key={job.job_id} className="relative group border-b border-border pb-4 last:border-0 last:pb-0">
                         <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-3 overflow-hidden">
                                 {job.status === 'processing' ? (
@@ -58,7 +58,7 @@ export const JobQueue: React.FC = () => {
                                     <span>{Math.round(job.progress)}%</span>
                                 </div>
                                 <div
-                                    className="h-1 bg-white/5 rounded-full overflow-hidden"
+                                    className="h-1 bg-foreground/5 rounded-full overflow-hidden"
                                     role="progressbar"
                                     aria-valuenow={Math.round(job.progress)}
                                     aria-valuemin={0}
@@ -66,7 +66,7 @@ export const JobQueue: React.FC = () => {
                                     aria-label={`${job.job_id} islemi`}
                                 >
                                     <div
-                                        className="h-full bg-gradient-to-r from-primary to-accent transition-all duration-500 ease-out shadow-[0_0_8px_rgba(0,242,255,0.5)]"
+                                        className="h-full bg-gradient-to-r from-primary to-accent transition-all duration-500 ease-out shadow-md shadow-primary/20"
                                         style={{ width: `${job.progress}%` }}
                                     />
                                 </div>
@@ -74,7 +74,7 @@ export const JobQueue: React.FC = () => {
                         )}
 
                         {job.status === 'queued' && (
-                            <span className="text-[11px] font-mono text-muted-foreground uppercase italic px-2 py-0.5 bg-white/5 rounded">
+                            <span className="text-[11px] font-mono text-muted-foreground uppercase italic px-2 py-0.5 bg-foreground/5 rounded">
                                 Waiting for GPU clearance...
                             </span>
                         )}

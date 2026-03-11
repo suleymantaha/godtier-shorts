@@ -93,7 +93,7 @@ export const VideoOverlay: FC<VideoOverlayProps> = ({
         >
             {/* 9:16 Crop Guide */}
             <div
-                className="absolute top-0 bottom-0 border-2 border-dashed border-white/30 bg-white/5 pointer-events-none transition-all duration-75"
+                className="absolute top-0 bottom-0 border-2 border-dashed border-foreground/30 bg-foreground/5 pointer-events-none transition-all duration-75"
                 style={{
                     left: `calc(${centerX * 100}% - (100vh * 9/16 * 16/9 / 2))`,
                     width: 'calc(100% * 9/16 * (16/9))',
@@ -103,7 +103,7 @@ export const VideoOverlay: FC<VideoOverlayProps> = ({
                 }}
             >
                 <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-1 h-1 bg-white rounded-full opacity-50" />
+                    <div className="w-1 h-1 bg-foreground rounded-full opacity-50" />
                 </div>
             </div>
 
@@ -125,7 +125,7 @@ export const VideoOverlay: FC<VideoOverlayProps> = ({
                 aria-valuemax={100}
                 aria-valuenow={Math.round(centerX * 100)}
                 onKeyDown={handleKeyDown}
-                className="absolute top-3 left-3 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded border border-white/10 text-[11px] font-mono text-white/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                className="absolute top-3 left-3 bg-background/80 backdrop-blur-md px-3 py-1.5 rounded border border-border text-[11px] font-mono text-foreground/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             >
                 CROP: {(centerX * 100).toFixed(1)}%
             </div>

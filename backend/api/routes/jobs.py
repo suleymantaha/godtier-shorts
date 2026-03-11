@@ -64,8 +64,7 @@ async def run_gpu_job(job_id: str, request: JobRequest) -> None:
                 duration_max = float(request.duration_max)
 
             try:
-                await asyncio.to_thread(
-                    orchestrator.run_pipeline,
+                await orchestrator.run_pipeline_async(
                     request.youtube_url,
                     request.style_name,
                     request.layout,
@@ -73,6 +72,7 @@ async def run_gpu_job(job_id: str, request: JobRequest) -> None:
                     request.num_clips,
                     duration_min,
                     duration_max,
+                    request.resolution,
                 )
                 _finalize_job(job_id, "completed", progress=100)
                 logger.success(f"🔓 İşlem tamamlandı: {job_id}")
@@ -81,7 +81,7 @@ async def run_gpu_job(job_id: str, request: JobRequest) -> None:
                 logger.warning(f"🛑 İptal edildi: {job_id}")
                 raise
             finally:
-                await asyncio.to_thread(orchestrator.cleanup_gpu)
+                orchestrator.cleanup_gpu()
 
     except asyncio.CancelledError:
         _finalize_job(job_id, "cancelled")

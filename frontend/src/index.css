@@ -38,16 +38,27 @@
     --foreground: var(--color-foreground);
   }
 
+  [data-theme='light'] {
+    --color-background: #f8fafc;
+    --color-foreground: #09090b;
+    --color-primary: #005ce6;
+    --color-primary-foreground: #ffffff;
+    --color-secondary: #d400ff;
+    --color-secondary-foreground: #ffffff;
+    --color-accent: #ff007f;
+    --color-accent-foreground: #ffffff;
+    --color-muted: #e2e8f0;
+    --color-muted-foreground: #52525b;
+    --color-card: rgba(255, 255, 255, 0.7);
+    --color-card-foreground: #09090b;
+  }
+
   body {
-    background-color: var(--color-background);
+    background-color: transparent; /* Let ThreeCanvas shine through */
     color: var(--color-foreground);
     font-family: var(--font-inter);
     -webkit-font-smoothing: antialiased;
     overflow-x: hidden;
-    background-image:
-      radial-gradient(at 0% 0%, hsla(253, 16%, 7%, 1) 0, transparent 50%),
-      radial-gradient(at 50% 0%, hsla(225, 39%, 10%, 1) 0, transparent 50%),
-      radial-gradient(at 100% 0%, hsla(339, 49%, 10%, 1) 0, transparent 50%);
     min-height: 100vh;
   }
 
@@ -84,11 +95,16 @@
 
 @utility glass-card {
   background-color: var(--color-card);
-  backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  border: 1px solid rgba(0, 242, 255, 0.15);
   border-radius: 1rem;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-  background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.01));
+  box-shadow: 0 0 40px -10px rgba(138, 43, 226, 0.2);
+}
+
+[data-theme='light'] .glass-card {
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 10px 40px -10px rgba(0, 92, 230, 0.15), inset 0 0 0 1px rgba(255, 255, 255, 0.5);
 }
 
 @utility btn-primary {
@@ -115,11 +131,22 @@
   }
 }
 
+[data-theme='light'] .btn-primary {
+  box-shadow: 0 8px 20px rgba(0, 92, 230, 0.3);
+}
+
+[data-theme='light'] .btn-primary:hover {
+  box-shadow: 0 12px 25px rgba(0, 92, 230, 0.4);
+}
+
 @utility input-field {
   background-color: rgba(26, 26, 28, 0.5);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 0.75rem;
-  padding: 0.75rem 1rem;
+  padding: 0 1rem;
+  height: 3.25rem;
+  display: flex;
+  align-items: center;
   color: var(--color-foreground);
   transition: all 0.2s;
 
@@ -130,8 +157,18 @@
   }
 }
 
+[data-theme='light'] .input-field {
+  background-color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  color: var(--color-foreground);
+}
+
 @utility holo-text {
   text-shadow: 0 0 10px rgba(0, 242, 255, 0.5);
+}
+
+[data-theme='light'] .holo-text {
+  text-shadow: 0 2px 10px rgba(0, 92, 230, 0.3);
 }
 
 @utility gradient-text {
