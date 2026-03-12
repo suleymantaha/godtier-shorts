@@ -39,6 +39,10 @@ const formatUploadLimit = (bytes: number): string => {
     return `${gb.toFixed(1)}GB`;
 };
 
+const getErrorMessage = (error: unknown, fallback: string): string => {
+    return error instanceof Error ? error.message : fallback;
+};
+
 interface StoredEditorSession {
     projectId?: string;
     transcript?: Segment[];
@@ -272,8 +276,8 @@ export const Editor: React.FC<EditorProps> = ({ mode = 'master', targetClip }) =
                 setTranscribing(true);
                 setCurrentJobId(resp.job_id);
             }
-        } catch (err: any) {
-            setError(`Yükleme başarısız: ${err.message}`);
+        } catch (err: unknown) {
+            setError(`Yükleme başarısız: ${getErrorMessage(err, 'Bilinmeyen hata')}`);
         } finally {
             setUploading(false);
             e.target.value = '';
@@ -297,7 +301,7 @@ export const Editor: React.FC<EditorProps> = ({ mode = 'master', targetClip }) =
                 await editorApi.saveTranscript(transcript, projectId);
             }
         }
-        catch (err: any) { setError(err.message); }
+        catch (err: unknown) { setError(getErrorMessage(err, 'Kaydetme başarısız.')); }
         finally { setSaving(false); }
     };
 
@@ -314,8 +318,8 @@ export const Editor: React.FC<EditorProps> = ({ mode = 'master', targetClip }) =
                 style_name: style,
             });
             setCurrentJobId(resp.job_id);
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err: unknown) {
+            setError(getErrorMessage(err, 'Toplu iş başarısız.'));
             setProcessing(false);
         }
     };
@@ -334,8 +338,8 @@ export const Editor: React.FC<EditorProps> = ({ mode = 'master', targetClip }) =
                 center_x: centerX,
             });
             setCurrentJobId(resp.job_id);
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err: unknown) {
+            setError(getErrorMessage(err, 'Manuel iş başarısız.'));
             setProcessing(false);
         }
     };

@@ -2,7 +2,7 @@
 backend/api/server.py
 =======================
 FastAPI uygulama fabrikası.
-CORS, statik dosya sunumu, router kayıtları ve startup event burada.
+CORS, router kayıtları ve startup event burada.
 """
 import asyncio
 from contextlib import asynccontextmanager
@@ -10,16 +10,16 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 from loguru import logger
 
 from backend.config import (
-    CORS_ORIGINS, OUTPUTS_DIR, LOGS_DIR,
-    MASTER_VIDEO, DOWNLOADS_DIR, PROJECTS_DIR
+    CORS_ORIGINS, OUTPUTS_DIR, LOGS_DIR, MASTER_VIDEO, REQUEST_BODY_HARD_LIMIT_BYTES,
 )
 from backend.api.websocket import manager, set_main_loop
 from backend.api.routes import jobs, clips, editor
 from backend.api.error_handlers import register_exception_handlers
+from backend.api.security import authenticate_websocket_token, validate_auth_configuration
 
 # Loglama
 logger.add(
@@ -34,6 +34,7 @@ logger.add(
 async def lifespan(app: FastAPI):
     """Uygulama yaşam döngüsü yönetimi."""
     # Startup
+    validate_auth_configuration()
     set_main_loop(asyncio.get_running_loop())
     logger.info("✅ Ana asyncio event loop kaydedildi.")
     
@@ -75,7 +76,32 @@ def create_app() -> FastAPI:
             or request.headers.get("x-request-id")
             or str(uuid4())
         )
-        return await call_next(request)
+        guarded_upload_paths = {"/api/upload", "/api/manual-cut-upload"}
+        if request.method == "POST" and request.url.path in guarded_upload_paths:
+            content_length = request.headers.get("content-length")
+            if content_length:
+                try:
+                    if int(content_length) > REQUEST_BODY_HARD_LIMIT_BYTES:
+                        trace_id = request.state.trace_id
+                        return JSONResponse(
+                            status_code=413,
+                            content={
+                                "code": "REQUEST_TOO_LARGE",
+                                "message": "İstek gövdesi izin verilen sınırı aşıyor.",
+                                "details": {
+                                    "limit_bytes": REQUEST_BODY_HARD_LIMIT_BYTES,
+                                },
+                                "trace_id": trace_id,
+                            },
+                        )
+                except ValueError:
+                    pass
+
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
 
     register_exception_handlers(app)
 
@@ -88,12 +114,6 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # --- Statik dosya sunumu (üretilen videolar) ---
-    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
-    PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
-    app.mount("/outputs", StaticFiles(directory=str(OUTPUTS_DIR)), name="outputs")
-    app.mount("/projects", StaticFiles(directory=str(PROJECTS_DIR)), name="projects")
-
     # --- Router'ları kaydet ---
     app.include_router(jobs.router)
     app.include_router(clips.router)
@@ -102,7 +122,24 @@ def create_app() -> FastAPI:
     # --- WebSocket endpoint ---
     @app.websocket("/ws/progress")
     async def websocket_endpoint(websocket: WebSocket) -> None:
-        await manager.connect(websocket)
+        token = None
+        selected_subprotocol: str | None = None
+
+        protocol_header = websocket.headers.get("sec-websocket-protocol", "")
+        if protocol_header:
+            parts = [part.strip() for part in protocol_header.split(",") if part.strip()]
+            if len(parts) >= 2 and parts[0].lower() == "bearer":
+                token = parts[1]
+                selected_subprotocol = "bearer"
+
+        if token is None:
+            token = websocket.query_params.get("token")
+        try:
+            authenticate_websocket_token(token)
+        except Exception:
+            await websocket.close(code=1008)
+            return
+        await manager.connect(websocket, subprotocol=selected_subprotocol)
         try:
             while True:
                 await websocket.receive_text()  # Bağlantıyı açık tut

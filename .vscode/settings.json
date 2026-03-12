@@ -7,6 +7,7 @@
     ],
     "python.analysis.typeCheckingMode": "basic",
     "python.analysis.autoImportCompletions": true,
+    "python.terminal.useEnvFile": true,
     "pyre2.lspArguments": [
         "--site-package-path",
         "/home/arch/miniconda3/envs/godtier-shorts/lib/python3.10/site-packages",
@@ -15,5 +16,6 @@
     ],
     "[python]": {
         "editor.defaultFormatter": "ms-python.python"
-    }
+    },
+    "chatgpt.openOnStartup": true
 }

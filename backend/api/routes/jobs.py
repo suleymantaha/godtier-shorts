@@ -101,7 +101,9 @@ async def run_gpu_job(job_id: str, request: JobRequest) -> None:
 # -------------------------------------------------------------------------
 
 @router.get("/styles")
-async def get_available_styles() -> dict:
+async def get_available_styles(
+    _: AuthContext = Depends(require_policy("view_styles")),
+) -> dict:
     """Arayüzdeki Dropdown için mevcut stilleri döner."""
     return {"styles": StyleManager.list_presets() + ["CUSTOM"]}
 
@@ -140,7 +142,9 @@ async def start_processing_job(
 
 
 @router.get("/jobs")
-async def list_jobs() -> dict:
+async def list_jobs(
+    _: AuthContext = Depends(require_policy("view_jobs")),
+) -> dict:
     """Tüm aktif ve bekleyen işleri listeler."""
     return {
         "jobs": [

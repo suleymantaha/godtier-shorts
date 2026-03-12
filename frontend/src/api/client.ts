@@ -6,10 +6,10 @@
  * dağınık hardcoded URL'ler yok.
  */
 
-import { API_BASE } from '../config';
+import { API_BASE, CLERK_JWT_TEMPLATE } from '../config';
 import type {
     Job,
-    Clip,
+    ClipListResponse,
     Segment,
     ClipMetadata,
     StartJobPayload,
@@ -28,10 +28,10 @@ export const setApiToken = (token: string | null) => {
 
 // Clerk'ten dinamik olarak en güncel tokeni çekmek için yardımcı fonksiyon
 export async function getFreshToken(): Promise<string | null> {
-    // @ts-ignore - Clerk global objesi
-    if (typeof window !== "undefined" && window.Clerk && window.Clerk.session) {
-        // @ts-ignore
-        const token = await window.Clerk.session.getToken();
+    if (typeof window !== "undefined" && window.Clerk?.session) {
+        const token = CLERK_JWT_TEMPLATE
+            ? await window.Clerk.session.getToken({ template: CLERK_JWT_TEMPLATE })
+            : await window.Clerk.session.getToken();
         activeToken = token;
         return token;
     }
@@ -65,9 +65,15 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
             /* non-JSON body */
         }
         const detail = body?.detail;
+        const detailError =
+            detail && typeof detail === 'object' && 'error' in (detail as Record<string, unknown>)
+                ? (detail as { error?: { message?: string } }).error
+                : null;
         const msg =
             typeof detail === 'string'
                 ? detail
+                : detailError?.message
+                    ? detailError.message
                 : Array.isArray(detail)
                     ? detail.map((e: { msg?: string }) => e?.msg ?? String(e)).join('; ')
                     : text || `HTTP ${response.status}`;
@@ -103,8 +109,8 @@ export const jobsApi = {
 
 export const clipsApi = {
     /** Üretilen klipleri listele */
-    list: () =>
-        apiFetch<{ clips: Clip[] }>('/api/clips'),
+    list: (page = 1, pageSize = 50) =>
+        apiFetch<ClipListResponse>(`/api/clips?page=${page}&page_size=${pageSize}`),
 
     /** Bir klibin transkriptini getir */
     getTranscript: (clipName: string, project_id?: string) =>

@@ -73,8 +73,8 @@ class ConnectionManager:
             except Exception as e:
                 logger.error(f"🧹 Job cleanup hatası: {e}")
 
-    async def connect(self, websocket: WebSocket) -> None:
-        await websocket.accept()
+    async def connect(self, websocket: WebSocket, subprotocol: str | None = None) -> None:
+        await websocket.accept(subprotocol=subprotocol)
         self.active_connections.append(websocket)
         logger.info(f"🟢 Yeni WebSocket bağlantısı kuruldu. Aktif bağlantı: {len(self.active_connections)}")
         logger.debug(f"🔢 Aktif WebSocket bağlantı sayısı: {len(self.active_connections)}")
@@ -99,9 +99,17 @@ class ConnectionManager:
         if job_id:
             payload["job_id"] = job_id
             if job_id in self.jobs:
-                resolved_status = status or (
-                    "error" if progress < 0 else "completed" if progress >= 100 else "processing"
-                )
+                current_status = str(self.jobs[job_id].get("status", ""))
+                if status is not None:
+                    resolved_status = status
+                elif progress < 0:
+                    resolved_status = "error"
+                elif progress >= 100:
+                    resolved_status = current_status if current_status in {"empty", "cancelled"} else "completed"
+                elif current_status in {"queued", "processing"}:
+                    resolved_status = current_status
+                else:
+                    resolved_status = "processing"
                 self.jobs[job_id]["status"]       = resolved_status
                 self.jobs[job_id]["progress"]     = progress
                 self.jobs[job_id]["last_message"] = message
@@ -111,6 +119,7 @@ class ConnectionManager:
                 await ws.send_json(payload)
             except Exception as e:
                 logger.error(f"WebSocket gönderim hatası: {e}")
+                self.disconnect(ws)
 
 
 # Singleton — tüm route modülleri bu nesneyi import eder

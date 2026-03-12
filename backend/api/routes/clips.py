@@ -13,23 +13,24 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Query
 from fastapi.responses import FileResponse
 from loguru import logger
 
 from backend.config import (
-    OUTPUTS_DIR, DOWNLOADS_DIR, MASTER_VIDEO, MASTER_AUDIO,
-    VIDEO_METADATA, VIDEO_HASH, PROJECTS_DIR, ProjectPaths,
+    OUTPUTS_DIR, PROJECTS_DIR, ProjectPaths,
     get_project_path, sanitize_clip_name, sanitize_project_name,
-    MAX_UPLOAD_BYTES,
 )
 from backend.api.websocket import manager, thread_safe_broadcast
 from backend.api.security import AuthContext, require_policy
+from backend.api.upload_validation import validate_upload, validate_upload_size
 from backend.services.transcription import run_transcription
 from backend.core.exceptions import (
     FileOperationError,
@@ -50,6 +51,7 @@ def finalize_job_success(job_id: str, last_message: str) -> None:
         manager.jobs[job_id]["progress"] = 100
         manager.jobs[job_id]["last_message"] = last_message
     thread_safe_broadcast({"message": last_message, "progress": 100}, job_id)
+    invalidate_clips_cache(reason=f"job_success:{job_id}")
 
 
 def finalize_job_error(job_id: str, error: Exception) -> None:
@@ -62,12 +64,38 @@ def finalize_job_error(job_id: str, error: Exception) -> None:
     thread_safe_broadcast({"message": message, "progress": -1}, job_id)
 
 
-ALLOWED_UPLOAD_MIME_TYPES = {"video/mp4", "video/quicktime", "video/x-m4v"}
-ALLOWED_UPLOAD_EXTENSIONS = {".mp4", ".mov", ".m4v"}
 ALLOWED_CONTAINERS = {"mp4", "mov", "m4a", "3gp", "3g2", "mj2"}
 
 ALLOWED_PROJECT_FILE_EXTENSIONS = {".mp4", ".json"}
 ALLOWED_PROJECT_FILE_KINDS = {"clip", "master", "clip_metadata", "transcript"}
+CLIPS_CACHE_TTL_SECONDS = int(os.getenv("CLIPS_CACHE_TTL_SECONDS", "20"))
+
+
+@dataclass
+class ClipsCacheState:
+    """`/api/clips` için process-level in-memory cache state."""
+    index: list[dict] | None = None
+    index_version: int = 0
+    built_at: float = 0.0
+    page_cache: dict[tuple[int, int, int], dict] = field(default_factory=dict)
+
+
+_clips_cache_state = ClipsCacheState()
+_clips_cache_lock = threading.RLock()
+
+
+def invalidate_clips_cache(reason: str = "unknown") -> None:
+    """Klip liste cache'ini geçersiz kılar."""
+    with _clips_cache_lock:
+        _clips_cache_state.index = None
+        _clips_cache_state.built_at = 0.0
+        _clips_cache_state.page_cache.clear()
+        _clips_cache_state.index_version += 1
+        logger.debug(
+            "🗂️ Clips cache invalidated. reason={} version={}",
+            reason,
+            _clips_cache_state.index_version,
+        )
 
 
 def build_project_file_url(project_id: str, file_kind: str, clip_name: str | None = None) -> str:
@@ -137,35 +165,6 @@ def _upload_http_error(status_code: int, code: str, message: str) -> HTTPExcepti
         status_code=status_code,
         detail={"error": {"code": code, "message": message}},
     )
-
-
-def validate_upload_size(file: UploadFile) -> None:
-    file.file.seek(0, 2)
-    file_size = file.file.tell()
-    file.file.seek(0)
-
-    if file_size > MAX_UPLOAD_BYTES:
-        raise InvalidInputError(f"Dosya boyutu çok büyük. Maksimum: {MAX_UPLOAD_BYTES // (1024 * 1024)}MB")
-
-
-def _validate_upload_type(file: UploadFile) -> None:
-    filename = (file.filename or "").strip()
-    extension = os.path.splitext(filename)[1].lower()
-    content_type = (file.content_type or "").lower()
-
-    if extension not in ALLOWED_UPLOAD_EXTENSIONS:
-        raise _upload_http_error(
-            status_code=400,
-            code="UNSUPPORTED_FILE_EXTENSION",
-            message="Desteklenmeyen dosya uzantısı. Lütfen MP4/MOV/M4V formatında bir video yükleyin.",
-        )
-
-    if content_type and content_type not in ALLOWED_UPLOAD_MIME_TYPES:
-        raise _upload_http_error(
-            status_code=400,
-            code="UNSUPPORTED_MIME_TYPE",
-            message="Desteklenmeyen dosya türü. Lütfen geçerli bir video dosyası yükleyin (örn. video/mp4).",
-        )
 
 
 def _validate_video_with_ffprobe(video_path: str) -> None:
@@ -247,8 +246,15 @@ def _validate_video_with_ffprobe(video_path: str) -> None:
 
 def prepare_uploaded_project(file: UploadFile) -> tuple[ProjectPaths, str, bool]:
     """Yüklenen videodan proje oluşturur veya mevcut projeyi reuse eder."""
-    validate_upload_size(file)
-    _validate_upload_type(file)
+    try:
+        validate_upload_size(file)
+        validate_upload(file)
+    except HTTPException as exc:
+        raise _upload_http_error(
+            status_code=exc.status_code,
+            code="INVALID_UPLOAD",
+            message=str(exc.detail),
+        ) from exc
 
     fd, temp_path = tempfile.mkstemp(suffix=".mp4")
     try:
@@ -399,8 +405,67 @@ def extract_ui_title(payload: object) -> str:
     return ""
 
 
+def _scan_clips_index() -> list[dict]:
+    """Projeleri tarayıp normalize klip indeksini oluşturur."""
+    clips: list[dict] = []
+    if not PROJECTS_DIR.exists():
+        return clips
+
+    for project_dir in PROJECTS_DIR.iterdir():
+        if not project_dir.is_dir():
+            continue
+
+        shorts_dir = project_dir / "shorts"
+        if not shorts_dir.exists():
+            continue
+
+        for clip_file in shorts_dir.iterdir():
+            if clip_file.suffix != ".mp4" or clip_file.name.startswith("temp_"):
+                continue
+
+            meta_path = shorts_dir / clip_file.name.replace(".mp4", ".json")
+            ui_title = ""
+            if meta_path.exists():
+                try:
+                    with open(meta_path, "r", encoding="utf-8") as metadata_file:
+                        meta_data = json.load(metadata_file)
+                        ui_title = extract_ui_title(meta_data)
+                except json.JSONDecodeError as e:
+                    logger.warning(f"JSON decode error in {meta_path}: {e}")
+                except OSError as e:
+                    logger.error(f"Error reading metadata {meta_path}: {e}")
+
+            clips.append({
+                "name": clip_file.name,
+                "project": project_dir.name,
+                "url": build_project_file_url(project_dir.name, "clip", clip_file.name),
+                "has_transcript": meta_path.exists(),
+                "ui_title": ui_title,
+                "created_at": clip_file.stat().st_ctime,
+            })
+
+    return sorted(clips, key=lambda x: x["created_at"], reverse=True)
+
+
+def _get_clip_index() -> tuple[list[dict], int]:
+    """TTL + explicit invalidation destekli clip index döndürür."""
+    now = time.time()
+    with _clips_cache_lock:
+        is_expired = (
+            _clips_cache_state.index is None
+            or (now - _clips_cache_state.built_at) > CLIPS_CACHE_TTL_SECONDS
+        )
+        if is_expired:
+            _clips_cache_state.index = _scan_clips_index()
+            _clips_cache_state.built_at = now
+            _clips_cache_state.page_cache.clear()
+        return _clips_cache_state.index, _clips_cache_state.index_version
+
+
 @router.get("/projects")
-async def list_projects() -> dict:
+async def list_projects(
+    _: AuthContext = Depends(require_policy("view_projects")),
+) -> dict:
     """Proje klasörlerini listeler. master.mp4 ve transcript.json varlığını döner."""
     projects = []
     if PROJECTS_DIR.exists():
@@ -416,7 +481,10 @@ async def list_projects() -> dict:
 
 
 @router.get("/projects/{project_id}/master")
-async def get_project_master_video(project_id: str) -> FileResponse:
+async def get_project_master_video(
+    project_id: str,
+    _: AuthContext = Depends(require_policy("view_project_media")),
+) -> FileResponse:
     """Proje master videosunu kontrollü olarak servis eder."""
     try:
         safe_project = sanitize_project_name(project_id)
@@ -431,7 +499,11 @@ async def get_project_master_video(project_id: str) -> FileResponse:
 
 
 @router.get("/projects/{project_id}/shorts/{clip_name}")
-async def get_project_short_asset(project_id: str, clip_name: str) -> FileResponse:
+async def get_project_short_asset(
+    project_id: str,
+    clip_name: str,
+    _: AuthContext = Depends(require_policy("view_project_media")),
+) -> FileResponse:
     """Sadece proje shorts klasöründeki .mp4/.json dosyalarını kontrollü olarak servis eder."""
     try:
         safe_project = sanitize_project_name(project_id)
@@ -455,72 +527,42 @@ async def get_project_short_asset(project_id: str, clip_name: str) -> FileRespon
 
 
 @router.get("/clips")
-async def list_clips() -> dict:
+async def list_clips(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    _: AuthContext = Depends(require_policy("view_clips")),
+) -> dict:
     """Proje klasörlerindeki tüm videoları listeler."""
-    clips = []
-    
-    if PROJECTS_DIR.exists():
-        for project_dir in PROJECTS_DIR.iterdir():
-            if not project_dir.is_dir():
-                continue
-            
-            shorts_dir = project_dir / "shorts"
-            if not shorts_dir.exists():
-                continue
-                
-            for f in shorts_dir.iterdir():
-                if f.suffix == ".mp4" and not f.name.startswith("temp_"):
-                    meta_path = shorts_dir / f.name.replace(".mp4", ".json")
-                    ui_title = ""
-                    if meta_path.exists():
-                        try:
-                            with open(meta_path, "r", encoding="utf-8") as m:
-                                meta_data = json.load(m)
-                                ui_title = extract_ui_title(meta_data)
-                        except json.JSONDecodeError as e:
-                            logger.warning(f"JSON decode error in {meta_path}: {e}")
-                        except OSError as e:
-                            logger.error(f"Error reading metadata {meta_path}: {e}")
-                    
-                    clips.append({
-                        "name":           f.name,
-                        "project":        project_dir.name,
-                        "url":            build_project_file_url(project_dir.name, "clip", f.name),
-                        "has_transcript": meta_path.exists(),
-                        "ui_title":       ui_title,
-                        "created_at":     f.stat().st_ctime,
-                    })
+    clips_sorted, index_version = _get_clip_index()
+    cache_key = (page, page_size, index_version)
+    with _clips_cache_lock:
+        cached_response = _clips_cache_state.page_cache.get(cache_key)
+    if cached_response is not None:
+        return cached_response
 
-    # Eski yapıdaki klipleri de dahil et (Geriye dönük uyumluluk)
-    if OUTPUTS_DIR.exists():
-        for f in OUTPUTS_DIR.iterdir():
-            if f.suffix == ".mp4" and not f.name.startswith("temp_") and not any(c["name"] == f.name for c in clips):
-                meta_path = OUTPUTS_DIR / f.name.replace(".mp4", ".json")
-                ui_title = ""
-                if meta_path.exists():
-                    try:
-                        with open(meta_path, "r", encoding="utf-8") as m:
-                            meta_data = json.load(m)
-                            ui_title = extract_ui_title(meta_data)
-                    except json.JSONDecodeError as e:
-                        logger.warning(f"JSON decode error in {meta_path}: {e}")
-                    except OSError as e:
-                        logger.error(f"Error reading metadata {meta_path}: {e}")
-                
-                clips.append({
-                    "name":           f.name,
-                    "project":        "legacy",
-                    "url":            f"/outputs/{f.name}",
-                    "has_transcript": meta_path.exists(),
-                    "ui_title":       ui_title,
-                    "created_at":     f.stat().st_ctime,
-                })
+    start = (page - 1) * page_size
+    end = start + page_size
+    paginated = clips_sorted[start:end]
+    total = len(clips_sorted)
 
-    return {"clips": sorted(clips, key=lambda x: x["created_at"], reverse=True)}
+    response = {
+        "clips": paginated,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "has_more": end < total,
+    }
+    with _clips_cache_lock:
+        _clips_cache_state.page_cache[cache_key] = response
+    return response
 
 
 @router.get("/clip-transcript/{clip_name}")
-async def get_clip_transcript(clip_name: str, project_id: str | None = None) -> dict:
+async def get_clip_transcript(
+    clip_name: str,
+    project_id: str | None = None,
+    _: AuthContext = Depends(require_policy("view_clip_transcript")),
+) -> dict:
     """Belirli bir klibin transkriptini getirir."""
     try:
         clip_name = sanitize_clip_name(clip_name)
@@ -553,7 +595,12 @@ async def get_clip_transcript(clip_name: str, project_id: str | None = None) -> 
 
 
 @router.get("/projects/{project_id}/files/{file_kind}")
-async def get_project_file(project_id: str, file_kind: str, clip_name: str | None = None):
+async def get_project_file(
+    project_id: str,
+    file_kind: str,
+    clip_name: str | None = None,
+    _: AuthContext = Depends(require_policy("view_project_media")),
+):
     """Yalnızca whitelist edilen proje dosyalarını döndürür."""
     path = _safe_project_file_path(project_id, file_kind, clip_name)
     media_type = "video/mp4" if path.suffix.lower() == ".mp4" else "application/json"
@@ -561,7 +608,12 @@ async def get_project_file(project_id: str, file_kind: str, clip_name: str | Non
 
 
 @router.get("/projects/{project_id}/files/{file_kind}/{clip_name}")
-async def get_project_file_with_clip_name(project_id: str, file_kind: str, clip_name: str):
+async def get_project_file_with_clip_name(
+    project_id: str,
+    file_kind: str,
+    clip_name: str,
+    _: AuthContext = Depends(require_policy("view_project_media")),
+):
     """Klip bazlı dosyaları query string olmadan döndürür."""
     path = _safe_project_file_path(project_id, file_kind, clip_name)
     media_type = "video/mp4" if path.suffix.lower() == ".mp4" else "application/json"

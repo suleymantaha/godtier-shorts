@@ -284,7 +284,10 @@ async def manual_cut_upload(
 
 
 @router.get("/transcript")
-async def get_transcript(project_id: str | None = None) -> dict:
+async def get_transcript(
+    project_id: str | None = None,
+    _: AuthContext = Depends(require_policy("view_transcript")),
+) -> dict:
     """Belirli bir projenin transkriptini arayüze gönderir."""
     if not project_id:
         return {"transcript": []}
@@ -302,7 +305,11 @@ async def get_transcript(project_id: str | None = None) -> dict:
 
 
 @router.post("/transcript")
-async def save_transcript(data: list[TranscriptSegment], project_id: str | None = None) -> dict:
+async def save_transcript(
+    data: list[TranscriptSegment],
+    project_id: str | None = None,
+    _: AuthContext = Depends(require_policy("save_transcript")),
+) -> dict:
     """Arayüzden gelen düzenlenmiş transkripti projeye veya varsayılana kaydeder."""
     if project_id:
         try:

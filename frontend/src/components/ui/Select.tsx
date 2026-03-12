@@ -21,6 +21,7 @@ interface SelectProps {
 }
 
 export const Select: React.FC<SelectProps> = ({
+    id,
     options,
     value,
     onChange,
@@ -60,13 +61,17 @@ export const Select: React.FC<SelectProps> = ({
     return (
         <div className={clsx("relative", label && "space-y-2", className)} ref={containerRef}>
             {label && (
-                <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-widest ml-1">
+                <label
+                    htmlFor={id}
+                    className="text-[11px] font-medium text-muted-foreground uppercase tracking-widest ml-1"
+                >
                     {label}
                 </label>
             )}
             
             <div className="relative">
                 <button
+                    id={id}
                     type="button"
                     onClick={() => !disabled && setIsOpen(!isOpen)}
                     disabled={disabled}

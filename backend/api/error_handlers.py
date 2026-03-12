@@ -95,7 +95,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         content=_error_payload(
             code="INTERNAL_SERVER_ERROR",
             message="Beklenmeyen bir hata oluştu.",
-            details=str(exc),
+            details=None,
             trace_id=trace_id,
         ),
     )

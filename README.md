@@ -31,6 +31,10 @@ cd frontend && npm install
 - `OPENROUTER_API_KEY` – Cloud LLM (viral analiz)
 - `LMSTUDIO_HOST` – Local LLM (opsiyonel)
 - `HF_TOKEN` – HuggingFace (faster-whisper modelleri, opsiyonel)
+- `CLERK_ISSUER_URL` ve `CLERK_AUDIENCE` – JWT doğrulama için zorunlu (Clerk)
+- `API_BEARER_TOKENS` – Opsiyonel statik token fallback (`token:role1,role2`)
+- `PYRE_PYTHON_INTERPRETER` – Opsiyonel, Pyre için interpreter override
+- `PYRE_SITE_PACKAGES` – Opsiyonel, Pyre için ek site-packages/search path
 
 ### Çalıştırma
 
@@ -172,11 +176,18 @@ flowchart TB
 | POST | `/api/manual-cut-upload` | Video + kesim |
 | WS | `/ws/progress` | Job ilerleme |
 
+## Auth Kurulum Rehberi
+
+- Clerk entegrasyonu (Dashboard JWT template, `.env`, API/WS doğrulama, troubleshooting):
+  [docs/clerk-auth-setup.md](docs/clerk-auth-setup.md)
+
 ## Güvenli dosya erişimi
 
-- Doğrudan `/projects` mount erişimi kapatılmıştır.
+- Doğrudan `/projects` ve `/outputs` static mount erişimi kapalıdır.
 - Public klip erişimi yalnızca `/api/projects/{project_id}/shorts/{clip_name}` endpoint'i üzerinden yapılır.
 - Master/transcript gibi proje kök dosyaları doğrudan erişime kapalıdır; master için `/api/projects/{id}/master` endpoint'i kullanılır.
+- Tüm `/api/*` endpoint'leri kimlik doğrulama ister.
+- WebSocket (`/ws/progress`) bağlantısı `?token=<bearer>` query param ile yetkilendirilir.
 
 ## Testler
 
@@ -187,6 +198,16 @@ pytest backend/tests -v -m "not integration"
 
 # Frontend
 cd frontend && npm run test
+```
+
+Pyre statik analiz (opsiyonel):
+
+```bash
+scripts/run_pyre.sh
+# veya env ile:
+PYRE_PYTHON_INTERPRETER=/path/to/python \
+PYRE_SITE_PACKAGES=/path/to/site-packages \
+scripts/run_pyre.sh
 ```
 
 **Scripts:** `scripts/README.md` – reburn_clip, test_subtitle_styles vb.

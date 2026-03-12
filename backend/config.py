@@ -6,6 +6,7 @@ Tüm klasör yolları ve sabitler buradan yönetilir.
 Bir yolu değiştirmek istersen, sadece bu dosyayı düzenle.
 """
 import re
+import os
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -103,17 +104,41 @@ MODELS_DIR      = ROOT / "models"
 # Sunucu ayarları
 # ---------------------------------------------------------------------------
 
-API_HOST = "0.0.0.0"
-API_PORT = 8000
-CORS_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:5174",
-]
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def _build_cors_origins() -> list[str]:
+    raw = os.getenv("CORS_ORIGINS", "").strip()
+    if raw:
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+    defaults = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+    ]
+    frontend_url = os.getenv("FRONTEND_URL", "").strip()
+    if frontend_url and frontend_url not in defaults:
+        defaults.append(frontend_url)
+    return defaults
+
+
+API_HOST = os.getenv("API_HOST", "0.0.0.0").strip() or "0.0.0.0"
+API_PORT = _env_int("API_PORT", 8000)
+CORS_ORIGINS = _build_cors_origins()
 
 # Upload limitleri (5GB)
-UPLOAD_MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024
+UPLOAD_MAX_FILE_SIZE = _env_int("UPLOAD_MAX_FILE_SIZE", 5 * 1024 * 1024 * 1024)
 MAX_UPLOAD_BYTES = UPLOAD_MAX_FILE_SIZE  # Alias
+REQUEST_BODY_HARD_LIMIT_BYTES = _env_int("REQUEST_BODY_HARD_LIMIT_BYTES", UPLOAD_MAX_FILE_SIZE)
 
 # ---------------------------------------------------------------------------
 # Workspace klasörlerini oluştur (import sırasında garantile)

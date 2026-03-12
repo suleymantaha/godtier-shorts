@@ -44,16 +44,27 @@ export const ClipGallery = ({ onEditClip }: ClipGalleryProps) => {
 
     useEffect(() => {
         cancelledRef.current = false;
-        void fetchClips();
+        const initialFetchTimer = window.setTimeout(() => {
+            void fetchClips();
+        }, 0);
         const interval = setInterval(() => void fetchClips(), POLL_INTERVAL_MS);
         return () => {
             cancelledRef.current = true;
+            clearTimeout(initialFetchTimer);
             clearInterval(interval);
         };
     }, [retryTick, fetchClips]);
 
     useEffect(() => {
-        if (refreshClipsTrigger > 0) void fetchClips();
+        if (refreshClipsTrigger <= 0) {
+            return;
+        }
+        const refreshTimer = window.setTimeout(() => {
+            void fetchClips();
+        }, 0);
+        return () => {
+            clearTimeout(refreshTimer);
+        };
     }, [refreshClipsTrigger, fetchClips]);
 
     const handleRetry = useCallback(() => {

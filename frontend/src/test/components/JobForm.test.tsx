@@ -23,15 +23,15 @@ describe('JobForm', () => {
     const { JobForm } = await import('../../components/JobForm');
     render(<JobForm />);
 
-    const urlInput = screen.getByLabelText(/youtube url/i);
+    const urlInput = screen.getByLabelText(/source feed url/i);
     expect(urlInput).toBeInTheDocument();
     expect(urlInput.tagName).toBe('INPUT');
 
     const styleSelect = screen.getByLabelText(/visual style/i);
     expect(styleSelect).toBeInTheDocument();
-    expect(styleSelect.tagName).toBe('SELECT');
+    expect(styleSelect.tagName).toBe('BUTTON');
 
-    const engineSelect = screen.getByLabelText(/ai engine/i);
+    const engineSelect = screen.getByLabelText(/ai core engine/i);
     expect(engineSelect).toBeInTheDocument();
   });
 
@@ -40,9 +40,9 @@ describe('JobForm', () => {
     const { JobForm } = await import('../../components/JobForm');
     render(<JobForm />);
 
-    const urlInput = screen.getByLabelText(/youtube url/i);
+    const urlInput = screen.getByLabelText(/source feed url/i);
     await user.type(urlInput, 'https://youtube.com/watch?v=test123');
-    const submitBtn = screen.getByRole('button', { name: /üret|generate/i });
+    const submitBtn = screen.getByRole('button', { name: /initialize sequence/i });
     await user.click(submitBtn);
 
     const errorEl = await screen.findByRole('alert');
@@ -52,9 +52,9 @@ describe('JobForm', () => {
   it('responsive: grid has responsive classes', async () => {
     const { JobForm } = await import('../../components/JobForm');
     const { container } = render(<JobForm />);
-    const grid = container.querySelector('.grid');
+    const grid = container.querySelector('.grid.grid-cols-1.md\\:grid-cols-4');
     expect(grid?.className).toContain('grid-cols-1');
-    expect(grid?.className).toContain('sm:grid-cols-2');
+    expect(grid?.className).toContain('md:grid-cols-4');
   });
 
   it('renders subtitle toggle switch', async () => {
@@ -89,10 +89,10 @@ describe('JobForm', () => {
     const toggle = screen.getByRole('switch', { name: /altyaz/i });
     await user.click(toggle);
 
-    const urlInput = screen.getByLabelText(/youtube url/i);
+    const urlInput = screen.getByLabelText(/source feed url/i);
     await user.type(urlInput, 'https://youtube.com/watch?v=test123');
 
-    const submitBtn = screen.getByRole('button', { name: /üret|generate/i });
+    const submitBtn = screen.getByRole('button', { name: /initialize sequence/i });
     await user.click(submitBtn);
 
     expect(mockStart).toHaveBeenCalledWith(
@@ -104,7 +104,7 @@ describe('JobForm', () => {
     const { JobForm } = await import('../../components/JobForm');
     render(<JobForm />);
 
-    expect(screen.getByLabelText(/video/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/target clone count/i)).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: /otomatik mod/i })).toBeInTheDocument();
   });
 
@@ -127,10 +127,10 @@ describe('JobForm', () => {
     const { JobForm } = await import('../../components/JobForm');
     render(<JobForm />);
 
-    const urlInput = screen.getByLabelText(/youtube url/i);
+    const urlInput = screen.getByLabelText(/source feed url/i);
     await user.type(urlInput, 'https://youtube.com/watch?v=test123');
 
-    const submitBtn = screen.getByRole('button', { name: /üret|generate/i });
+    const submitBtn = screen.getByRole('button', { name: /initialize sequence/i });
     await user.click(submitBtn);
 
     expect(mockStart).toHaveBeenCalledWith(

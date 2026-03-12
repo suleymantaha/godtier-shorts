@@ -8,6 +8,21 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/three') || id.includes('node_modules/@react-three/')) {
+            return 'vendor-three';
+          }
+          if (id.includes('node_modules/@clerk/') || id.includes('node_modules/@clerk')) {
+            return 'vendor-auth';
+          }
+          return undefined;
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',

@@ -11,7 +11,7 @@ export interface LogEntry {
     timestamp: string;
 }
 
-export type JobStatus = 'queued' | 'processing' | 'completed' | 'cancelled' | 'error';
+export type JobStatus = 'queued' | 'processing' | 'completed' | 'cancelled' | 'error' | 'empty';
 
 export interface Job {
     job_id: string;
@@ -36,6 +36,14 @@ export interface Clip {
     has_transcript: boolean;
     ui_title?: string;
     created_at: number;
+}
+
+export interface ClipListResponse {
+    clips: Clip[];
+    page?: number;
+    page_size?: number;
+    total?: number;
+    has_more?: boolean;
 }
 
 /** WhisperX kelime segmenti */

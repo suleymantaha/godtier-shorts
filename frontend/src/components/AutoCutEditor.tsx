@@ -85,7 +85,7 @@ export const AutoCutEditor: React.FC = () => {
             }
         };
         void syncJobs();
-    }, []);
+    }, [currentJobId, fetchJobs]);
 
     const busy = isProjectBusy(projectId, jobs);
     const queuePosition = currentJobId ? getQueuePosition(currentJobId, jobs) : null;

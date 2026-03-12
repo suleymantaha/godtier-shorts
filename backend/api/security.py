@@ -5,18 +5,12 @@ Bearer/JWT tabanlı kimlik doğrulama ve rol/policy denetimi.
 """
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
-import json
 import os
-import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
 import jwt
 from jwt import PyJWKClient
-from typing import Any, Callable
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -40,12 +34,28 @@ POLICY_ROLES: dict[str, set[str]] = {
     "reburn": {"admin", "editor"},
     "manual_cut_upload": {"admin", "editor", "producer"},
     "cancel_job": {"admin", "operator"},
+    "view_projects": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
+    "view_project_media": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
+    "view_clips": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
+    "view_clip_transcript": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
+    "view_transcript": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
+    "view_jobs": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
+    "view_styles": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
+    "save_transcript": {"admin", "producer", "editor"},
+    "websocket_progress": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
 }
 
+WEAK_STATIC_TOKENS = {"test-token", "changeme", "change-me", "default-token", "example-token"}
 
-def _b64url_decode(data: str) -> bytes:
-    padding = "=" * ((4 - len(data) % 4) % 4)
-    return base64.urlsafe_b64decode(data + padding)
+
+def _security_log_ws(event: str, reason: str, subject: str = "anonymous", roles: set[str] | None = None) -> None:
+    logger.warning(
+        "🔐 Security event={} reason='{}' method=WS path=/ws/progress subject={} roles={}",
+        event,
+        reason,
+        subject,
+        sorted(roles or []),
+    )
 
 
 def _parse_static_tokens(raw: str) -> dict[str, set[str]]:
@@ -58,11 +68,15 @@ def _parse_static_tokens(raw: str) -> dict[str, set[str]]:
         token = token.strip()
         if not token:
             continue
+        if " " in token or token.lower() in WEAK_STATIC_TOKENS:
+            raise ValueError("Zayıf veya geçersiz static token değeri tespit edildi")
         if not sep:
             mapping[token] = {"admin"}
             continue
         roles = {r.strip().lower() for r in role_part.split(",") if r.strip()}
-        mapping[token] = roles or {"admin"}
+        if not roles:
+            raise ValueError("Static token için en az bir rol belirtilmelidir")
+        mapping[token] = roles
     return mapping
 
 
@@ -73,6 +87,8 @@ def _get_static_token_mapping() -> dict[str, set[str]]:
 
     single = os.getenv("API_BEARER_TOKEN", "").strip()
     if single:
+        if " " in single or single.lower() in WEAK_STATIC_TOKENS:
+            raise ValueError("Zayıf veya geçersiz static token değeri tespit edildi")
         return {single: {"admin"}}
     return {}
 
@@ -86,7 +102,7 @@ def _extract_roles(payload: dict[str, Any]) -> set[str]:
     return set()
 
 
-def _decode_jwt(token: str, issuer: str) -> AuthContext:
+def _decode_jwt(token: str, issuer: str, audience: str) -> AuthContext:
     # Clerk uses RS256, we need to fetch their public key (JWKS)
     jwks_client = PyJWKClient(f"{issuer}/.well-known/jwks.json")
     try:
@@ -96,17 +112,55 @@ def _decode_jwt(token: str, issuer: str) -> AuthContext:
             signing_key.key,
             algorithms=["RS256"],
             issuer=issuer,
-            options={"verify_aud": False}
+            audience=audience,
+            options={"verify_aud": True},
         )
-    except Exception as e:
-        raise ValueError(f"JWT Verification failed: {str(e)}")
+    except Exception as exc:
+        raise ValueError(f"JWT verification failed: {exc}") from exc
 
     subject = str(payload.get("sub") or "jwt-user")
-    
-    # Eger jwt icinde ozellestirilmis `roles` varsa al, yoksa clerk'ten gelen tum kullanicilara varsayilan olarak "admin" ver (esneklik icin).
-    roles = _extract_roles(payload) or {"admin"}
-    
+    roles = _extract_roles(payload)
+    if not roles:
+        raise ValueError("JWT roles claim eksik veya boş")
     return AuthContext(subject=subject, roles=roles, token_type="jwt")
+
+
+def _authenticate_token(token: str) -> AuthContext:
+    token = token.strip()
+    if not token:
+        raise _auth_exception(status.HTTP_401_UNAUTHORIZED, "unauthorized", "Bearer token gerekli")
+
+    try:
+        static_tokens = _get_static_token_mapping()
+    except ValueError as exc:
+        raise _auth_exception(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "auth_config_invalid",
+            str(exc),
+        ) from exc
+    if token in static_tokens:
+        roles = static_tokens[token]
+        return AuthContext(subject="static-token", roles=roles, token_type="bearer")
+
+    clerk_issuer = os.getenv("CLERK_ISSUER_URL", "").strip()
+    clerk_audience = os.getenv("CLERK_AUDIENCE", "").strip()
+    if clerk_issuer:
+        if not clerk_audience:
+            raise _auth_exception(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "auth_config_invalid",
+                "CLERK_AUDIENCE tanımlı olmalıdır",
+            )
+        try:
+            return _decode_jwt(token, clerk_issuer, clerk_audience)
+        except ValueError as exc:
+            raise _auth_exception(status.HTTP_401_UNAUTHORIZED, "unauthorized", "Geçersiz kimlik doğrulama bilgisi") from exc
+
+    raise _auth_exception(
+        status.HTTP_401_UNAUTHORIZED,
+        "unauthorized",
+        "Sunucu kimlik doğrulama yapılandırması eksik",
+    )
 
 
 def _security_log(request: Request, event: str, reason: str, subject: str = "anonymous", roles: set[str] | None = None) -> None:
@@ -141,23 +195,34 @@ def authenticate_request(
         _security_log(request, event="auth_failed", reason="Bearer token eksik veya şema hatalı")
         raise _auth_exception(status.HTTP_401_UNAUTHORIZED, "unauthorized", "Bearer token gerekli")
 
-    token = credentials.credentials.strip()
-    static_tokens = _get_static_token_mapping()
+    try:
+        return _authenticate_token(credentials.credentials)
+    except HTTPException as exc:
+        _security_log(request, event="auth_failed", reason=str(exc.detail))
+        raise
 
-    if token in static_tokens:
-        roles = static_tokens[token]
-        return AuthContext(subject="static-token", roles=roles, token_type="bearer")
 
-    clerk_issuer = os.getenv("CLERK_ISSUER_URL", "").strip()
-    if clerk_issuer:
-        try:
-            return _decode_jwt(token, clerk_issuer)
-        except ValueError as exc:
-            _security_log(request, event="auth_failed", reason=str(exc))
-            raise _auth_exception(status.HTTP_401_UNAUTHORIZED, "unauthorized", "Geçersiz kimlik doğrulama bilgisi") from exc
+def authenticate_websocket_token(token: str | None) -> AuthContext:
+    if token is None:
+        _security_log_ws(event="auth_failed", reason="WebSocket token eksik")
+        raise _auth_exception(status.HTTP_401_UNAUTHORIZED, "unauthorized", "WebSocket token gerekli")
+    try:
+        return _authenticate_token(token)
+    except HTTPException as exc:
+        _security_log_ws(event="auth_failed", reason=str(exc.detail))
+        raise
 
-    _security_log(request, event="auth_failed", reason="Token doğrulama yapılandırması (CLERK_ISSUER_URL veya static tokens) bulunamadı")
-    raise _auth_exception(status.HTTP_401_UNAUTHORIZED, "unauthorized", "Sunucu kimlik doğrulama yapılandırması eksik")
+
+def validate_auth_configuration() -> None:
+    issuer = os.getenv("CLERK_ISSUER_URL", "").strip()
+    audience = os.getenv("CLERK_AUDIENCE", "").strip()
+    has_static = bool(os.getenv("API_BEARER_TOKENS", "").strip() or os.getenv("API_BEARER_TOKEN", "").strip())
+    if not issuer and not has_static:
+        raise RuntimeError("Auth config eksik: CLERK_ISSUER_URL veya static bearer token tanımlanmalı")
+    if issuer and not audience:
+        raise RuntimeError("Auth config eksik: CLERK_AUDIENCE zorunlu")
+    # Also fail-fast on invalid static tokens.
+    _get_static_token_mapping()
 
 
 def require_policy(policy_name: str) -> Callable[[Request, AuthContext], AuthContext]:

@@ -11,7 +11,7 @@ interface JobState {
     /** Job tamamlandığında artar; ClipGallery yenileme tetikler */
     refreshClipsTrigger: number;
     fetchJobs: () => Promise<void>;
-    updateJobProgress: (job_id: string, msg: string, progress: number) => void;
+    updateJobProgress: (job_id: string, msg: string, progress: number, status?: Job['status']) => void;
     cancelJob: (job_id: string) => Promise<void>;
     setWsStatus: (status: WsStatus) => void;
     addClip: (url: string) => void;
@@ -40,12 +40,12 @@ export const useJobStore = create<JobState>((set) => ({
 
     clearError: () => set({ lastError: null }),
 
-    updateJobProgress: (job_id: string, msg: string, progress: number) => set((state) => {
+    updateJobProgress: (job_id: string, msg: string, progress: number, status?: Job['status']) => set((state) => {
         const jobExists = state.jobs.some(j => j.job_id === job_id);
-        const nextStatus: Job['status'] =
-            progress < 0 ? 'error' : progress < 100 ? 'processing' : 'completed';
+        const nextStatus: Job['status'] = status
+            ?? (progress < 0 ? 'error' : progress < 100 ? 'processing' : 'completed');
         const nextProgress = progress < 0 ? 0 : progress;
-        const jobCompleted = progress >= 100;
+        const jobCompleted = progress >= 100 && nextStatus !== 'empty';
         const fallbackJob: Job = {
             job_id,
             url: '',

@@ -3,7 +3,8 @@ from fastapi import HTTPException, UploadFile
 from backend.config import UPLOAD_MAX_FILE_SIZE
 from backend.core.exceptions import InvalidInputError
 
-ALLOWED_UPLOAD_TYPES = {"video/mp4", "video/quicktime", "video/x-matroska", "video/webm"}
+ALLOWED_UPLOAD_MIME_TYPES = {"video/mp4", "video/quicktime", "video/x-m4v"}
+ALLOWED_UPLOAD_EXTENSIONS = {".mp4", ".mov", ".m4v"}
 
 
 def _bytes_to_mb(size_in_bytes: int) -> int:
@@ -12,12 +13,14 @@ def _bytes_to_mb(size_in_bytes: int) -> int:
 
 
 def validate_upload(file: UploadFile) -> None:
+    filename = (file.filename or "").strip().lower()
+    extension = filename[filename.rfind(".") :] if "." in filename else ""
     content_type = (file.content_type or "").lower()
-    if content_type and content_type not in ALLOWED_UPLOAD_TYPES:
-        raise HTTPException(status_code=415, detail="Desteklenmeyen dosya türü")
-
-    if file.filename and not file.filename.lower().endswith((".mp4", ".mov", ".mkv", ".webm")):
+    if extension not in ALLOWED_UPLOAD_EXTENSIONS:
         raise HTTPException(status_code=415, detail="Geçersiz dosya uzantısı")
+
+    if content_type and content_type not in ALLOWED_UPLOAD_MIME_TYPES:
+        raise HTTPException(status_code=415, detail="Desteklenmeyen dosya türü")
 
 
 def validate_upload_size(file: UploadFile) -> None:

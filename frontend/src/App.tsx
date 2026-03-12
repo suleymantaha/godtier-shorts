@@ -2,24 +2,25 @@ import { JobForm } from './components/JobForm';
 import { HoloTerminal } from './components/HoloTerminal';
 import { ClipGallery } from './components/ClipGallery';
 import { JobQueue } from './components/JobQueue';
-import { Editor } from './components/Editor';
-import { AutoCutEditor } from './components/AutoCutEditor';
-import { SubtitleEditor } from './components/SubtitleEditor';
 import { SubtitlePreview } from './components/SubtitlePreview';
-import ThreeCanvas from './components/ThreeCanvas';
 import { useWebSocket } from './hooks/useWebSocket';
 import { Layers, Github, Twitter, Scissors, Settings, ChevronLeft, Subtitles, Sun, Moon } from 'lucide-react';
 import { IconButton } from './components/ui/IconButton';
 import { ConnectionChip } from './components/ui/ConnectionChip';
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import type { Clip } from './types';
 import { useJobStore } from './store/useJobStore';
 import { useThemeStore } from './store/useThemeStore';
 import { readStored } from './utils/storage';
 import { SignedIn, SignedOut, SignIn, UserButton, useAuth } from '@clerk/clerk-react';
 import { setApiToken } from './api/client';
+import { CLERK_JWT_TEMPLATE } from './config';
 const APP_STATE_STORAGE_KEY = 'godtier-app-state';
 const DEFAULT_APP_STATE = { viewMode: 'config' as const, editingClip: null as Clip | null };
+const ThreeCanvas = lazy(() => import('./components/ThreeCanvas'));
+const Editor = lazy(() => import('./components/Editor').then((m) => ({ default: m.Editor })));
+const AutoCutEditor = lazy(() => import('./components/AutoCutEditor').then((m) => ({ default: m.AutoCutEditor })));
+const SubtitleEditor = lazy(() => import('./components/SubtitleEditor').then((m) => ({ default: m.SubtitleEditor })));
 
 function readAppState(): { viewMode: 'config' | 'manual' | 'subtitle'; editingClip: Clip | null } {
   const parsed = readStored<{ viewMode?: string; editingClip?: Clip | null }>(
@@ -34,7 +35,8 @@ function readAppState(): { viewMode: 'config' | 'manual' | 'subtitle'; editingCl
 }
 
 function App() {
-  useWebSocket();
+  const { getToken, isLoaded, isSignedIn } = useAuth();
+  useWebSocket(isLoaded && isSignedIn);
   const wsStatus = useJobStore(s => s.wsStatus);
   const [viewMode, setViewMode] = useState<'config' | 'manual' | 'subtitle'>(() => readAppState().viewMode);
   const [editingClip, setEditingClip] = useState<Clip | null>(() => readAppState().editingClip);
@@ -45,15 +47,17 @@ function App() {
   const handleStyleChange = useCallback((s: string) => setCurrentStyle(s), []);
   const handleSkipSubtitlesChange = useCallback((v: boolean) => setSubtitlesDisabled(v), []);
   
-  const { getToken, isLoaded, isSignedIn } = useAuth();
-
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
   useEffect(() => {
     if (isLoaded && isSignedIn) {
-       getToken().then(token => setApiToken(token));
+       if (CLERK_JWT_TEMPLATE) {
+         getToken({ template: CLERK_JWT_TEMPLATE }).then(token => setApiToken(token));
+       } else {
+         getToken().then(token => setApiToken(token));
+       }
     } else {
        setApiToken(null);
     }
@@ -72,7 +76,9 @@ function App() {
 
   return (
     <>
-      <ThreeCanvas />
+      <Suspense fallback={null}>
+        <ThreeCanvas />
+      </Suspense>
       <div className="min-h-screen bg-transparent px-4 py-4 md:px-8 md:py-6 lg:px-12 lg:py-8 space-y-8 mx-auto w-full">
         <SignedOut>
         <div className="flex w-full h-[80vh] items-center justify-center animate-in fade-in duration-1000">
@@ -172,15 +178,21 @@ function App() {
                 <span className="opacity-40 text-foreground">SYSTEM:EDITING</span> {editingClip.name}
               </h2>
             </div>
-            <Editor mode="clip" targetClip={editingClip} onClose={() => setEditingClip(null)} />
+            <Suspense fallback={<div className="glass-card p-4 text-xs font-mono">Editor yukleniyor...</div>}>
+              <Editor mode="clip" targetClip={editingClip} onClose={() => setEditingClip(null)} />
+            </Suspense>
           </div>
         ) : viewMode === 'manual' ? (
           <div className="lg:col-span-12">
-            <AutoCutEditor />
+            <Suspense fallback={<div className="glass-card p-4 text-xs font-mono">Auto Cut yukleniyor...</div>}>
+              <AutoCutEditor />
+            </Suspense>
           </div>
         ) : viewMode === 'subtitle' ? (
           <div className="lg:col-span-12">
-            <SubtitleEditor />
+            <Suspense fallback={<div className="glass-card p-4 text-xs font-mono">Subtitle Editor yukleniyor...</div>}>
+              <SubtitleEditor />
+            </Suspense>
           </div>
         ) : (
           <>
