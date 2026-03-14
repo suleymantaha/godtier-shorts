@@ -8,7 +8,7 @@ import pytest
 
 @pytest.fixture
 def sample_transcript():
-    """Örnek WhisperX transcript JSON."""
+    """Örnek faster-whisper transkript JSON'u."""
     return [
         {
             "text": "Merhaba dünya",

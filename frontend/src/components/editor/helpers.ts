@@ -1,0 +1,173 @@
+import { API_BASE } from '../../config';
+import type { Clip, Segment } from '../../types';
+import { getClipUrl } from '../../utils/url';
+import { isStyleName, type StyleName } from '../../config/subtitleStyles';
+import { readStored } from '../../utils/storage';
+
+export const MASTER_EDITOR_SESSION_KEY = 'godtier-editor-master-session';
+
+type EditorStateDefaults = {
+  centerX: number;
+  currentJobId: string | null;
+  endTime: number;
+  numClips: number;
+  startTime: number;
+  style: StyleName;
+  transcript: Segment[];
+};
+
+const DEFAULT_EDITOR_STATE: EditorStateDefaults = {
+  centerX: 0.5,
+  currentJobId: null,
+  endTime: 60,
+  numClips: 3,
+  startTime: 0,
+  style: 'HORMOZI',
+  transcript: [],
+};
+
+export interface StoredEditorSession {
+  centerX?: number;
+  currentJobId?: string | null;
+  endTime?: number;
+  numClips?: number;
+  projectId?: string;
+  startTime?: number;
+  style?: StyleName;
+  transcript?: Segment[];
+}
+
+export type ResolvedEditorSessionState = EditorStateDefaults & {
+  clearPersistedSession: boolean;
+  projectId?: string;
+};
+
+export interface VisibleTranscriptEntry {
+  index: number;
+  segment: Segment;
+}
+
+export function formatUploadLimit(bytes: number): string {
+  const gb = bytes / (1024 * 1024 * 1024);
+
+  return Number.isInteger(gb) ? `${gb}GB` : `${gb.toFixed(1)}GB`;
+}
+
+export function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
+export function buildEditorSessionKey(mode: 'master' | 'clip', targetClip?: Clip): string {
+  if (mode === 'clip' && targetClip) {
+    return `godtier-editor-clip-session:${targetClip.project ?? 'legacy'}:${targetClip.name}`;
+  }
+
+  return MASTER_EDITOR_SESSION_KEY;
+}
+
+export function readStoredEditorSession(sessionKey: string): StoredEditorSession | null {
+  return readStored<StoredEditorSession | null>(sessionKey, null);
+}
+
+export function resolveClipProjectId(targetClip?: Clip): string | undefined {
+  return targetClip?.project && targetClip.project !== 'legacy' ? targetClip.project : undefined;
+}
+
+export function resolveStoredEditorState(
+  mode: 'master' | 'clip',
+  targetClip: Clip | undefined,
+  clipProjectId: string | undefined,
+  stored: StoredEditorSession | null,
+): ResolvedEditorSessionState {
+  if (mode !== 'clip' || !targetClip) {
+    return {
+      ...DEFAULT_EDITOR_STATE,
+      clearPersistedSession: true,
+      projectId: undefined,
+    };
+  }
+
+  return {
+    centerX: resolveStoredNumber(stored?.centerX, DEFAULT_EDITOR_STATE.centerX),
+    clearPersistedSession: false,
+    currentJobId: resolveStoredJobId(stored?.currentJobId),
+    endTime: resolveStoredNumber(stored?.endTime, DEFAULT_EDITOR_STATE.endTime),
+    numClips: resolveStoredNumber(stored?.numClips, DEFAULT_EDITOR_STATE.numClips),
+    projectId: stored?.projectId ?? clipProjectId,
+    startTime: resolveStoredNumber(stored?.startTime, DEFAULT_EDITOR_STATE.startTime),
+    style: resolveStoredStyle(stored?.style),
+    transcript: resolveStoredTranscript(stored?.transcript),
+  };
+}
+
+export function buildStoredEditorSession(state: Omit<ResolvedEditorSessionState, 'clearPersistedSession'>): StoredEditorSession {
+  return {
+    centerX: state.centerX,
+    currentJobId: state.currentJobId,
+    endTime: state.endTime,
+    numClips: state.numClips,
+    projectId: state.projectId,
+    startTime: state.startTime,
+    style: state.style,
+    transcript: state.transcript,
+  };
+}
+
+export function clampLoadedMetadataEndTime(duration: number): number {
+  return Math.min(60, duration);
+}
+
+export function getVisibleTranscriptEntries(transcript: Segment[], startTime: number, endTime: number): VisibleTranscriptEntry[] {
+  return transcript.reduce<VisibleTranscriptEntry[]>((entries, segment, index) => {
+    if (segment.start >= startTime && segment.end <= endTime) {
+      entries.push({ index, segment });
+    }
+
+    return entries;
+  }, []);
+}
+
+export function filterTranscriptForManualRender(transcript: Segment[], startTime: number, endTime: number): Segment[] {
+  return transcript.filter((segment) => segment.start >= startTime && segment.end <= endTime);
+}
+
+export function findTranscriptIndexAtTime(transcript: Segment[], time: number): number {
+  return transcript.findIndex((segment) => time >= segment.start && time <= segment.end);
+}
+
+export function getTimeRangeError(startTime: number, endTime: number): string | null {
+  return endTime <= startTime ? 'Bitiş zamanı başlangıçtan büyük olmalı.' : null;
+}
+
+export function resolveEditorVideoSrc(
+  localSrc: string | null,
+  mode: 'master' | 'clip',
+  targetClip: Clip | undefined,
+  projectId: string | undefined,
+): string | undefined {
+  if (localSrc) {
+    return localSrc;
+  }
+
+  if (mode === 'clip' && targetClip) {
+    return getClipUrl(targetClip);
+  }
+
+  return projectId ? `${API_BASE}/api/projects/${projectId}/master` : undefined;
+}
+
+function resolveStoredJobId(value: string | null | undefined): string | null {
+  return typeof value === 'string' ? value : DEFAULT_EDITOR_STATE.currentJobId;
+}
+
+function resolveStoredNumber(value: number | undefined, fallback: number): number {
+  return typeof value === 'number' ? value : fallback;
+}
+
+function resolveStoredStyle(value: unknown): StyleName {
+  return isStyleName(value) ? value : DEFAULT_EDITOR_STATE.style;
+}
+
+function resolveStoredTranscript(value: Segment[] | undefined): Segment[] {
+  return Array.isArray(value) ? value : DEFAULT_EDITOR_STATE.transcript;
+}

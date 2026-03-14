@@ -46,7 +46,14 @@ export interface ClipListResponse {
     has_more?: boolean;
 }
 
-/** WhisperX kelime segmenti */
+export interface DeleteClipResponse {
+    status: 'deleted' | 'not_found';
+    deleted: boolean;
+    project_id: string;
+    clip_name: string;
+}
+
+/** Kelime zaman damgalı transkript segmenti */
 export interface Word {
     word: string;
     start: number;
@@ -54,7 +61,7 @@ export interface Word {
     score?: number;
 }
 
-/** WhisperX transkript segmenti */
+/** Ana transkript segmenti */
 export interface Segment {
     text: string;
     start: number;
@@ -79,12 +86,45 @@ export interface RenderMetadata {
     center_x?: number | null;
     layout?: string;
     style_name?: string;
+    cut_as_short?: boolean;
 }
 
 export interface ClipMetadata {
     transcript: Segment[];
     viral_metadata?: ViralMetadata | null;
     render_metadata?: RenderMetadata | null;
+}
+
+export type TranscriptStatus = 'ready' | 'pending' | 'failed';
+export type ClipTranscriptStatus = 'ready' | 'project_pending' | 'recovering' | 'needs_recovery' | 'failed';
+export type TranscriptRecoveryStrategy = 'auto' | 'project_slice' | 'transcribe_source';
+
+export interface ClipTranscriptCapabilities {
+    has_clip_metadata: boolean;
+    has_clip_transcript: boolean;
+    has_raw_backup: boolean;
+    project_has_transcript: boolean;
+    can_recover_from_project: boolean;
+    can_transcribe_source: boolean;
+    resolved_project_id?: string | null;
+}
+
+export interface ClipTranscriptResponse {
+    transcript: Segment[];
+    viral_metadata?: ViralMetadata | null;
+    render_metadata?: RenderMetadata | null;
+    capabilities?: ClipTranscriptCapabilities;
+    transcript_status?: ClipTranscriptStatus;
+    recommended_strategy?: Exclude<TranscriptRecoveryStrategy, 'auto'> | null;
+    active_job_id?: string | null;
+    last_error?: string | null;
+}
+
+export interface ProjectTranscriptResponse {
+    transcript: Segment[];
+    transcript_status?: TranscriptStatus;
+    active_job_id?: string | null;
+    last_error?: string | null;
 }
 
 export type WsStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
@@ -128,6 +168,25 @@ export interface ReburnPayload {
     style_name?: string;
 }
 
+export interface ClipTranscriptRecoveryPayload {
+    clip_name: string;
+    project_id?: string;
+    strategy: TranscriptRecoveryStrategy;
+}
+
+export interface ProjectTranscriptRecoveryPayload {
+    project_id: string;
+}
+
+export interface ProjectSummary {
+    id: string;
+    has_master: boolean;
+    has_transcript: boolean;
+    transcript_status?: TranscriptStatus;
+    active_job_id?: string | null;
+    last_error?: string | null;
+}
+
 export interface BatchJobPayload {
     project_id?: string;
     start_time: number;
@@ -135,4 +194,60 @@ export interface BatchJobPayload {
     num_clips: number;
     style_name: string;
     layout?: string;
+}
+
+export type SocialPlatform =
+    | 'youtube_shorts'
+    | 'tiktok'
+    | 'instagram_reels'
+    | 'facebook_reels'
+    | 'x'
+    | 'linkedin';
+
+export interface SocialAccount {
+    id: string;
+    name: string;
+    platform: SocialPlatform;
+    provider?: string;
+    username?: string | null;
+    avatar_url?: string | null;
+}
+
+export interface ShareDraftContent {
+    title: string;
+    text: string;
+    hashtags: string[];
+    hook_text?: string;
+    viral_score?: number;
+}
+
+export interface SharePrefillResponse {
+    project_id: string;
+    clip_name: string;
+    clip_exists: boolean;
+    source: {
+        viral_metadata?: ViralMetadata | null;
+        has_clip_metadata: boolean;
+        has_drafts: boolean;
+    };
+    platforms: Record<SocialPlatform, ShareDraftContent>;
+}
+
+export interface PublishJob {
+    id: string;
+    provider: string;
+    project_id: string;
+    clip_name: string;
+    platform: SocialPlatform;
+    account_id: string;
+    mode: 'now' | 'scheduled';
+    state: 'draft' | 'queued' | 'scheduled' | 'publishing' | 'published' | 'retrying' | 'failed' | 'cancelled' | 'pending_approval';
+    attempts: number;
+    scheduled_at?: string | null;
+    last_error?: string | null;
+    provider_job_id?: string | null;
+    approval_required: boolean;
+    timeline?: Array<{ state: string; message: string; at: string }>;
+    created_at: string;
+    updated_at: string;
 }

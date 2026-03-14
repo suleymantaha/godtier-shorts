@@ -2,6 +2,10 @@
 
 Ana proje: [README.md](../README.md)
 
+## Kurulum
+
+- [API Key ve .env Rehberi](./api-key-setup.md)
+
 ## Sayfalar (UI)
 
 
@@ -37,5 +41,4 @@ Ana proje: [README.md](../README.md)
 | [Video Processor](./architecture/video-processor.md)     | YOLO + SteadyCam crop                  |
 | [Subtitle Styles](./architecture/subtitle-styles.md)     | ASS preset stilleri                    |
 | [Subtitle Renderer](./architecture/subtitle-renderer.md) | Burn-in                                |
-
 

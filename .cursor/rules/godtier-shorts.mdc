@@ -1,0 +1,21 @@
+# GodTier Shorts Project Rule
+
+Use `.cursor/skills/godtier-shorts/SKILL.md` as the repo-specific playbook for this project.
+
+## Default Behavior
+
+- Before changing workflows, subtitle styles, auth, WebSocket progress, social publishing, or runtime config, read the matching file under `.cursor/skills/godtier-shorts/references/`.
+- Prefer these canonical entry points:
+  - `backend/api/server.py`
+  - `backend/core/orchestrator.py`
+  - `backend/services/subtitle_renderer.py`
+  - `backend/services/subtitle_styles.py`
+  - `frontend/src/config/subtitleStyles.ts`
+- Keep backend and frontend contracts aligned for shared payloads, style names, and message shapes.
+- Preserve the existing `workspace/projects/<project_id>/` layout and path sanitization helpers.
+- Run the smallest relevant checks first; use `bash scripts/verify.sh` for broad verification.
+- Do not reintroduce legacy subtitle renderer imports or collapse workflow modules back into monoliths.
+
+---
+alwaysApply: true
+---

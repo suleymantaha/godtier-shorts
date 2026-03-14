@@ -1,117 +1,112 @@
 import { useEffect, useRef } from 'react';
-import { useJobStore } from '../store/useJobStore';
-import { WS_BASE } from '../config';
-import { getFreshToken } from '../api/client';
 
-const MAX_RETRY = 5;
-const RETRY_DELAY = 3000;
+import { getFreshToken } from '../api/client';
+import { WS_BASE } from '../config';
+import { useJobStore } from '../store/useJobStore';
+import {
+  MAX_WEBSOCKET_RETRY,
+  RETRY_DELAY_MS,
+  createProgressWebSocket,
+  getConnectStatus,
+  getReconnectState,
+  parseProgressMessage,
+} from './useWebSocket.helpers';
+
+function useLatestRef<T>(value: T) {
+  const ref = useRef(value);
+
+  useEffect(() => {
+    ref.current = value;
+  }, [value]);
+
+  return ref;
+}
 
 export const useWebSocket = (enabled = true) => {
-    const ws = useRef<WebSocket | null>(null);
-    const retryCount = useRef(0);
-    const reconnectTimeoutId = useRef<number | null>(null);
-    const isUnmounted = useRef(false);
-    const { updateJobProgress, fetchJobs, setWsStatus } = useJobStore();
+  const ws = useRef<WebSocket | null>(null);
+  const retryCount = useRef(0);
+  const reconnectTimeoutId = useRef<number | null>(null);
+  const isUnmounted = useRef(false);
+  const { updateJobProgress, fetchJobs, setWsStatus } = useJobStore();
+  const updateJobProgressRef = useLatestRef(updateJobProgress);
+  const fetchJobsRef = useLatestRef(fetchJobs);
+  const setWsStatusRef = useLatestRef(setWsStatus);
 
-    const updateJobProgressRef = useRef(updateJobProgress);
-    const fetchJobsRef = useRef(fetchJobs);
-    const setWsStatusRef = useRef(setWsStatus);
+  useEffect(() => {
+    if (!enabled) {
+      setWsStatusRef.current('disconnected');
+      return;
+    }
 
-    useEffect(() => {
-        updateJobProgressRef.current = updateJobProgress;
-    }, [updateJobProgress]);
+    isUnmounted.current = false;
 
-    useEffect(() => {
-        fetchJobsRef.current = fetchJobs;
-    }, [fetchJobs]);
+    const connect = async () => {
+      if (retryCount.current >= MAX_WEBSOCKET_RETRY) {
+        setWsStatusRef.current('disconnected');
+        return;
+      }
 
-    useEffect(() => {
-        setWsStatusRef.current = setWsStatus;
-    }, [setWsStatus]);
+      setWsStatusRef.current(getConnectStatus(retryCount.current));
+      ws.current = createProgressWebSocket(await getFreshToken(), WS_BASE);
 
-    useEffect(() => {
-        if (!enabled) {
-            setWsStatusRef.current('disconnected');
-            return;
+      ws.current.onopen = () => {
+        retryCount.current = 0;
+        setWsStatusRef.current('connected');
+        void fetchJobsRef.current();
+      };
+
+      ws.current.onmessage = (event) => {
+        const progressMessage = parseProgressMessage(event.data);
+        if (!progressMessage) {
+          return;
         }
-        isUnmounted.current = false;
-        fetchJobsRef.current();
 
-        const connect = async () => {
-            if (retryCount.current >= MAX_RETRY) {
-                setWsStatusRef.current('disconnected');
-                return;
-            }
+        updateJobProgressRef.current(
+          progressMessage.job_id,
+          progressMessage.message,
+          progressMessage.progress,
+          progressMessage.status,
+        );
+      };
 
-            if (retryCount.current > 0) {
-                setWsStatusRef.current('reconnecting');
-            } else {
-                setWsStatusRef.current('connecting');
-            }
+      ws.current.onerror = () => {
+        /* onclose will fire after onerror */
+      };
 
-            const token = await getFreshToken();
-            const socketUrl = `${WS_BASE}/ws/progress`;
-            ws.current = token
-                ? new WebSocket(socketUrl, ['bearer', token])
-                : new WebSocket(socketUrl);
+      ws.current.onclose = () => {
+        if (isUnmounted.current) {
+          return;
+        }
 
-            ws.current.onopen = () => {
-                retryCount.current = 0;
-                setWsStatusRef.current('connected');
-                void fetchJobsRef.current();
-            };
+        const reconnectState = getReconnectState(retryCount.current, MAX_WEBSOCKET_RETRY);
+        retryCount.current = reconnectState.nextRetryCount;
 
-            ws.current.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    if (data.job_id) {
-                        updateJobProgressRef.current(
-                            data.job_id,
-                            data.message,
-                            data.progress,
-                            data.status,
-                        );
-                    }
-                } catch (err) {
-                    console.error('WebSocket message parse error:', err);
-                }
-            };
+        if (!reconnectState.shouldReconnect) {
+          setWsStatusRef.current('disconnected');
+          return;
+        }
 
-            ws.current.onerror = () => {
-                /* onclose will fire after onerror */
-            };
+        setWsStatusRef.current(reconnectState.status);
+        reconnectTimeoutId.current = window.setTimeout(() => {
+          void connect();
+        }, RETRY_DELAY_MS);
+      };
+    };
 
-            ws.current.onclose = () => {
-                if (isUnmounted.current) {
-                    return;
-                }
+    void connect();
 
-                retryCount.current += 1;
-                if (retryCount.current < MAX_RETRY) {
-                    setWsStatusRef.current('reconnecting');
-                    reconnectTimeoutId.current = window.setTimeout(() => {
-                        void connect();
-                    }, RETRY_DELAY);
-                } else {
-                    setWsStatusRef.current('disconnected');
-                }
-            };
-        };
+    return () => {
+      isUnmounted.current = true;
 
-        void connect();
+      if (ws.current) {
+        ws.current.close();
+        ws.current = null;
+      }
 
-        return () => {
-            isUnmounted.current = true;
-
-            if (ws.current) {
-                ws.current.close();
-                ws.current = null;
-            }
-
-            if (reconnectTimeoutId.current !== null) {
-                clearTimeout(reconnectTimeoutId.current);
-                reconnectTimeoutId.current = null;
-            }
-        };
-    }, [enabled]);
+      if (reconnectTimeoutId.current !== null) {
+        clearTimeout(reconnectTimeoutId.current);
+        reconnectTimeoutId.current = null;
+      }
+    };
+  }, [enabled, fetchJobsRef, setWsStatusRef, updateJobProgressRef]);
 };

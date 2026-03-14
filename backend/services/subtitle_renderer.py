@@ -276,14 +276,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     @logger.catch
     def generate_ass_file(
         self,
-        whisperx_json_path: str,
+        transcript_json_path: str,
         output_ass_path: str = "dynamic_subs.ass",
         max_words_per_screen: int = 4,
     ) -> str:
         """Smart Chunker ve Karaoke kelime animasyonları içeren ASS üreticisi."""
-        logger.info(f"📝 WhisperX NLP verisi işleniyor: {whisperx_json_path}")
+        logger.info(f"📝 Transkript NLP verisi işleniyor: {transcript_json_path}")
 
-        with open(whisperx_json_path, "r", encoding="utf-8") as f:
+        with open(transcript_json_path, "r", encoding="utf-8") as f:
             segments = json.load(f)
 
         ass_lines: list[str] = []

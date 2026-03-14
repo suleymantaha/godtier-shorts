@@ -6,12 +6,10 @@
   ],
   "site_package_search_strategy": "all",
   "search_path": [
-    "/home/arch/miniconda3/envs/godtier-shorts/lib/python3.10/site-packages",
-    "/home/arch/godtier-shorts"
+    "."
   ],
   "python": {
-    "version": "3.10",
-    "virtual_environment": "/home/arch/miniconda3/envs/godtier-shorts"
+    "version": "3.13"
   },
   "taint_models_path": []
 }

@@ -7,6 +7,7 @@ const uploadMock = vi.fn();
 
 vi.mock('../../store/useJobStore', () => ({ useJobStore: () => ({ jobs: [] }) }));
 vi.mock('../../api/client', () => ({
+  getFreshToken: vi.fn().mockResolvedValue('token-123'),
   clipsApi: {
     upload: (...args: unknown[]) => uploadMock(...args),
     getTranscript: vi.fn().mockResolvedValue({ transcript: [] }),

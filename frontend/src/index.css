@@ -54,7 +54,8 @@
   }
 
   body {
-    background-color: transparent; /* Let ThreeCanvas shine through */
+    background-color: transparent;
+    /* Let ThreeCanvas shine through */
     color: var(--color-foreground);
     font-family: var(--font-inter);
     -webkit-font-smoothing: antialiased;
@@ -83,6 +84,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
+
     *,
     *::before,
     *::after {

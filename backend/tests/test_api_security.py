@@ -92,5 +92,5 @@ def test_validate_auth_configuration_requires_audience(monkeypatch: pytest.Monke
 def test_authenticate_websocket_token_with_static_token(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("API_BEARER_TOKENS", "token123:viewer")
     auth = authenticate_websocket_token("token123")
-    assert auth.subject == "static-token"
+    assert auth.subject.startswith("static-token:")
     assert "viewer" in auth.roles

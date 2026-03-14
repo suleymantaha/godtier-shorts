@@ -3,6 +3,11 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "packageManager": "npm@10.9.4",
+  "engines": {
+    "node": ">=22 <23",
+    "npm": ">=10 <11"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -12,7 +17,8 @@
     "test:watch": "vitest",
     "test:unit": "vitest run src/test/unit",
     "test:integration": "vitest run src/test/integration",
-    "test:smoke": "vitest run src/test/smoke.test.ts"
+    "test:smoke": "vitest run src/test/smoke.test.ts",
+    "verify": "npm run lint && npm run test -- --reporter=dot && npm run build"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.3",

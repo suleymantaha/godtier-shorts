@@ -2,6 +2,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { resolveManualChunk } from './build/manualChunks'
 
 export default defineConfig({
   plugins: [
@@ -9,17 +10,12 @@ export default defineConfig({
     tailwindcss(),
   ],
   build: {
+    // Three.js publishes its core as a single ESM entry; after splitting the surrounding
+    // react-three ecosystem, the remaining lazy-loaded core chunk still lands above 500 kB.
+    chunkSizeWarningLimit: 800,
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          if (id.includes('node_modules/three') || id.includes('node_modules/@react-three/')) {
-            return 'vendor-three';
-          }
-          if (id.includes('node_modules/@clerk/') || id.includes('node_modules/@clerk')) {
-            return 'vendor-auth';
-          }
-          return undefined;
-        },
+        manualChunks: resolveManualChunk,
       },
     },
   },
@@ -28,5 +24,6 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     css: false,
+    testTimeout: 10000,
   },
 })

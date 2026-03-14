@@ -1,3 +1,2 @@
-python_version = "3.10"
+python_version = "3.13"
 search_path = ["."]
-site_package_path = ["/home/arch/miniconda3/envs/godtier-shorts/lib/python3.10/site-packages"]

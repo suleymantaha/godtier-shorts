@@ -90,7 +90,6 @@ class ProjectPaths:
 MASTER_VIDEO     = DOWNLOADS_DIR / "master_video.mp4"
 MASTER_AUDIO     = DOWNLOADS_DIR / "master_audio.wav"
 VIDEO_METADATA   = METADATA_DIR  / "video_metadata.json"
-VIDEO_HASH       = METADATA_DIR  / "video_hash.sha256"
 VIRAL_SEGMENTS   = METADATA_DIR  / "viral_segments.json"
 
 # ---------------------------------------------------------------------------

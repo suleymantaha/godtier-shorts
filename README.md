@@ -12,6 +12,11 @@
 
 ## Hızlı Başlangıç
 
+Desteklenen referans toolchain:
+- Python `3.13.x`
+- Node.js `22.x`
+- npm `10.x`
+
 ### Kurulum
 
 ```bash
@@ -22,6 +27,13 @@ pip install -r requirements.txt
 cd frontend && npm install
 ```
 
+Sürüm pin dosyalari:
+- `.python-version` -> `3.13`
+- `.nvmrc` -> `22`
+
+Yeni makinede sorunsuz kurulum icin:
+[`docs/operations/fresh-install-checklist.md`](docs/operations/fresh-install-checklist.md)
+
 > Not: `POST /api/upload` ve diğer `multipart/form-data` kullanan form/upload endpoint'lerinin çalışması için backend'de `python-multipart` bağımlılığı kurulu olmalıdır (requirements içinde yer alır).
 
 ### Ortam Değişkenleri
@@ -31,10 +43,18 @@ cd frontend && npm install
 - `OPENROUTER_API_KEY` – Cloud LLM (viral analiz)
 - `LMSTUDIO_HOST` – Local LLM (opsiyonel)
 - `HF_TOKEN` – HuggingFace (faster-whisper modelleri, opsiyonel)
-- `CLERK_ISSUER_URL` ve `CLERK_AUDIENCE` – JWT doğrulama için zorunlu (Clerk)
+- `VITE_CLERK_PUBLISHABLE_KEY`, `CLERK_ISSUER_URL`, `CLERK_AUDIENCE` ve `VITE_CLERK_JWT_TEMPLATE` – Clerk auth için gerekli
 - `API_BEARER_TOKENS` – Opsiyonel statik token fallback (`token:role1,role2`)
 - `PYRE_PYTHON_INTERPRETER` – Opsiyonel, Pyre için interpreter override
 - `PYRE_SITE_PACKAGES` – Opsiyonel, Pyre için ek site-packages/search path
+
+Runtime config hardening:
+- `API_PORT`, `UPLOAD_MAX_FILE_SIZE`, `REQUEST_BODY_HARD_LIMIT_BYTES`, `SOCIAL_SCHEDULER_*` alanlari pozitif tam sayi olmalidir.
+- `REQUEST_BODY_HARD_LIMIT_BYTES`, `UPLOAD_MAX_FILE_SIZE` degerinden kucuk olamaz.
+- `FRONTEND_URL`, `CORS_ORIGINS`, `PUBLIC_APP_URL`, `POSTIZ_API_BASE_URL` alanlari mutlak `http(s)` URL olmalidir; query/fragment icermemelidir.
+
+Detayli son kullanici kurulumu ve "bu key'i nereden alacagim?" rehberi:
+[`docs/api-key-setup.md`](docs/api-key-setup.md)
 
 ### Çalıştırma
 
@@ -192,13 +212,29 @@ flowchart TB
 ## Testler
 
 ```bash
+# Tam kalite kapisi
+bash scripts/verify.sh
+
+# Sadece toolchain dogrulamasi
+python scripts/check_toolchain.py
+
+# Sadece runtime config dogrulamasi
+python scripts/check_runtime_config.py
+
+# Sistem bagimliliklari (ffmpeg / yt-dlp / opsiyonel GPU)
+python scripts/check_system_deps.py
+python scripts/check_system_deps.py --require-gpu
+
 # Backend
 pytest backend/tests -v
 pytest backend/tests -v -m "not integration"
 
 # Frontend
 cd frontend && npm run test
+cd frontend && npm run verify
 ```
+
+`bash scripts/verify.sh` kanonik tam dogrulama komutudur; toolchain check + runtime config check + frontend `lint + test + build` ile backend `pytest backend/tests -q` adimlarini fail-fast kosar. `python scripts/check_system_deps.py` ise yeni makine hazirligi ve medya pipeline bagimliliklari icin ayrica kosulmalidir.
 
 Pyre statik analiz (opsiyonel):
 

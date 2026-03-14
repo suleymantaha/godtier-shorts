@@ -3,6 +3,7 @@ backend/api/routes/clips.py
 =================================
 Üretilen klipleri yönetmek için endpoint'ler:
   GET  /api/clips
+  DELETE /api/projects/{project_id}/shorts/{clip_name}
   GET  /api/clip-transcript/{clip_name}
   POST /api/upload
 """
@@ -30,7 +31,7 @@ from backend.config import (
 )
 from backend.api.websocket import manager, thread_safe_broadcast
 from backend.api.security import AuthContext, require_policy
-from backend.api.upload_validation import validate_upload, validate_upload_size
+from backend.api.upload_validation import stream_upload_to_path, validate_upload
 from backend.services.transcription import run_transcription
 from backend.core.exceptions import (
     FileOperationError,
@@ -69,6 +70,10 @@ ALLOWED_CONTAINERS = {"mp4", "mov", "m4a", "3gp", "3g2", "mj2"}
 ALLOWED_PROJECT_FILE_EXTENSIONS = {".mp4", ".json"}
 ALLOWED_PROJECT_FILE_KINDS = {"clip", "master", "clip_metadata", "transcript"}
 CLIPS_CACHE_TTL_SECONDS = int(os.getenv("CLIPS_CACHE_TTL_SECONDS", "20"))
+CLIP_RECOVERY_JOB_PREFIX = "cliprecover_"
+PROJECT_TRANSCRIPT_JOB_PREFIXES = ("upload_", "manualcut_", "projecttranscript_")
+ACTIVE_JOB_STATUSES = {"queued", "processing"}
+FAILED_JOB_STATUSES = {"error", "cancelled"}
 
 
 @dataclass
@@ -151,13 +156,38 @@ def build_secure_clip_url(project_id: str, clip_name: str) -> str:
     return f"/api/projects/{project_id}/shorts/{clip_name}"
 
 
-def _compute_file_hash(path: str) -> str:
-    """Dosyanın SHA256 hash'ini hesaplar (64KB bloklar halinde)."""
-    sha = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            sha.update(chunk)
-    return sha.hexdigest()
+def _resolve_project_shorts_dir(project_id: str) -> tuple[Path, str]:
+    try:
+        safe_project = sanitize_project_name(project_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    shorts_dir = (PROJECTS_DIR / safe_project / "shorts").resolve()
+    return shorts_dir, safe_project
+
+
+def _resolve_project_short_asset_path(
+    project_id: str,
+    clip_name: str,
+    *,
+    allowed_exts: set[str],
+) -> tuple[Path, str, str]:
+    shorts_dir, safe_project = _resolve_project_shorts_dir(project_id)
+
+    try:
+        safe_clip = sanitize_clip_name(clip_name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    ext = os.path.splitext(safe_clip)[1].lower()
+    if ext not in allowed_exts:
+        raise HTTPException(status_code=403, detail="Yalnızca .mp4 ve .json shorts varlıklarına izin verilir")
+
+    asset_path = (shorts_dir / safe_clip).resolve()
+    if shorts_dir not in asset_path.parents:
+        raise HTTPException(status_code=403, detail="Geçersiz dosya yolu")
+
+    return asset_path, safe_project, safe_clip
 
 
 def _upload_http_error(status_code: int, code: str, message: str) -> HTTPException:
@@ -247,7 +277,6 @@ def _validate_video_with_ffprobe(video_path: str) -> None:
 def prepare_uploaded_project(file: UploadFile) -> tuple[ProjectPaths, str, bool]:
     """Yüklenen videodan proje oluşturur veya mevcut projeyi reuse eder."""
     try:
-        validate_upload_size(file)
         validate_upload(file)
     except HTTPException as exc:
         raise _upload_http_error(
@@ -257,13 +286,19 @@ def prepare_uploaded_project(file: UploadFile) -> tuple[ProjectPaths, str, bool]
         ) from exc
 
     fd, temp_path = tempfile.mkstemp(suffix=".mp4")
+    os.close(fd)
     try:
-        with os.fdopen(fd, "wb") as tmp:
-            shutil.copyfileobj(file.file, tmp)
+        try:
+            _bytes_written, file_hash = stream_upload_to_path(file, temp_path)
+        except InvalidInputError as exc:
+            raise _upload_http_error(
+                status_code=413,
+                code="REQUEST_TOO_LARGE",
+                message=exc.message,
+            ) from exc
 
         _validate_video_with_ffprobe(temp_path)
 
-        file_hash = _compute_file_hash(temp_path)
         project_id = f"up_{file_hash[:16]}"
         project = ProjectPaths(project_id)
         is_cached = project.master_video.exists() and project.transcript.exists()
@@ -386,6 +421,283 @@ def normalize_clip_payload(payload: object, clip_name: str, project_id: str | No
     }
 
 
+def resolve_clip_asset_paths(clip_name: str, project_id: str | None = None) -> tuple[Path, Path, str | None]:
+    """Resolve clip video/metadata paths for either project or legacy storage."""
+    resolved_project_id = project_id if project_id and project_id != "legacy" else None
+    metadata_name = clip_name.replace(".mp4", ".json")
+
+    if resolved_project_id:
+        return (
+            get_project_path(resolved_project_id, "shorts", clip_name),
+            get_project_path(resolved_project_id, "shorts", metadata_name),
+            resolved_project_id,
+        )
+
+    legacy_video = OUTPUTS_DIR / clip_name
+    legacy_metadata = OUTPUTS_DIR / metadata_name
+    if legacy_video.exists() or legacy_metadata.exists():
+        return legacy_video, legacy_metadata, None
+
+    if PROJECTS_DIR.exists():
+        for project_dir in PROJECTS_DIR.iterdir():
+            if not project_dir.is_dir():
+                continue
+            candidate_video = project_dir / "shorts" / clip_name
+            candidate_metadata = project_dir / "shorts" / metadata_name
+            if candidate_video.exists() or candidate_metadata.exists():
+                return candidate_video, candidate_metadata, project_dir.name
+
+    return legacy_video, legacy_metadata, None
+
+
+def load_clip_payload(clip_name: str, project_id: str | None = None) -> tuple[dict, Path, Path, str | None]:
+    """Load clip metadata and normalize legacy/list payload variants."""
+    video_path, metadata_path, resolved_project_id = resolve_clip_asset_paths(clip_name, project_id)
+    if not metadata_path.exists():
+        return normalize_clip_payload([], clip_name, resolved_project_id), video_path, metadata_path, resolved_project_id
+
+    with open(metadata_path, "r", encoding="utf-8") as f:
+        return (
+            normalize_clip_payload(json.load(f), clip_name, resolved_project_id),
+            video_path,
+            metadata_path,
+            resolved_project_id,
+        )
+
+
+def _normalize_project_match(project_id: str | None) -> str | None:
+    if project_id and project_id != "legacy":
+        return project_id
+    return None
+
+
+def _job_matches_project(job: dict, project_id: str | None) -> bool:
+    return _normalize_project_match(job.get("project_id")) == _normalize_project_match(project_id)
+
+
+def _sorted_matching_jobs(
+    predicate: Callable[[dict], bool],
+    statuses: set[str] | None = None,
+) -> list[dict]:
+    matching_jobs: list[dict] = []
+    for job in manager.jobs.values():
+        if statuses is not None and str(job.get("status")) not in statuses:
+            continue
+        if predicate(job):
+            matching_jobs.append(job)
+    return sorted(matching_jobs, key=lambda job: float(job.get("created_at", 0.0)), reverse=True)
+
+
+def find_project_transcript_job(
+    project_id: str | None,
+    statuses: set[str] | None = None,
+) -> dict | None:
+    if not _normalize_project_match(project_id):
+        return None
+
+    jobs = _sorted_matching_jobs(
+        lambda job: _job_matches_project(job, project_id)
+        and any(str(job.get("job_id", "")).startswith(prefix) for prefix in PROJECT_TRANSCRIPT_JOB_PREFIXES),
+        statuses,
+    )
+    return jobs[0] if jobs else None
+
+
+def find_clip_recovery_job(
+    clip_name: str,
+    project_id: str | None,
+    statuses: set[str] | None = None,
+) -> dict | None:
+    normalized_project_id = _normalize_project_match(project_id)
+    jobs = _sorted_matching_jobs(
+        lambda job: str(job.get("job_id", "")).startswith(CLIP_RECOVERY_JOB_PREFIX)
+        and job.get("clip_name") == clip_name
+        and _normalize_project_match(job.get("project_id")) == normalized_project_id,
+        statuses,
+    )
+    return jobs[0] if jobs else None
+
+
+def _job_error_message(job: dict | None) -> str | None:
+    if not job:
+        return None
+    error = job.get("error")
+    if isinstance(error, str) and error.strip():
+        return error
+    message = job.get("last_message")
+    if isinstance(message, str) and message.strip():
+        return message
+    return None
+
+
+def _resolve_recommended_recovery_strategy(capabilities: dict) -> str | None:
+    if capabilities.get("can_recover_from_project"):
+        return "project_slice"
+    if capabilities.get("can_transcribe_source"):
+        return "transcribe_source"
+    return None
+
+
+def resolve_project_transcript_state(project_id: str | None) -> dict:
+    normalized_project_id = _normalize_project_match(project_id)
+    if not normalized_project_id:
+        return {
+            "transcript_status": "ready",
+            "active_job_id": None,
+            "last_error": None,
+        }
+
+    transcript_path = ProjectPaths(normalized_project_id).transcript
+    if transcript_path.exists():
+        return {
+            "transcript_status": "ready",
+            "active_job_id": None,
+            "last_error": None,
+        }
+
+    active_job = find_project_transcript_job(normalized_project_id, ACTIVE_JOB_STATUSES)
+    if active_job:
+        return {
+            "transcript_status": "pending",
+            "active_job_id": active_job.get("job_id"),
+            "last_error": None,
+        }
+
+    failed_job = find_project_transcript_job(normalized_project_id, FAILED_JOB_STATUSES)
+    return {
+        "transcript_status": "failed",
+        "active_job_id": None,
+        "last_error": _job_error_message(failed_job),
+    }
+
+
+def _has_recovery_time_range(render_metadata: object) -> bool:
+    if not isinstance(render_metadata, dict):
+        return False
+
+    start_time = render_metadata.get("start_time")
+    end_time = render_metadata.get("end_time")
+    return (
+        isinstance(start_time, (int, float))
+        and isinstance(end_time, (int, float))
+        and end_time > start_time
+    )
+
+
+def build_clip_transcript_capabilities(
+    payload: dict,
+    video_path: Path,
+    metadata_path: Path,
+    resolved_project_id: str | None,
+) -> dict:
+    """Expose the frontend-facing recovery capabilities for a clip transcript."""
+    transcript = payload.get("transcript")
+    render_metadata = payload.get("render_metadata")
+    raw_video_path = video_path.with_name(f"{video_path.stem}_raw.mp4")
+    project_has_transcript = bool(
+        resolved_project_id and ProjectPaths(resolved_project_id).transcript.exists()
+    )
+
+    return {
+        "has_clip_metadata": metadata_path.exists(),
+        "has_clip_transcript": isinstance(transcript, list) and len(transcript) > 0,
+        "has_raw_backup": raw_video_path.exists(),
+        "project_has_transcript": project_has_transcript,
+        "can_recover_from_project": project_has_transcript and _has_recovery_time_range(render_metadata),
+        "can_transcribe_source": raw_video_path.exists() or video_path.exists(),
+        "resolved_project_id": resolved_project_id,
+    }
+
+
+def resolve_clip_transcript_state(
+    clip_name: str,
+    requested_project_id: str | None,
+    payload: dict,
+    capabilities: dict,
+    resolved_project_id: str | None,
+) -> dict:
+    recommended_strategy = _resolve_recommended_recovery_strategy(capabilities)
+    has_render_range = _has_recovery_time_range(payload.get("render_metadata"))
+
+    if capabilities.get("has_clip_transcript"):
+        return {
+            "transcript_status": "ready",
+            "recommended_strategy": None,
+            "active_job_id": None,
+            "last_error": None,
+        }
+
+    recovery_project_id = resolved_project_id or requested_project_id
+    active_recovery_job = find_clip_recovery_job(clip_name, recovery_project_id, ACTIVE_JOB_STATUSES)
+    if active_recovery_job:
+        return {
+            "transcript_status": "recovering",
+            "recommended_strategy": active_recovery_job.get("recovery_strategy") or recommended_strategy,
+            "active_job_id": active_recovery_job.get("job_id"),
+            "last_error": None,
+        }
+
+    active_project_job = None
+    if has_render_range and not capabilities.get("project_has_transcript"):
+        active_project_job = find_project_transcript_job(resolved_project_id, ACTIVE_JOB_STATUSES)
+    if active_project_job:
+        return {
+            "transcript_status": "project_pending",
+            "recommended_strategy": "project_slice",
+            "active_job_id": active_project_job.get("job_id"),
+            "last_error": None,
+        }
+
+    failed_recovery_job = find_clip_recovery_job(clip_name, recovery_project_id, FAILED_JOB_STATUSES)
+    if failed_recovery_job:
+        return {
+            "transcript_status": "failed",
+            "recommended_strategy": recommended_strategy,
+            "active_job_id": None,
+            "last_error": _job_error_message(failed_recovery_job),
+        }
+
+    failed_project_job = None
+    if has_render_range and not capabilities.get("project_has_transcript"):
+        failed_project_job = find_project_transcript_job(resolved_project_id, FAILED_JOB_STATUSES)
+
+    if recommended_strategy:
+        return {
+            "transcript_status": "needs_recovery",
+            "recommended_strategy": recommended_strategy,
+            "active_job_id": None,
+            "last_error": _job_error_message(failed_project_job),
+        }
+
+    return {
+        "transcript_status": "failed" if failed_project_job else "needs_recovery",
+        "recommended_strategy": None,
+        "active_job_id": None,
+        "last_error": _job_error_message(failed_project_job),
+    }
+
+
+def build_clip_transcript_response(clip_name: str, project_id: str | None = None) -> dict:
+    payload, video_path, metadata_path, resolved_project_id = load_clip_payload(clip_name, project_id)
+    capabilities = build_clip_transcript_capabilities(
+        payload,
+        video_path,
+        metadata_path,
+        resolved_project_id,
+    )
+    payload["capabilities"] = capabilities
+    payload.update(
+        resolve_clip_transcript_state(
+            clip_name=clip_name,
+            requested_project_id=project_id,
+            payload=payload,
+            capabilities=capabilities,
+            resolved_project_id=resolved_project_id,
+        )
+    )
+    return payload
+
+
 def extract_ui_title(payload: object) -> str:
     if not isinstance(payload, dict):
         return ""
@@ -405,6 +717,12 @@ def extract_ui_title(payload: object) -> str:
     return ""
 
 
+def _is_internal_short_asset(filename: str) -> bool:
+    """Exclude non-user-facing intermediate shorts assets from listings."""
+    stem = Path(filename).stem
+    return filename.startswith("temp_") or stem.endswith("_raw") or stem.endswith("_temp_reburn")
+
+
 def _scan_clips_index() -> list[dict]:
     """Projeleri tarayıp normalize klip indeksini oluşturur."""
     clips: list[dict] = []
@@ -420,7 +738,7 @@ def _scan_clips_index() -> list[dict]:
             continue
 
         for clip_file in shorts_dir.iterdir():
-            if clip_file.suffix != ".mp4" or clip_file.name.startswith("temp_"):
+            if clip_file.suffix != ".mp4" or _is_internal_short_asset(clip_file.name):
                 continue
 
             meta_path = shorts_dir / clip_file.name.replace(".mp4", ".json")
@@ -473,6 +791,7 @@ async def list_projects(
             if not project_dir.is_dir():
                 continue
             projects.append({
+                **resolve_project_transcript_state(project_dir.name),
                 "id": project_dir.name,
                 "has_master": (project_dir / "master.mp4").exists(),
                 "has_transcript": (project_dir / "transcript.json").exists(),
@@ -505,25 +824,65 @@ async def get_project_short_asset(
     _: AuthContext = Depends(require_policy("view_project_media")),
 ) -> FileResponse:
     """Sadece proje shorts klasöründeki .mp4/.json dosyalarını kontrollü olarak servis eder."""
+    asset_path, _safe_project, safe_clip = _resolve_project_short_asset_path(
+        project_id,
+        clip_name,
+        allowed_exts={".mp4", ".json"},
+    )
+    if not asset_path.exists() or not asset_path.is_file():
+        raise HTTPException(status_code=404, detail="Dosya bulunamadı")
+
+    ext = os.path.splitext(safe_clip)[1].lower()
+    media_type = "video/mp4" if ext == ".mp4" else "application/json"
+    return FileResponse(path=asset_path, media_type=media_type, filename=safe_clip)
+
+
+@router.delete("/projects/{project_id}/shorts/{clip_name}")
+async def delete_project_short(
+    project_id: str,
+    clip_name: str,
+    _: AuthContext = Depends(require_policy("delete_clip")),
+) -> dict:
+    """Belirli bir klibin kullanıcıya açık shorts varlıklarını siler."""
+    shorts_dir, safe_project = _resolve_project_shorts_dir(project_id)
+
     try:
-        safe_project = sanitize_project_name(project_id)
         safe_clip = sanitize_clip_name(clip_name)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    ext = os.path.splitext(safe_clip)[1].lower()
-    if ext not in {".mp4", ".json"}:
-        raise HTTPException(status_code=403, detail="Yalnızca .mp4 ve .json shorts varlıklarına izin verilir")
+    if Path(safe_clip).suffix.lower() != ".mp4" or _is_internal_short_asset(safe_clip):
+        raise HTTPException(status_code=400, detail="Yalnızca kullanıcıya açık .mp4 klipleri silinebilir")
 
-    shorts_dir = (PROJECTS_DIR / safe_project / "shorts").resolve()
-    asset_path = (shorts_dir / safe_clip).resolve()
-    if shorts_dir not in asset_path.parents:
-        raise HTTPException(status_code=403, detail="Geçersiz dosya yolu")
-    if not asset_path.exists() or not asset_path.is_file():
-        raise HTTPException(status_code=404, detail="Dosya bulunamadı")
+    stem = Path(safe_clip).stem
+    managed_assets = [
+        (shorts_dir / safe_clip).resolve(),
+        (shorts_dir / f"{stem}.json").resolve(),
+        (shorts_dir / f"{stem}_raw.mp4").resolve(),
+    ]
+    for asset_path in managed_assets:
+        if shorts_dir not in asset_path.parents:
+            raise HTTPException(status_code=403, detail="Geçersiz dosya yolu")
 
-    media_type = "video/mp4" if ext == ".mp4" else "application/json"
-    return FileResponse(path=asset_path, media_type=media_type, filename=safe_clip)
+    deleted = False
+    for asset_path in managed_assets:
+        if not asset_path.exists() or not asset_path.is_file():
+            continue
+        try:
+            asset_path.unlink()
+        except OSError as exc:
+            raise FileOperationError("Klip dosyalari silinemedi", details=str(exc)) from exc
+        deleted = True
+
+    if deleted:
+        invalidate_clips_cache(reason=f"clip_deleted:{safe_project}/{safe_clip}")
+
+    return {
+        "status": "deleted" if deleted else "not_found",
+        "deleted": deleted,
+        "project_id": safe_project,
+        "clip_name": safe_clip,
+    }
 
 
 @router.get("/clips")
@@ -574,24 +933,7 @@ async def get_clip_transcript(
         except ValueError as e:
             raise InvalidInputError(str(e)) from e
 
-    path = OUTPUTS_DIR / clip_name.replace(".mp4", ".json")
-    resolved_project_id = project_id
-    if project_id and project_id != "legacy":
-        project_path = get_project_path(project_id, "shorts", clip_name.replace(".mp4", ".json"))
-        if project_path.exists():
-            path = project_path
-    elif not path.exists() and PROJECTS_DIR.exists():
-        for project_dir in PROJECTS_DIR.iterdir():
-            candidate = project_dir / "shorts" / clip_name.replace(".mp4", ".json")
-            if candidate.exists():
-                path = candidate
-                resolved_project_id = project_dir.name
-                break
-
-    if not path.exists():
-        return normalize_clip_payload([], clip_name, resolved_project_id)
-    with open(path, "r", encoding="utf-8") as f:
-        return normalize_clip_payload(json.load(f), clip_name, resolved_project_id)
+    return build_clip_transcript_response(clip_name, project_id)
 
 
 @router.get("/projects/{project_id}/files/{file_kind}")

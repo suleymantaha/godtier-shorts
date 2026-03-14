@@ -146,9 +146,10 @@ async def list_jobs(
     _: AuthContext = Depends(require_policy("view_jobs")),
 ) -> dict:
     """Tüm aktif ve bekleyen işleri listeler."""
+    runtime_only_keys = {"task", "task_handle", "cancel_event"}
     return {
         "jobs": [
-            {k: v for k, v in job.items() if k not in {"task_handle", "cancel_event"}}
+            {k: v for k, v in job.items() if k not in runtime_only_keys}
             for job in manager.jobs.values()
         ]
     }

@@ -35,8 +35,8 @@ export const RangeSlider: FC<RangeSliderProps> = ({
     };
 
     return (
-        <div className="relative w-full h-8 flex items-center group" role="group" aria-label="Time range selector">
-            <div className="absolute w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+        <div className="relative w-full h-12 flex items-center group" role="group" aria-label="Time range selector">
+            <div className="absolute w-full h-3 bg-white/10 rounded-full overflow-hidden">
                 <div
                     className="absolute h-full bg-primary/40"
                     style={{ left: `${minPos}%`, right: `${100 - maxPos}%` }}
@@ -55,7 +55,7 @@ export const RangeSlider: FC<RangeSliderProps> = ({
                 aria-valuemin={min}
                 aria-valuemax={max}
                 aria-valuenow={start}
-                className="absolute w-full pointer-events-none appearance-none bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-[0_0_6px_rgba(0,242,255,0.4)] z-10"
+                className="absolute w-full pointer-events-none appearance-none bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-7 [&::-webkit-slider-thumb]:h-7 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-[0_0_10px_rgba(0,242,255,0.45)] z-10"
             />
 
             <label className="sr-only" htmlFor="range-end">{endLabel}</label>
@@ -70,7 +70,7 @@ export const RangeSlider: FC<RangeSliderProps> = ({
                 aria-valuemin={min}
                 aria-valuemax={max}
                 aria-valuenow={end}
-                className="absolute w-full pointer-events-none appearance-none bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-accent [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-[0_0_6px_rgba(255,0,127,0.4)] z-10"
+                className="absolute w-full pointer-events-none appearance-none bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-7 [&::-webkit-slider-thumb]:h-7 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-accent [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-[0_0_10px_rgba(255,0,127,0.45)] z-10"
             />
         </div>
     );

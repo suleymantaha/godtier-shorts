@@ -5,6 +5,7 @@ import { Editor } from '../../components/Editor';
 
 vi.mock('../../store/useJobStore', () => ({ useJobStore: () => ({ jobs: [] }) }));
 vi.mock('../../api/client', () => ({
+  getFreshToken: vi.fn().mockResolvedValue('token-123'),
   clipsApi: {
     upload: vi.fn().mockResolvedValue({ status: 'uploaded', job_id: 'u1', project_id: 'p1' }),
     getTranscript: vi.fn().mockResolvedValue({ transcript: [] }),

@@ -117,3 +117,18 @@ def test_clips_pagination_contract_unchanged(monkeypatch, tmp_path: Path):
     assert page_2["total"] == 3
     assert page_2["has_more"] is False
     assert len(page_2["clips"]) == 1
+
+
+def test_clips_index_hides_internal_raw_and_reburn_assets(monkeypatch, tmp_path: Path):
+    _create_clip(tmp_path, "proj-a", "final.mp4", title="Visible")
+    _create_clip(tmp_path, "proj-a", "final_raw.mp4")
+    _create_clip(tmp_path, "proj-a", "final_temp_reburn.mp4")
+    _create_clip(tmp_path, "proj-a", "temp_render.mp4")
+
+    monkeypatch.setattr(clips, "PROJECTS_DIR", tmp_path)
+    clips.invalidate_clips_cache("test_setup")
+
+    response = _list_clips()
+
+    assert response["total"] == 1
+    assert [clip["name"] for clip in response["clips"]] == ["final.mp4"]

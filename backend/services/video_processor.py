@@ -44,6 +44,22 @@ logger.add(
 
 class VideoProcessor:
     @staticmethod
+    def _compute_ffmpeg_timeout(
+        duration: float,
+        *,
+        start_time: float = 0.0,
+        minimum: int = 300,
+        maximum: int = 1800,
+    ) -> int:
+        """
+        Uzun videolarda ileri zamanlardan kesim yapılırken timeout'u dinamik hesaplar.
+        """
+        safe_duration = max(1.0, float(duration))
+        safe_start = max(0.0, float(start_time))
+        estimated = int(180 + (safe_duration * 8.0) + (safe_start * 0.15))
+        return max(minimum, min(maximum, estimated))
+
+    @staticmethod
     def _run_command_with_cancel(
         cmd: list[str],
         *,
@@ -70,7 +86,7 @@ class VideoProcessor:
             if time.time() - start > timeout:
                 proc.kill()
                 proc.communicate()
-                raise RuntimeError("FFmpeg işlemi timeout oldu")
+                raise RuntimeError(f"FFmpeg işlemi timeout oldu ({int(timeout)} sn)")
             time.sleep(0.5)
 
     def __init__(self, model_version: str | None = None, device: str = "cuda"):
@@ -79,7 +95,7 @@ class VideoProcessor:
         device:        'cuda' veya 'cpu'
         
         YOLO modeli lazy-load edilir — ilk `create_viral_short()` çağrısında
-        GPU'ya yüklenir. Bu sayede WhisperX transkripsiyon sırasında VRAM
+        GPU'ya yüklenir. Bu sayede faster-whisper transkripsiyon sırasında VRAM
         kullanılmaz (eş zamanlı CUDA OOM riski ortadan kalkar).
         """
         self._model_path = model_version or str(YOLO_MODEL_PATH)
@@ -107,7 +123,7 @@ class VideoProcessor:
             raise
 
     def unload_model(self) -> None:
-        """YOLO modelini VRAM'den boşalt (WhisperX ile birlikte çalışmak için)."""
+        """YOLO modelini VRAM'den boşalt (faster-whisper ile birlikte çalışmak için)."""
         if self.model is not None:
             del self.model
             self.model = None
@@ -173,13 +189,15 @@ class VideoProcessor:
 
         # --- Adım 1: Segment hassas kesimi (Senkron ve frame doğruluğu için re-encode) ---
         duration = end_time - start_time
+        cut_timeout = self._compute_ffmpeg_timeout(duration, start_time=start_time, minimum=300)
         try:
             result = self._run_command_with_cancel(
-                ["ffmpeg", "-y", "-i", input_video,
-                 "-ss", str(start_time), "-t", str(duration),
+                ["ffmpeg", "-y",
+                 "-ss", str(start_time), "-i", input_video,
+                 "-t", str(duration),
                  "-c:v", "h264_nvenc", "-preset", "p6", "-b:v", "8M",
                  "-c:a", "aac", "-b:a", "192k", temp_cut],
-                timeout=300,
+                timeout=cut_timeout,
                 cancel_event=cancel_event,
             )
             if result.returncode != 0:
@@ -188,7 +206,7 @@ class VideoProcessor:
                 raise RuntimeError(f"Video kesilemedi: {stderr[-300:]}")
         except RuntimeError as e:
             if "timeout" in str(e).lower():
-                raise RuntimeError("Video kesme işlemi timeout oldu (5 dakika)") from e
+                raise RuntimeError(f"Video kesme işlemi timeout oldu ({cut_timeout} saniye)") from e
             raise
 
         # --- Adım 2: OpenCV + YOLO ---
@@ -329,6 +347,7 @@ class VideoProcessor:
 
             # --- Adım 3: Ses birleştir ---
             logger.info("🎵 Ses birleştiriliyor...")
+            merge_timeout = self._compute_ffmpeg_timeout(duration, minimum=300)
             cmd_merge = [
                 "ffmpeg", "-y",
                 "-i", temp_video_only, "-i", temp_cut,
@@ -338,7 +357,7 @@ class VideoProcessor:
             ]
             merge_result = self._run_command_with_cancel(
                 cmd_merge,
-                timeout=300,
+                timeout=merge_timeout,
                 cancel_event=cancel_event,
             )
             if merge_result.returncode != 0:
@@ -356,7 +375,7 @@ class VideoProcessor:
                     ]
                     fallback_result = self._run_command_with_cancel(
                         cmd_cpu_fallback,
-                        timeout=300,
+                        timeout=merge_timeout,
                         cancel_event=cancel_event,
                     )
                     if fallback_result.returncode != 0:
@@ -400,32 +419,33 @@ class VideoProcessor:
         """Sadece zaman aralığını keser. Crop/resize yok. Orijinal boyut korunur."""
         duration = end_time - start_time
         logger.info(f"✂️ Zaman kesimi: {start_time} - {end_time} sn (orijinal boyut) → {output_filename}")
+        cut_timeout = self._compute_ffmpeg_timeout(duration, start_time=start_time, minimum=300)
 
         cmd_nvenc = [
-            "ffmpeg", "-y", "-i", input_video,
-            "-ss", str(start_time), "-t", str(duration),
+            "ffmpeg", "-y", "-ss", str(start_time), "-i", input_video,
+            "-t", str(duration),
             "-c:v", "h264_nvenc", "-preset", "p6", "-b:v", "8M",
             "-c:a", "aac", "-b:a", "192k", output_filename,
         ]
         cmd_cpu = [
-            "ffmpeg", "-y", "-i", input_video,
-            "-ss", str(start_time), "-t", str(duration),
+            "ffmpeg", "-y", "-ss", str(start_time), "-i", input_video,
+            "-t", str(duration),
             "-c:v", "libx264", "-preset", "medium", "-crf", "23",
             "-c:a", "aac", "-b:a", "192k", output_filename,
         ]
         try:
-            result = self._run_command_with_cancel(cmd_nvenc, timeout=300, cancel_event=cancel_event)
+            result = self._run_command_with_cancel(cmd_nvenc, timeout=cut_timeout, cancel_event=cancel_event)
             if result.returncode != 0:
                 stderr = result.stderr or ""
                 if "nvenc" in stderr.lower() or "cuda" in stderr.lower():
                     logger.warning("⚠️ NVENC kullanılamadı, CPU fallback...")
-                    cpu_result = self._run_command_with_cancel(cmd_cpu, timeout=300, cancel_event=cancel_event)
+                    cpu_result = self._run_command_with_cancel(cmd_cpu, timeout=cut_timeout, cancel_event=cancel_event)
                     if cpu_result.returncode != 0:
                         raise RuntimeError("CPU fallback ile video kesilemedi")
                 else:
                     raise RuntimeError(f"Video kesilemedi: {stderr[-300:]}")
         except RuntimeError as e:
             if "timeout" in str(e).lower():
-                raise RuntimeError("Video kesme işlemi timeout oldu (5 dakika)") from e
+                raise RuntimeError(f"Video kesme işlemi timeout oldu ({cut_timeout} saniye)") from e
             raise
         logger.success(f"🎉 Zaman kesimi hazır: {output_filename}")

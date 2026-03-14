@@ -1,5 +1,5 @@
 # GodTier Shorts - Backend Dependencies
-# Python 3.10+
+# Reference toolchain: Python 3.13.x
 
 # Web Framework
 fastapi>=0.104.0
@@ -14,6 +14,10 @@ python-dotenv>=1.0.0
 
 # Logging
 loguru>=0.7.0
+
+# Security / Crypto
+PyJWT>=2.8.0
+cryptography>=42.0.0
 
 # AI / ML
 torch>=2.0.0

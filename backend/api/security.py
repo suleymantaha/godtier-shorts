@@ -6,6 +6,7 @@ Bearer/JWT tabanlı kimlik doğrulama ve rol/policy denetimi.
 from __future__ import annotations
 
 import os
+import hashlib
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -37,12 +38,19 @@ POLICY_ROLES: dict[str, set[str]] = {
     "view_projects": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
     "view_project_media": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
     "view_clips": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
+    "delete_clip": {"admin", "producer", "editor"},
     "view_clip_transcript": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
+    "recover_clip_transcript": {"admin", "producer", "editor"},
+    "recover_project_transcript": {"admin", "producer", "editor"},
     "view_transcript": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
     "view_jobs": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
     "view_styles": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
     "save_transcript": {"admin", "producer", "editor"},
     "websocket_progress": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
+    "social_connect": {"admin", "producer", "editor"},
+    "social_publish": {"admin", "producer", "editor"},
+    "social_approve": {"admin", "producer"},
+    "social_view_jobs": {"admin", "producer", "editor", "viewer"},
 }
 
 WEAK_STATIC_TOKENS = {"test-token", "changeme", "change-me", "default-token", "example-token"}
@@ -140,7 +148,8 @@ def _authenticate_token(token: str) -> AuthContext:
         ) from exc
     if token in static_tokens:
         roles = static_tokens[token]
-        return AuthContext(subject="static-token", roles=roles, token_type="bearer")
+        fingerprint = hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
+        return AuthContext(subject=f"static-token:{fingerprint}", roles=roles, token_type="bearer")
 
     clerk_issuer = os.getenv("CLERK_ISSUER_URL", "").strip()
     clerk_audience = os.getenv("CLERK_AUDIENCE", "").strip()

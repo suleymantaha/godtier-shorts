@@ -1,0 +1,547 @@
+"""High-level social publishing orchestration helpers."""
+
+from __future__ import annotations
+
+import json
+import os
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
+
+from loguru import logger
+
+from backend.config import get_project_path
+
+from .constants import (
+    MAX_DIRECT_UPLOAD_BYTES,
+    PLATFORM_TO_POSTIZ,
+    POSTIZ_TO_PLATFORM,
+    SOCIAL_PROVIDER_POSTIZ,
+    SUPPORTED_SOCIAL_PLATFORMS,
+)
+from .content import build_platform_prefill, resolve_clip_metadata_paths, resolve_viral_metadata
+from .crypto import SocialCrypto
+from .postiz import PostizApiError, PostizClient
+from .store import SocialStore, get_social_store, parse_iso
+
+
+RETRY_BACKOFF_MINUTES = [1, 2, 4, 8, 16]
+
+
+def _safe_read_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _merge_prefill_with_drafts(
+    prefill: dict[str, dict[str, Any]],
+    drafts: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
+    for platform in SUPPORTED_SOCIAL_PLATFORMS:
+        base = prefill.get(platform, {}).copy()
+        patch = drafts.get(platform, {})
+        if isinstance(patch, dict):
+            base.update({k: v for k, v in patch.items() if v is not None})
+        merged[platform] = base
+    return merged
+
+
+def build_clip_prefill(
+    *,
+    subject: str,
+    project_id: str,
+    clip_name: str,
+    store: SocialStore | None = None,
+) -> dict[str, Any]:
+    db = store or get_social_store()
+    clip_path, clip_meta_path = resolve_clip_metadata_paths(project_id, clip_name)
+    clip_meta = _safe_read_json(clip_meta_path)
+
+    viral_meta = resolve_viral_metadata(project_id, clip_name, clip_meta)
+    platform_prefill = build_platform_prefill(viral_meta)
+
+    drafts = db.get_drafts(subject, project_id, clip_name)
+    merged = _merge_prefill_with_drafts(platform_prefill, drafts)
+
+    return {
+        "project_id": project_id,
+        "clip_name": clip_name,
+        "clip_exists": clip_path.exists(),
+        "source": {
+            "viral_metadata": viral_meta,
+            "has_clip_metadata": bool(clip_meta),
+            "has_drafts": bool(drafts),
+        },
+        "platforms": merged,
+    }
+
+
+def normalize_postiz_accounts(accounts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for account in accounts:
+        raw_provider = str(account.get("identifier") or account.get("provider") or account.get("type") or "").lower()
+        platform = POSTIZ_TO_PLATFORM.get(raw_provider)
+        if platform is None:
+            continue
+
+        account_id_raw = account.get("id")
+        if account_id_raw is None:
+            continue
+        account_id = str(account_id_raw).strip()
+        if not account_id:
+            continue
+
+        normalized.append(
+            {
+                "id": account_id,
+                "name": str(account.get("name") or account.get("username") or account_id),
+                "platform": platform,
+                "provider": raw_provider,
+                "username": account.get("username"),
+                "avatar_url": account.get("picture") or account.get("avatar"),
+                "raw": account,
+            }
+        )
+
+    return normalized
+
+
+def get_postiz_api_key_from_env() -> str | None:
+    value = os.getenv("POSTIZ_API_KEY", "").strip()
+    return value or None
+
+
+def has_postiz_credential_configured(subject: str, *, store: SocialStore | None = None) -> bool:
+    db = store or get_social_store()
+    return db.get_credential(subject, SOCIAL_PROVIDER_POSTIZ) is not None or get_postiz_api_key_from_env() is not None
+
+
+def get_postiz_client_for_subject(subject: str, *, store: SocialStore | None = None, crypto: SocialCrypto | None = None) -> tuple[PostizClient, dict[str, Any]]:
+    db = store or get_social_store()
+    c = crypto or SocialCrypto()
+
+    credential = db.get_credential(subject, SOCIAL_PROVIDER_POSTIZ)
+    if credential is not None:
+        api_key = c.decrypt(str(credential["encrypted_api_key"]))
+        return PostizClient(api_key=api_key), credential
+
+    env_api_key = get_postiz_api_key_from_env()
+    if env_api_key:
+        return (
+            PostizClient(api_key=env_api_key),
+            {
+                "subject": subject,
+                "provider": SOCIAL_PROVIDER_POSTIZ,
+                "workspace_id": None,
+                "source": "env",
+            },
+        )
+
+    raise ValueError("Postiz credential bulunamadı")
+
+
+def validate_postiz_credential(api_key: str) -> list[dict[str, Any]]:
+    client = PostizClient(api_key=api_key)
+    integrations = client.validate_connection()
+    return normalize_postiz_accounts(integrations)
+
+
+def compute_retry_eta(attempt: int) -> str:
+    idx = max(0, min(attempt - 1, len(RETRY_BACKOFF_MINUTES) - 1))
+    eta = datetime.now(timezone.utc) + timedelta(minutes=RETRY_BACKOFF_MINUTES[idx])
+    return eta.isoformat()
+
+
+def _build_media_url(project_id: str, clip_name: str) -> str:
+    public_base = os.getenv("PUBLIC_APP_URL", "").strip().rstrip("/")
+    if not public_base:
+        raise ValueError("PUBLIC_APP_URL tanımlı olmadığı için URL import kullanılamıyor")
+    return f"{public_base}/api/projects/{project_id}/shorts/{clip_name}"
+
+
+def _resolve_media(client: PostizClient, clip_path: Path, *, project_id: str, clip_name: str) -> dict[str, Any]:
+    file_size = clip_path.stat().st_size
+    if file_size <= MAX_DIRECT_UPLOAD_BYTES:
+        return client.upload_media_direct(clip_path)
+    return client.upload_media_from_url(_build_media_url(project_id, clip_name))
+
+
+def _build_post_settings(
+    *,
+    platform: str,
+    provider: str | None,
+    title: str,
+    hashtags: list[str],
+) -> tuple[str, dict[str, Any]]:
+    effective_provider = (provider or "").strip().lower()
+
+    if platform == "youtube_shorts":
+        return (
+            "youtube",
+            {
+                "title": (title or "Short video").strip()[:100],
+                "type": "public",
+                "selfDeclaredMadeForKids": "no",
+                "tags": hashtags[:20],
+            },
+        )
+
+    if platform == "tiktok":
+        return (
+            "tiktok",
+            {
+                "privacy_level": "PUBLIC_TO_EVERYONE",
+                "duet": False,
+                "comment": True,
+                "stitch": False,
+                "content_posting_method": "DIRECT_POST",
+                "brand_content_toggle": False,
+                "brand_organic_toggle": False,
+                "autoAddMusic": False,
+            },
+        )
+
+    if platform == "instagram_reels":
+        settings_type = "instagram-standalone" if effective_provider == "instagram-standalone" else "instagram"
+        return (
+            settings_type,
+            {
+                "post_type": "post",
+            },
+        )
+
+    if platform == "facebook_reels":
+        return ("facebook", {})
+
+    if platform == "x":
+        return (
+            "x",
+            {
+                "who_can_reply_post": "everyone",
+            },
+        )
+
+    if platform == "linkedin":
+        settings_type = "linkedin-page" if effective_provider == "linkedin-page" else "linkedin"
+        return (
+            settings_type,
+            {
+                "post_as_images_carousel": False,
+            },
+        )
+
+    fallback = PLATFORM_TO_POSTIZ.get(platform)
+    if not fallback:
+        raise ValueError(f"Desteklenmeyen platform: {platform}")
+    return (fallback, {})
+
+
+def _extract_provider_post_id(result: Any) -> str | None:
+    if isinstance(result, dict):
+        for key in ("id", "postId", "post_id"):
+            val = result.get(key)
+            if val is not None:
+                return str(val)
+    if isinstance(result, list) and result:
+        first = result[0]
+        if isinstance(first, dict):
+            for key in ("id", "postId", "post_id"):
+                val = first.get(key)
+                if val is not None:
+                    return str(val)
+    return None
+
+
+def _is_future_scheduled_job(job: dict[str, Any]) -> bool:
+    if str(job.get("mode") or "") != "scheduled":
+        return False
+    scheduled_raw = str(job.get("scheduled_at") or "").strip()
+    if not scheduled_raw:
+        return False
+    scheduled_dt = parse_iso(scheduled_raw)
+    if scheduled_dt is None:
+        return False
+    return scheduled_dt > datetime.now(timezone.utc)
+
+
+def publish_job_via_postiz(job: dict[str, Any], *, store: SocialStore | None = None) -> dict[str, Any]:
+    db = store or get_social_store()
+    subject = str(job["subject"])
+    client, _credential = get_postiz_client_for_subject(subject, store=db)
+
+    project_id = str(job["project_id"])
+    clip_name = str(job["clip_name"])
+    platform = str(job["platform"])
+    account_id = str(job["account_id"])
+
+    clip_path = get_project_path(project_id, "shorts", clip_name)
+    if not clip_path.exists():
+        raise FileNotFoundError(f"Klip bulunamadı: {clip_path}")
+
+    payload = job.get("payload")
+    if not isinstance(payload, dict):
+        payload = {}
+
+    target = payload.get("target")
+    target_provider = target.get("provider") if isinstance(target, dict) else None
+
+    content = payload.get("content")
+    if not isinstance(content, dict):
+        content = {}
+
+    text = str(content.get("text") or "").strip()
+    title = str(content.get("title") or "").strip()
+    hashtags = [str(tag).strip().replace("#", "") for tag in content.get("hashtags", []) if str(tag).strip()]
+
+    settings_type, settings = _build_post_settings(
+        platform=platform,
+        provider=str(target_provider or ""),
+        title=title,
+        hashtags=hashtags,
+    )
+
+    media = _resolve_media(client, clip_path, project_id=project_id, clip_name=clip_name)
+
+    mode = "scheduled" if str(job.get("mode")) == "scheduled" else "now"
+    scheduled_at = str(job.get("scheduled_at") or "") or None
+    if mode == "scheduled":
+        due = parse_iso(scheduled_at)
+        if due is None or due <= datetime.now(timezone.utc):
+            mode = "now"
+            scheduled_at = None
+
+    result = client.create_post(
+        integration_id=account_id,
+        settings_type=settings_type,
+        content_text=text,
+        media=media,
+        settings=settings,
+        mode=mode,
+        scheduled_at=scheduled_at,
+        hashtags=hashtags,
+    )
+
+    return {
+        "provider_post_id": _extract_provider_post_id(result),
+        "media_id": str(media.get("id") or ""),
+        "result": result,
+    }
+
+
+def create_scheduled_post_now(job: dict[str, Any], *, store: SocialStore | None = None) -> dict[str, Any]:
+    db = store or get_social_store()
+    job_id = str(job["id"])
+
+    db.update_publish_job(
+        job_id,
+        state="publishing",
+        message="Postiz takvimine ekleniyor",
+        last_error=None,
+    )
+
+    try:
+        result = publish_job_via_postiz(job, store=db)
+    except (PostizApiError, FileNotFoundError, ValueError, OSError) as exc:
+        latest = db.get_publish_job(job_id)
+        attempt = int((latest or {}).get("attempts") or 0) + 1
+        if attempt <= len(RETRY_BACKOFF_MINUTES):
+            eta = compute_retry_eta(attempt)
+            db.update_publish_job(
+                job_id,
+                state="retrying",
+                message=f"Postiz takvimine ekleme başarısız, yeniden denenecek ({attempt}/{len(RETRY_BACKOFF_MINUTES)})",
+                next_attempt_at=eta,
+                last_error=str(exc),
+                increment_attempt=True,
+            )
+        else:
+            db.update_publish_job(
+                job_id,
+                state="failed",
+                message="Postiz takvimine ekleme kalıcı olarak başarısız oldu",
+                last_error=str(exc),
+                increment_attempt=True,
+            )
+        raise
+
+    db.update_publish_job(
+        job_id,
+        state="scheduled",
+        message="Postiz takvimine eklendi",
+        next_attempt_at=str(job.get("scheduled_at") or "") or None,
+        provider_job_id=str(result.get("provider_post_id") or ""),
+        result=result,
+        last_error=None,
+    )
+    return db.get_publish_job(job_id) or job
+
+
+def delete_scheduled_post_from_postiz(job: dict[str, Any], *, store: SocialStore | None = None) -> None:
+    db = store or get_social_store()
+    subject = str(job["subject"])
+    provider_job_id = str(job.get("provider_job_id") or "").strip()
+    if not provider_job_id:
+        return
+
+    client, _credential = get_postiz_client_for_subject(subject, store=db)
+    try:
+        client.delete_post(provider_job_id)
+    except PostizApiError as exc:
+        if "HTTP 404" in str(exc):
+            return
+        raise
+
+
+def dry_run_publish_via_postiz(
+    *,
+    subject: str,
+    project_id: str,
+    clip_name: str,
+    mode: str,
+    scheduled_at: str | None,
+    targets: list[dict[str, Any]],
+    content_by_platform: dict[str, dict[str, Any]],
+    probe_media_upload: bool = False,
+    store: SocialStore | None = None,
+) -> dict[str, Any]:
+    db = store or get_social_store()
+    client, _credential = get_postiz_client_for_subject(subject, store=db)
+
+    raw_accounts = client.list_integrations()
+    accounts = normalize_postiz_accounts(raw_accounts)
+    accounts_by_id = {str(account["id"]): account for account in accounts}
+
+    clip_path = get_project_path(project_id, "shorts", clip_name)
+    if not clip_path.exists():
+        raise FileNotFoundError(f"Klip bulunamadı: {clip_path}")
+
+    media_probe: dict[str, Any] | None = None
+    if probe_media_upload:
+        media = _resolve_media(client, clip_path, project_id=project_id, clip_name=clip_name)
+        media_probe = {
+            "attempted": True,
+            "method": "direct" if clip_path.stat().st_size <= MAX_DIRECT_UPLOAD_BYTES else "url",
+            "media_id": str(media.get("id") or ""),
+            "path": str(media.get("path") or ""),
+        }
+
+    previews: list[dict[str, Any]] = []
+    for target in targets:
+        account_id = str(target.get("account_id") or "").strip()
+        platform = str(target.get("platform") or "").strip()
+        provider = str(target.get("provider") or "").strip() or None
+        if not account_id or not platform:
+            raise ValueError("Hedef hesap bilgisi eksik")
+
+        account = accounts_by_id.get(account_id)
+        if account is None:
+            raise ValueError(f"Hedef hesap bulunamadı: {account_id}")
+
+        account_platform = str(account.get("platform") or "")
+        if account_platform != platform:
+            raise ValueError(
+                f"Hedef hesap platformu uyuşmuyor: hesap={account_platform} istek={platform}"
+            )
+
+        content = content_by_platform.get(platform)
+        if not isinstance(content, dict):
+            raise ValueError(f"{platform} için içerik bulunamadı")
+
+        title = str(content.get("title") or "").strip()
+        text = str(content.get("text") or "").strip()
+        hashtags = [
+            str(tag).strip().replace("#", "")
+            for tag in content.get("hashtags", [])
+            if str(tag).strip()
+        ]
+
+        settings_type, settings = _build_post_settings(
+            platform=platform,
+            provider=provider,
+            title=title,
+            hashtags=hashtags,
+        )
+
+        previews.append(
+            {
+                "account_id": account_id,
+                "account_name": str(account.get("name") or account_id),
+                "account_platform": account_platform,
+                "provider": provider or account.get("provider"),
+                "settings_type": settings_type,
+                "settings": settings,
+                "mode": "scheduled" if mode == "scheduled" else "now",
+                "scheduled_at": scheduled_at,
+                "title": title,
+                "text_preview": text[:280],
+                "text_length": len(text),
+                "hashtags": hashtags,
+                "hashtags_count": len(hashtags),
+            }
+        )
+
+    return {
+        "clip_path": str(clip_path),
+        "clip_size_bytes": clip_path.stat().st_size,
+        "postiz_base_url": client.base_url,
+        "targets": previews,
+        "media_probe": media_probe
+        or {
+            "attempted": False,
+            "method": "direct" if clip_path.stat().st_size <= MAX_DIRECT_UPLOAD_BYTES else "url",
+        },
+    }
+
+
+def run_publish_attempt(job: dict[str, Any], *, store: SocialStore | None = None) -> None:
+    db = store or get_social_store()
+    job_id = str(job["id"])
+    state = str(job.get("state") or "")
+
+    if state == "draft":
+        db.update_publish_job(job_id, state="queued", message="Planlanan zaman geldi, kuyruğa alındı")
+
+    db.update_publish_job(job_id, state="publishing", message="Postiz yayını başlatıldı")
+
+    try:
+        result = publish_job_via_postiz(job, store=db)
+    except (PostizApiError, FileNotFoundError, ValueError, OSError) as exc:
+        latest = db.get_publish_job(job_id)
+        attempt = int((latest or {}).get("attempts") or 0) + 1
+        if attempt <= len(RETRY_BACKOFF_MINUTES):
+            eta = compute_retry_eta(attempt)
+            db.update_publish_job(
+                job_id,
+                state="retrying",
+                message=f"Yayın denemesi başarısız, yeniden denenecek ({attempt}/{len(RETRY_BACKOFF_MINUTES)})",
+                next_attempt_at=eta,
+                last_error=str(exc),
+                increment_attempt=True,
+            )
+            logger.warning("Social publish retry scheduled job_id={} err={}", job_id, exc)
+            return
+
+        db.update_publish_job(
+            job_id,
+            state="failed",
+            message="Yayın kalıcı olarak başarısız oldu",
+            last_error=str(exc),
+            increment_attempt=True,
+        )
+        logger.error("Social publish failed permanently job_id={} err={}", job_id, exc)
+        return
+
+    db.update_publish_job(
+        job_id,
+        state="published",
+        message="Yayın başarılı",
+        provider_job_id=str(result.get("provider_post_id") or ""),
+        result=result,
+    )

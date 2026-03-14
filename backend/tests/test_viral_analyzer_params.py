@@ -76,6 +76,71 @@ class TestAnalyzeMetadataParams:
         finally:
             Path(path).unlink(missing_ok=True)
 
+    def test_lmstudio_client_appends_v1_suffix(self, monkeypatch: pytest.MonkeyPatch):
+        """LM Studio host sonunda /v1 yoksa otomatik eklenir."""
+        monkeypatch.setenv("LMSTUDIO_HOST", "http://localhost:1234")
+        monkeypatch.delenv("LM_STUDIO_API_KEY", raising=False)
+
+        with patch("backend.services.viral_analyzer.OpenAI") as mock_openai:
+            analyzer = ViralAnalyzer(engine="lmstudio")
+            analyzer._build_lmstudio_client()
+
+        _, kwargs = mock_openai.call_args
+        assert kwargs["base_url"] == "http://localhost:1234/v1"
+        assert kwargs["api_key"] == "lm-studio"
+
+    def test_analyze_metadata_uses_lmstudio_client(self):
+        """engine=lmstudio iken LLM çağrısı LM Studio client ile yapılır."""
+        transcript_data = [
+            {"text": "test segment", "start": 0.0, "end": 12.0},
+        ]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(transcript_data, f, ensure_ascii=False)
+            path = f.name
+
+        mock_message = MagicMock()
+        mock_message.content = json.dumps(
+            {
+                "segments": [
+                    {
+                        "start_time": 0.0,
+                        "end_time": 12.0,
+                        "hook_text": "TEST HOOK",
+                        "ui_title": "Test Baslik",
+                        "social_caption": "Test #shorts",
+                        "viral_score": 80,
+                    }
+                ]
+            }
+        )
+        mock_choice = MagicMock()
+        mock_choice.message = mock_message
+        mock_response = MagicMock()
+        mock_response.choices = [mock_choice]
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_response
+
+        try:
+            analyzer = ViralAnalyzer(engine="lmstudio")
+            with patch.object(analyzer, "_build_lmstudio_client", return_value=mock_client) as lm_client_builder, \
+                 patch.object(analyzer, "_build_fallback_segments") as fallback_builder:
+                result = analyzer.analyze_metadata(
+                    path,
+                    num_clips=3,
+                    duration_min=90.0,
+                    duration_max=150.0,
+                )
+
+            assert result is not None
+            assert "segments" in result
+            assert len(result["segments"]) == 1
+            lm_client_builder.assert_called_once()
+            fallback_builder.assert_not_called()
+            _, kwargs = mock_client.chat.completions.create.call_args
+            assert kwargs["model"] == analyzer.local_model_name
+        finally:
+            Path(path).unlink(missing_ok=True)
+
     @pytest.mark.skipif(
         True,  # Cloud API gerektirir, CI'da atla
         reason="Cloud API mock gerekli",

@@ -7,16 +7,27 @@
  */
 
 import { API_BASE, CLERK_JWT_TEMPLATE } from '../config';
+import { extractApiErrorMessage, mergeApiHeaders } from './client.helpers';
 import type {
     Job,
     ClipListResponse,
+    DeleteClipResponse,
     Segment,
     ClipMetadata,
+    ClipTranscriptResponse,
+    ClipTranscriptRecoveryPayload,
+    ProjectSummary,
+    ProjectTranscriptResponse,
+    ProjectTranscriptRecoveryPayload,
     StartJobPayload,
     ManualJobPayload,
     ManualCutUploadResponse,
     ReburnPayload,
     BatchJobPayload,
+    SharePrefillResponse,
+    SocialAccount,
+    SocialPlatform,
+    PublishJob,
 } from '../types';
 
 // ─── Kimlik Doğrulama (Clerk Token Injection) ──────────────────────────────────
@@ -39,15 +50,8 @@ export async function getFreshToken(): Promise<string | null> {
 }
 
 // ─── Tip yardımcıları ────────────────────────────────────────────────────────
-
-
 function withApiHeaders(headers?: HeadersInit): Record<string, string> {
-    const result: Record<string, string> = {};
-    if (activeToken) result.Authorization = `Bearer ${activeToken}`;
-    if (headers && typeof headers === 'object' && !Array.isArray(headers) && !(headers instanceof Headers)) {
-        Object.assign(result, headers as Record<string, string>);
-    }
-    return result;
+    return mergeApiHeaders(activeToken, headers);
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -58,25 +62,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     });
     if (!response.ok) {
         const text = await response.text();
-        let body: { detail?: unknown } | null = null;
-        try {
-            body = text ? (JSON.parse(text) as { detail?: unknown }) : null;
-        } catch {
-            /* non-JSON body */
-        }
-        const detail = body?.detail;
-        const detailError =
-            detail && typeof detail === 'object' && 'error' in (detail as Record<string, unknown>)
-                ? (detail as { error?: { message?: string } }).error
-                : null;
-        const msg =
-            typeof detail === 'string'
-                ? detail
-                : detailError?.message
-                    ? detailError.message
-                : Array.isArray(detail)
-                    ? detail.map((e: { msg?: string }) => e?.msg ?? String(e)).join('; ')
-                    : text || `HTTP ${response.status}`;
+        const msg = extractApiErrorMessage(text, response.status);
         throw new Error(`API ${path} → ${response.status}: ${msg}`);
     }
     return response.json() as Promise<T>;
@@ -114,8 +100,15 @@ export const clipsApi = {
 
     /** Bir klibin transkriptini getir */
     getTranscript: (clipName: string, project_id?: string) =>
-        apiFetch<{ transcript: Segment[] | ClipMetadata }>(
+        apiFetch<ClipTranscriptResponse>(
             `/api/clip-transcript/${clipName}${project_id ? `?project_id=${project_id}` : ''}`
+        ),
+
+    /** Bir klibi ve ilişkili shorts varlıklarını sil */
+    delete: (projectId: string, clipName: string) =>
+        apiFetch<DeleteClipResponse>(
+            `/api/projects/${encodeURIComponent(projectId)}/shorts/${encodeURIComponent(clipName)}`,
+            { method: 'DELETE' },
         ),
 
     /** Yerel video yükle */
@@ -138,17 +131,27 @@ export const clipsApi = {
 export const editorApi = {
     /** Proje listesini getir. 404 ise clips'tan project ID'leri türetir. Hata durumunda error ile döner. */
     getProjects: async (): Promise<{
-        projects: { id: string; has_master: boolean; has_transcript: boolean }[];
+        projects: ProjectSummary[];
         error?: string;
     }> => {
         try {
-            return await apiFetch<{ projects: { id: string; has_master: boolean; has_transcript: boolean }[] }>('/api/projects');
+            return await apiFetch<{ projects: ProjectSummary[] }>('/api/projects');
         } catch (err) {
             const apiError = err instanceof Error ? err.message : 'Projeler alınamadı';
             try {
                 const { clips } = await apiFetch<{ clips: { project?: string }[] }>('/api/clips');
                 const ids = [...new Set((clips ?? []).map((c) => c.project).filter((p): p is string => Boolean(p) && p !== 'legacy'))];
-                return { projects: ids.map((id) => ({ id, has_master: true, has_transcript: true })), error: apiError };
+                return {
+                    projects: ids.map((id) => ({
+                        active_job_id: null,
+                        has_master: true,
+                        has_transcript: true,
+                        id,
+                        last_error: null,
+                        transcript_status: 'ready',
+                    })),
+                    error: apiError,
+                };
             } catch {
                 return { projects: [], error: apiError };
             }
@@ -157,7 +160,7 @@ export const editorApi = {
 
     /** Mevcut ana transkripti getir */
     getTranscript: (project_id?: string) =>
-        apiFetch<{ transcript: Segment[] | ClipMetadata }>(
+        apiFetch<ProjectTranscriptResponse | { transcript: Segment[] | ClipMetadata }>(
             `/api/transcript${project_id ? `?project_id=${project_id}` : ''}`
         ),
 
@@ -171,6 +174,12 @@ export const editorApi = {
             }
         ),
 
+    recoverProjectTranscript: (payload: ProjectTranscriptRecoveryPayload) =>
+        apiFetch<{ status: string; job_id?: string | null }>('/api/transcript/recover', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+        }),
+
     /** Manuel klip oluştur */
     processManual: (payload: ManualJobPayload) =>
         apiFetch<{ status: string; job_id: string }>('/api/process-manual', {
@@ -181,6 +190,13 @@ export const editorApi = {
     /** Klibin altyazılarını yeniden yaz */
     reburn: (payload: ReburnPayload) =>
         apiFetch<{ status: string; job_id: string }>('/api/reburn', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+        }),
+
+    /** Mevcut klip metadata/transkriptini akıllı fallback ile kurtar */
+    recoverClipTranscript: (payload: ClipTranscriptRecoveryPayload) =>
+        apiFetch<{ status: string; job_id?: string | null }>('/api/clip-transcript/recover', {
             method: 'POST',
             body: JSON.stringify(payload),
         }),
@@ -226,4 +242,78 @@ export const editorApi = {
                 return response.json();
             });
     },
+};
+
+// ─── Social publish endpoint'leri ─────────────────────────────────────────────
+
+export const socialApi = {
+    saveCredentials: (payload: { provider: 'postiz'; api_key: string }) =>
+        apiFetch<{ status: string; provider: string; accounts: SocialAccount[] }>('/api/social/credentials', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+        }),
+
+    deleteCredentials: () =>
+        apiFetch<{ status: string; provider: string }>('/api/social/credentials?provider=postiz', {
+            method: 'DELETE',
+        }),
+
+    getAccounts: () =>
+        apiFetch<{ connected: boolean; provider: string; workspace_id?: string; accounts: SocialAccount[] }>('/api/social/accounts'),
+
+    getPrefill: (project_id: string, clip_name: string) =>
+        apiFetch<SharePrefillResponse>(`/api/social/prefill?project_id=${encodeURIComponent(project_id)}&clip_name=${encodeURIComponent(clip_name)}`),
+
+    saveDrafts: (
+        project_id: string,
+        clip_name: string,
+        platforms: Partial<Record<SocialPlatform, { title: string; text: string; hashtags: string[]; hook_text?: string; viral_score?: number }>>,
+    ) =>
+        apiFetch<{ status: string }>('/api/social/drafts', {
+            method: 'PUT',
+            body: JSON.stringify({ project_id, clip_name, platforms }),
+        }),
+
+    deleteDrafts: (project_id: string, clip_name: string) =>
+        apiFetch<{ status: string; deleted: number }>(
+            `/api/social/drafts?project_id=${encodeURIComponent(project_id)}&clip_name=${encodeURIComponent(clip_name)}`,
+            {
+                method: 'DELETE',
+            }
+        ),
+
+    publish: (payload: {
+        project_id: string;
+        clip_name: string;
+        mode: 'now' | 'scheduled';
+        scheduled_at?: string;
+        timezone?: string;
+        approval_required?: boolean;
+        targets: { account_id: string; platform: SocialPlatform; provider?: string }[];
+        content_by_platform: Partial<Record<SocialPlatform, { title: string; text: string; hashtags: string[]; hook_text?: string; viral_score?: number }>>;
+    }) =>
+        apiFetch<{ status: string; jobs: Array<{ id: string; platform: SocialPlatform; account_id: string; state: string; scheduled_at?: string | null }>; errors?: Array<{ job_id: string; error: string }> }>('/api/social/publish', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+        }),
+
+    getPublishJobs: (project_id?: string, clip_name?: string) =>
+        apiFetch<{ jobs: PublishJob[] }>(
+            `/api/social/publish-jobs${project_id || clip_name
+                ? `?${[
+                    project_id ? `project_id=${encodeURIComponent(project_id)}` : '',
+                    clip_name ? `clip_name=${encodeURIComponent(clip_name)}` : '',
+                ].filter(Boolean).join('&')}`
+                : ''}`
+        ),
+
+    approveJob: (job_id: string) =>
+        apiFetch<{ status: string; job_id: string }>(`/api/social/publish-jobs/${encodeURIComponent(job_id)}/approve`, {
+            method: 'POST',
+        }),
+
+    cancelJob: (job_id: string) =>
+        apiFetch<{ status: string; job_id: string }>(`/api/social/publish-jobs/${encodeURIComponent(job_id)}/cancel`, {
+            method: 'POST',
+        }),
 };

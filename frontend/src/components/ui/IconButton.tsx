@@ -5,7 +5,7 @@ interface IconButtonBaseProps {
   label: string;
   icon: ReactNode;
   className?: string;
-  variant?: 'ghost' | 'subtle' | 'primary';
+  variant?: 'ghost' | 'subtle' | 'primary' | 'danger';
 }
 
 interface IconButtonAsButton extends IconButtonBaseProps {
@@ -26,6 +26,7 @@ const variantStyles: Record<NonNullable<IconButtonProps['variant']>, string> = {
   ghost: 'bg-transparent hover:bg-foreground/10 text-muted-foreground hover:text-foreground',
   subtle: 'bg-foreground/10 hover:bg-foreground/20 text-foreground',
   primary: 'bg-primary/20 hover:bg-primary/40 text-primary',
+  danger: 'bg-red-500/15 hover:bg-red-500/25 text-red-200 hover:text-red-100 border border-red-500/30',
 };
 
 export function IconButton({ label, icon, className, variant = 'ghost', ...rest }: IconButtonProps) {

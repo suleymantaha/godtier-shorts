@@ -1,12 +1,8 @@
 {
-    "pythonVersion": "3.10",
+    "pythonVersion": "3.13",
     "pythonPlatform": "Linux",
-    "pythonPath": "/home/arch/miniconda3/envs/godtier-shorts/bin/python3.10",
-    "venvPath": "/home/arch/miniconda3/envs",
-    "venv": "godtier-shorts",
     "extraPaths": [
-        "/home/arch/godtier-shorts",
-        "/home/arch/miniconda3/envs/godtier-shorts/lib/python3.10/site-packages"
+        "."
     ],
     "typeCheckingMode": "basic",
     "reportMissingModuleSource": "none",

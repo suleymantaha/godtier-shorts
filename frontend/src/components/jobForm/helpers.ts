@@ -1,0 +1,99 @@
+import { STYLE_LABELS, STYLE_OPTIONS, type StyleName } from '../../config/subtitleStyles';
+import type { StartJobPayload } from '../../types';
+import { readStored } from '../../utils/storage';
+
+export const JOB_FORM_PREFS_STORAGE_KEY = 'godtier-job-form-preferences';
+export const DEFAULT_ENGINE = 'local';
+export const DEFAULT_AUTO_DURATION_RANGE = { max: 180, min: 120 } as const;
+export const CLIP_COUNT_LIMITS = { max: 20, min: 1 } as const;
+export const DURATION_LIMITS = { max: 300, min: 30 } as const;
+export const ENGINE_OPTIONS = new Set(['local', 'lmstudio', 'cloud']);
+export const ENGINE_SELECT_OPTIONS = [
+  { label: 'Local (Ollama)', value: 'local' },
+  { label: 'Local (LM Studio)', value: 'lmstudio' },
+  { label: 'Cloud (OpenAI API)', value: 'cloud' },
+];
+export const RESOLUTION_OPTIONS = [
+  { label: 'En Iyi', value: 'best' },
+  { label: '1080p', value: '1080p' },
+  { label: '720p', value: '720p' },
+  { label: '480p', value: '480p' },
+];
+export const STYLE_SELECT_OPTIONS = STYLE_OPTIONS.filter((style) => style !== 'CUSTOM').map((style) => ({
+  label: STYLE_LABELS[style],
+  value: style,
+}));
+
+interface JobFormPrefs {
+  engine?: string;
+}
+
+interface BuildStartJobPayloadInput {
+  autoMode: boolean;
+  durationMax: number;
+  durationMin: number;
+  engine: string;
+  numClips: number;
+  resolution: string;
+  skipSubtitles: boolean;
+  style: StyleName;
+  url: string;
+}
+
+export function readInitialEngine(): string {
+  const stored = readStored<JobFormPrefs>(JOB_FORM_PREFS_STORAGE_KEY, { engine: DEFAULT_ENGINE });
+  const candidate = (stored.engine ?? DEFAULT_ENGINE).toLowerCase();
+
+  return ENGINE_OPTIONS.has(candidate) ? candidate : DEFAULT_ENGINE;
+}
+
+export function clampClipCount(value: number): number {
+  return clampNumber(value, CLIP_COUNT_LIMITS.min, CLIP_COUNT_LIMITS.max, CLIP_COUNT_LIMITS.min);
+}
+
+export function clampDurationSeconds(value: number): number {
+  return clampNumber(value, DURATION_LIMITS.min, DURATION_LIMITS.max, DURATION_LIMITS.min);
+}
+
+export function resolveDurationRange(autoMode: boolean, durationMin: number, durationMax: number) {
+  if (autoMode) {
+    return DEFAULT_AUTO_DURATION_RANGE;
+  }
+
+  return {
+    max: clampDurationSeconds(durationMax),
+    min: clampDurationSeconds(durationMin),
+  };
+}
+
+export function buildStartJobPayload({
+  autoMode,
+  durationMax,
+  durationMin,
+  engine,
+  numClips,
+  resolution,
+  skipSubtitles,
+  style,
+  url,
+}: BuildStartJobPayloadInput): StartJobPayload {
+  const resolvedDuration = resolveDurationRange(autoMode, durationMin, durationMax);
+
+  return {
+    ai_engine: engine,
+    auto_mode: autoMode,
+    duration_max: resolvedDuration.max,
+    duration_min: resolvedDuration.min,
+    num_clips: clampClipCount(numClips),
+    resolution,
+    skip_subtitles: skipSubtitles,
+    style_name: style,
+    youtube_url: url,
+  };
+}
+
+function clampNumber(value: number, min: number, max: number, fallback: number): number {
+  const safeValue = Number.isFinite(value) ? value : fallback;
+
+  return Math.min(max, Math.max(min, safeValue));
+}

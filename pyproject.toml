@@ -1,5 +1,5 @@
 [tool.pyre]
-python_version = "3.10"
+python_version = "3.13"
 site_package_search_strategy = "all"
 
 [tool.pytest.ini_options]

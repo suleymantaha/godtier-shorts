@@ -17,9 +17,12 @@ from backend.config import (
     CORS_ORIGINS, OUTPUTS_DIR, LOGS_DIR, MASTER_VIDEO, REQUEST_BODY_HARD_LIMIT_BYTES,
 )
 from backend.api.websocket import manager, set_main_loop
-from backend.api.routes import jobs, clips, editor
+from backend.api.routes import jobs, clips, editor, social
 from backend.api.error_handlers import register_exception_handlers
 from backend.api.security import authenticate_websocket_token, validate_auth_configuration
+from backend.runtime_validation import validate_runtime_configuration
+from backend.services.social.crypto import validate_social_security_configuration
+from backend.services.social.scheduler import get_social_scheduler
 
 # Loglama
 logger.add(
@@ -34,13 +37,19 @@ logger.add(
 async def lifespan(app: FastAPI):
     """Uygulama yaşam döngüsü yönetimi."""
     # Startup
+    validate_runtime_configuration()
     validate_auth_configuration()
+    validate_social_security_configuration()
     set_main_loop(asyncio.get_running_loop())
     logger.info("✅ Ana asyncio event loop kaydedildi.")
     
     # Job cleanup görevini başlat
     await manager.start_cleanup_task()
     logger.info("🧹 Job cleanup görevi etkinleştirildi.")
+
+    social_scheduler = get_social_scheduler()
+    await social_scheduler.start()
+    logger.info("📣 Social publish scheduler etkinleştirildi.")
     
     # outputs klasörüne master_video sembolik bağı oluştur
     link_path = OUTPUTS_DIR / "master_video.mp4"
@@ -56,6 +65,7 @@ async def lifespan(app: FastAPI):
     yield  # App runs here
 
     # Shutdown
+    await social_scheduler.stop()
     await manager.stop_cleanup_task()
     logger.info("👋 Uygulama kapatılıyor...")
 
@@ -118,6 +128,7 @@ def create_app() -> FastAPI:
     app.include_router(jobs.router)
     app.include_router(clips.router)
     app.include_router(editor.router)
+    app.include_router(social.router)
 
     # --- WebSocket endpoint ---
     @app.websocket("/ws/progress")

@@ -51,14 +51,14 @@ describe('useWebSocket', () => {
     await act(async () => {});
     const ws = FakeWebSocket.instances[0];
     act(() => ws.onopen?.());
-    expect(storeMock.fetchJobs).toHaveBeenCalledTimes(2);
+    expect(storeMock.fetchJobs).toHaveBeenCalledTimes(1);
 
     act(() => ws.onclose?.());
     act(() => vi.advanceTimersByTime(3000));
     await act(async () => {});
     const next = FakeWebSocket.instances[1];
     act(() => next.onopen?.());
-    expect(storeMock.fetchJobs).toHaveBeenCalledTimes(3);
+    expect(storeMock.fetchJobs).toHaveBeenCalledTimes(2);
   });
 
   it('cleans reconnect timeout on unmount', async () => {
@@ -89,5 +89,18 @@ describe('useWebSocket', () => {
     const ws = FakeWebSocket.instances[0];
     expect(ws.url).toContain('/ws/progress');
     expect(ws.protocols).toEqual(['bearer', 'jwt-token']);
+  });
+
+  it('marks store as disconnected when hook is disabled', async () => {
+    function DisabledComponent() {
+      useWebSocket(false);
+      return <div />;
+    }
+
+    render(<DisabledComponent />);
+    await act(async () => {});
+
+    expect(storeMock.setWsStatus).toHaveBeenCalledWith('disconnected');
+    expect(FakeWebSocket.instances).toHaveLength(0);
   });
 });
