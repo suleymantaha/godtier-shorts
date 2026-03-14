@@ -44,11 +44,6 @@ export function useAppShellController() {
     setSubtitleTargetClip(clip);
   }, []);
 
-  const openClipAdvancedEditor = useCallback((clip: Clip) => {
-    setEditingClip(clip);
-    setSubtitleTargetClip(null);
-  }, []);
-
   const closeEditor = useCallback(() => setEditingClip(null), []);
   const handleStyleChange = useCallback((styleName: string) => setCurrentStyle(styleName), []);
   const handleSkipSubtitlesChange = useCallback((disabled: boolean) => setSubtitlesDisabled(disabled), []);
@@ -71,7 +66,6 @@ export function useAppShellController() {
     editingClip,
     handleSkipSubtitlesChange,
     handleStyleChange,
-    openClipAdvancedEditor,
     openClipSubtitleEditor,
     openConfig,
     openManual,

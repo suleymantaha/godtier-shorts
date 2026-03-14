@@ -12,10 +12,9 @@ import {
 
 interface ClipGalleryProps {
     onEditClip?: (clip: Clip) => void;
-    onAdvancedEditClip?: (clip: Clip) => void;
 }
 
-export const ClipGallery = ({ onAdvancedEditClip, onEditClip }: ClipGalleryProps) => {
+export const ClipGallery = ({ onEditClip }: ClipGalleryProps) => {
     const {
         clips,
         deleteClip,
@@ -61,7 +60,6 @@ export const ClipGallery = ({ onAdvancedEditClip, onEditClip }: ClipGalleryProps
             {state === 'ready' && (
                 <ReadyState
                     clips={clips}
-                    onAdvancedEditClip={onAdvancedEditClip}
                     onDeleteClip={handleRequestDelete}
                     onEditClip={onEditClip}
                     onShareClip={setShareClip}

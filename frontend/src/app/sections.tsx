@@ -58,7 +58,6 @@ interface SignedInShellProps {
   editingClip: Clip | null;
   handleSkipSubtitlesChange: (disabled: boolean) => void;
   handleStyleChange: (styleName: string) => void;
-  openClipAdvancedEditor: (clip: Clip) => void;
   openClipSubtitleEditor: (clip: Clip) => void;
   openConfig: () => void;
   openManual: () => void;
@@ -95,7 +94,6 @@ export function SignedInShell({
   editingClip,
   handleSkipSubtitlesChange,
   handleStyleChange,
-  openClipAdvancedEditor,
   openClipSubtitleEditor,
   openConfig,
   openManual,
@@ -123,7 +121,6 @@ export function SignedInShell({
         editingClip={editingClip}
         handleSkipSubtitlesChange={handleSkipSubtitlesChange}
         handleStyleChange={handleStyleChange}
-        openClipAdvancedEditor={openClipAdvancedEditor}
         openClipSubtitleEditor={openClipSubtitleEditor}
         subtitleTargetClip={subtitleTargetClip}
         subtitlesDisabled={subtitlesDisabled}
@@ -250,7 +247,6 @@ function MainContent({
   editingClip,
   handleSkipSubtitlesChange,
   handleStyleChange,
-  openClipAdvancedEditor,
   openClipSubtitleEditor,
   subtitleTargetClip,
   subtitlesDisabled,
@@ -261,7 +257,6 @@ function MainContent({
   editingClip: Clip | null;
   handleSkipSubtitlesChange: (disabled: boolean) => void;
   handleStyleChange: (styleName: string) => void;
-  openClipAdvancedEditor: (clip: Clip) => void;
   openClipSubtitleEditor: (clip: Clip) => void;
   subtitleTargetClip: Clip | null;
   subtitlesDisabled: boolean;
@@ -288,7 +283,6 @@ function MainContent({
       currentStyle={currentStyle}
       handleSkipSubtitlesChange={handleSkipSubtitlesChange}
       handleStyleChange={handleStyleChange}
-      openClipAdvancedEditor={openClipAdvancedEditor}
       openClipSubtitleEditor={openClipSubtitleEditor}
       subtitlesDisabled={subtitlesDisabled}
     />
@@ -346,14 +340,12 @@ function ConfigWorkspace({
   currentStyle,
   handleSkipSubtitlesChange,
   handleStyleChange,
-  openClipAdvancedEditor,
   openClipSubtitleEditor,
   subtitlesDisabled,
 }: {
   currentStyle: string;
   handleSkipSubtitlesChange: (disabled: boolean) => void;
   handleStyleChange: (styleName: string) => void;
-  openClipAdvancedEditor: (clip: Clip) => void;
   openClipSubtitleEditor: (clip: Clip) => void;
   subtitlesDisabled: boolean;
 }) {
@@ -375,7 +367,7 @@ function ConfigWorkspace({
         </div>
       </div>
       <div className="lg:col-span-12">
-        <ClipGallery onAdvancedEditClip={openClipAdvancedEditor} onEditClip={openClipSubtitleEditor} />
+        <ClipGallery onEditClip={openClipSubtitleEditor} />
       </div>
     </main>
   );

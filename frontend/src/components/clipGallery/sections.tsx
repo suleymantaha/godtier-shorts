@@ -167,13 +167,11 @@ export function EmptyState() {
 
 export function ReadyState({
   clips,
-  onAdvancedEditClip,
   onDeleteClip,
   onEditClip,
   onShareClip,
 }: {
   clips: Clip[];
-  onAdvancedEditClip?: (clip: Clip) => void;
   onDeleteClip: (clip: Clip) => void;
   onEditClip?: (clip: Clip) => void;
   onShareClip: (clip: Clip) => void;
@@ -192,7 +190,6 @@ export function ReadyState({
         <ClipCard
           key={`${clip.project ?? 'legacy'}:${clip.name}`}
           clip={clip}
-          onAdvancedEditClip={onAdvancedEditClip}
           onDeleteClip={onDeleteClip}
           onEditClip={onEditClip}
           onShareClip={onShareClip}
@@ -204,13 +201,11 @@ export function ReadyState({
 
 function ClipCard({
   clip,
-  onAdvancedEditClip,
   onDeleteClip,
   onEditClip,
   onShareClip,
 }: {
   clip: Clip;
-  onAdvancedEditClip?: (clip: Clip) => void;
   onDeleteClip: (clip: Clip) => void;
   onEditClip?: (clip: Clip) => void;
   onShareClip: (clip: Clip) => void;
@@ -258,12 +253,6 @@ function ClipCard({
               icon={<Edit3 className="w-3.5 h-3.5" />}
               onClick={() => onEditClip?.(clip)}
               variant="primary"
-            />
-            <IconButton
-              label="Advanced Edit"
-              icon={<Edit3 className="w-3.5 h-3.5" />}
-              onClick={() => onAdvancedEditClip?.(clip)}
-              variant="subtle"
             />
             <IconButton
               label="Download"

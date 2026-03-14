@@ -130,7 +130,6 @@ describe('ClipGallery', () => {
   it('renders ready clips, supports sort/filter, and forwards edit actions', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     const onEditClip = vi.fn();
-    const onAdvancedEditClip = vi.fn();
     mockClipsResponse = {
       clips: [
         {
@@ -154,7 +153,7 @@ describe('ClipGallery', () => {
     };
 
     const { ClipGallery } = await import('../../components/ClipGallery');
-    render(<ClipGallery onAdvancedEditClip={onAdvancedEditClip} onEditClip={onEditClip} />);
+    render(<ClipGallery onEditClip={onEditClip} />);
 
     expect(await screen.findByText('clip-1.mp4')).toBeInTheDocument();
     expect(screen.getAllByText(/clip-[12]\.mp4/i).map((element) => element.textContent)).toEqual([
@@ -174,8 +173,7 @@ describe('ClipGallery', () => {
 
     await user.click(screen.getByRole('button', { name: /subtitle edit/i }));
     expect(onEditClip).toHaveBeenCalledWith(expect.objectContaining({ name: 'clip-1.mp4' }));
-    await user.click(screen.getByRole('button', { name: /advanced edit/i }));
-    expect(onAdvancedEditClip).toHaveBeenCalledWith(expect.objectContaining({ name: 'clip-1.mp4' }));
+    expect(screen.queryByRole('button', { name: /advanced edit/i })).not.toBeInTheDocument();
   });
 
   it('confirms delete and removes the clip card after success', async () => {

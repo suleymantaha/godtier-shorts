@@ -52,18 +52,13 @@ vi.mock('../components/SubtitlePreview', () => ({
 }));
 vi.mock('../components/ClipGallery', () => ({
   ClipGallery: ({
-    onAdvancedEditClip,
     onEditClip,
   }: {
-    onAdvancedEditClip?: (clip: { created_at: number; has_transcript: boolean; name: string; project?: string; url: string }) => void;
     onEditClip?: (clip: { created_at: number; has_transcript: boolean; name: string; project?: string; url: string }) => void;
   }) => (
     <div>
       <button onClick={() => onEditClip?.({ created_at: 1, has_transcript: true, name: 'clip-1.mp4', project: 'proj-1', url: '/clip-1.mp4' })}>
         Open Subtitle Clip
-      </button>
-      <button onClick={() => onAdvancedEditClip?.({ created_at: 1, has_transcript: true, name: 'clip-1.mp4', project: 'proj-1', url: '/clip-1.mp4' })}>
-        Open Advanced Clip
       </button>
     </div>
   ),
@@ -124,16 +119,6 @@ describe('App', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /open subtitle clip/i }));
     expect(await screen.findByText('SubtitleEditor:clip-1.mp4:true')).toBeInTheDocument();
-  });
-
-  it('opens the advanced clip editor and can return to the dashboard', async () => {
-    render(<App />);
-
-    fireEvent.click(await screen.findByRole('button', { name: /open advanced clip/i }));
-    expect(await screen.findByText('Editor:clip:clip-1.mp4')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /geri don/i }));
-    expect(await screen.findByText('HoloTerminal')).toBeInTheDocument();
   });
 
   it('switches to the auto cut page from the main navigation', async () => {
