@@ -45,6 +45,7 @@ def test_run_pipeline_async_dispatches_to_pipeline_workflow(monkeypatch) -> None
         creator.run_pipeline_async(
             youtube_url="https://youtu.be/abcdefghijk",
             style_name="TIKTOK",
+            animation_type="slide_up",
             layout="double",
             skip_subtitles=True,
             num_clips=3,
@@ -58,6 +59,7 @@ def test_run_pipeline_async_dispatches_to_pipeline_workflow(monkeypatch) -> None
     assert observed["kwargs"] == {
         "youtube_url": "https://youtu.be/abcdefghijk",
         "style_name": "TIKTOK",
+        "animation_type": "slide_up",
         "layout": "double",
         "skip_subtitles": True,
         "num_clips": 3,
@@ -87,6 +89,7 @@ def test_run_manual_clip_async_dispatches_to_manual_workflow(monkeypatch) -> Non
             end_t=20.0,
             transcript_data=[{"text": "clip"}],
             style_name="PODCAST",
+            animation_type="fade",
             project_id="proj_1",
             center_x=0.4,
             layout="single",
@@ -103,6 +106,7 @@ def test_run_manual_clip_async_dispatches_to_manual_workflow(monkeypatch) -> Non
         "end_t": 20.0,
         "transcript_data": [{"text": "clip"}],
         "style_name": "PODCAST",
+        "animation_type": "fade",
         "project_id": "proj_1",
         "center_x": 0.4,
         "layout": "single",
@@ -131,6 +135,7 @@ def test_run_manual_clips_from_cut_points_async_dispatches_to_cut_points_workflo
             cut_points=[0.0, 5.0, 8.0],
             transcript_data=[{"text": "segment"}],
             style_name="HORMOZI",
+            animation_type="pop",
             project_id="proj_2",
             layout="double",
             skip_subtitles=True,
@@ -144,6 +149,7 @@ def test_run_manual_clips_from_cut_points_async_dispatches_to_cut_points_workflo
         "cut_points": [0.0, 5.0, 8.0],
         "transcript_data": [{"text": "segment"}],
         "style_name": "HORMOZI",
+        "animation_type": "pop",
         "project_id": "proj_2",
         "layout": "double",
         "skip_subtitles": True,
@@ -174,6 +180,7 @@ def test_run_batch_manual_clips_async_dispatches_to_batch_workflow(monkeypatch) 
             duration_min=10.0,
             duration_max=25.0,
             style_name="TIKTOK",
+            animation_type="shake",
             project_id="proj_3",
             layout="single",
             skip_subtitles=False,
@@ -191,6 +198,7 @@ def test_run_batch_manual_clips_async_dispatches_to_batch_workflow(monkeypatch) 
         "duration_min": 10.0,
         "duration_max": 25.0,
         "style_name": "TIKTOK",
+        "animation_type": "shake",
         "project_id": "proj_3",
         "layout": "single",
         "skip_subtitles": False,
@@ -218,6 +226,7 @@ def test_reburn_subtitles_async_dispatches_to_reburn_workflow(monkeypatch) -> No
             transcript=[{"text": "updated"}],
             project_id="proj_4",
             style_name="HIGHCARE",
+            animation_type="none",
         )
     )
 
@@ -228,4 +237,5 @@ def test_reburn_subtitles_async_dispatches_to_reburn_workflow(monkeypatch) -> No
         "transcript": [{"text": "updated"}],
         "project_id": "proj_4",
         "style_name": "HIGHCARE",
+        "animation_type": "none",
     }

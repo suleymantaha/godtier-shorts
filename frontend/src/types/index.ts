@@ -12,6 +12,7 @@ export interface LogEntry {
 }
 
 export type JobStatus = 'queued' | 'processing' | 'completed' | 'cancelled' | 'error' | 'empty';
+export type SubtitleAnimationType = 'default' | 'pop' | 'shake' | 'slide_up' | 'fade' | 'typewriter' | 'none';
 
 export interface Job {
     job_id: string;
@@ -85,8 +86,82 @@ export interface RenderMetadata {
     crop_mode?: string;
     center_x?: number | null;
     layout?: string;
+    resolved_layout?: string;
+    layout_fallback_reason?: string | null;
     style_name?: string;
+    animation_type?: SubtitleAnimationType;
+    resolved_animation_type?: Exclude<SubtitleAnimationType, 'default'>;
     cut_as_short?: boolean;
+    tracking_quality?: {
+        status?: 'good' | 'degraded' | 'fallback';
+        mode?: 'tracked' | 'manual';
+        total_frames?: number;
+        fallback_frames?: number;
+        avg_center_jump_px?: number;
+        confirmed_track_frames?: number;
+        grace_hold_frames?: number;
+        controlled_return_frames?: number;
+        reacquire_attempt_count?: number;
+        reacquire_success_count?: number;
+        active_track_id_switches?: number;
+        shot_cut_resets?: number;
+        max_track_lost_streak?: number;
+    };
+    transcript_quality?: {
+        status?: 'good' | 'partial' | 'degraded';
+        segments_without_words?: number;
+        text_word_mismatches?: number;
+        clamped_words_count?: number;
+        reconstructed_segments_count?: number;
+        empty_text_segments_after_rebuild?: number;
+        avg_words_per_chunk?: number;
+        max_chunk_duration?: number;
+        subtitle_overflow_detected?: boolean;
+        max_rendered_line_width_ratio?: number;
+        safe_area_violation_count?: number;
+        word_coverage_ratio?: number;
+        boundary_snaps_applied?: number;
+    };
+    debug_timing?: {
+        source_fps?: number;
+        normalized_fps?: number;
+        source_duration?: number;
+        normalized_video_duration?: number;
+        normalized_audio_duration?: number;
+        merged_output_duration?: number;
+        merged_output_drift_ms?: number;
+        dropped_or_duplicated_frame_estimate?: number;
+        has_audio?: boolean;
+        audio_sample_rate?: number;
+        audio_channels?: number;
+    };
+    debug_tracking?: Record<string, unknown>;
+    debug_environment?: Record<string, unknown>;
+    debug_artifacts?: {
+        tracking_overlay?: string;
+        tracking_timeline?: string;
+        subtitle_chunks?: string;
+        boundary_snap?: string;
+        timing_report?: string;
+        status?: 'complete' | 'partial';
+    };
+    render_quality_score?: number;
+    audio_validation?: {
+        has_audio?: boolean;
+        audio_sample_rate?: number;
+        audio_channels?: number;
+        audio_duration?: number;
+        audio_validation_status?: string;
+    };
+    subtitle_layout_quality?: {
+        subtitle_overflow_detected?: boolean;
+        max_rendered_line_width_ratio?: number;
+        safe_area_violation_count?: number;
+        overflow_strategy?: string;
+        avg_words_per_chunk?: number;
+        max_chunk_duration?: number;
+        chunk_count?: number;
+    };
 }
 
 export interface ClipMetadata {
@@ -132,6 +207,7 @@ export type WsStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnect
 export interface StartJobPayload {
     youtube_url: string;
     style_name: string;
+    animation_type?: SubtitleAnimationType;
     ai_engine: string;
     smoothness?: number;
     skip_subtitles?: boolean;
@@ -148,6 +224,7 @@ export interface ManualJobPayload {
     end_time: number;
     transcript?: Segment[] | null;
     style_name?: string;
+    animation_type?: SubtitleAnimationType;
     center_x?: number;
     layout?: string;
 }
@@ -166,6 +243,7 @@ export interface ReburnPayload {
     transcript: Segment[];
     project_id?: string;
     style_name?: string;
+    animation_type?: SubtitleAnimationType;
 }
 
 export interface ClipTranscriptRecoveryPayload {
@@ -193,6 +271,7 @@ export interface BatchJobPayload {
     end_time: number;
     num_clips: number;
     style_name: string;
+    animation_type?: SubtitleAnimationType;
     layout?: string;
 }
 
@@ -250,4 +329,17 @@ export interface PublishJob {
     timeline?: Array<{ state: string; message: string; at: string }>;
     created_at: string;
     updated_at: string;
+}
+
+export interface AccountDeletionSummary {
+    deleted_projects: number;
+    deleted_social_rows: number;
+    cancelled_jobs: number;
+    closed_websockets: number;
+    scrubbed_grants: number;
+}
+
+export interface AccountDeletionResponse {
+    status: 'purged';
+    summary: AccountDeletionSummary;
 }

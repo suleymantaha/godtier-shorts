@@ -5,7 +5,7 @@ Mevcut klibe yeni stil/layout ile altyazı yeniden basma. Video kesimi yapılmaz
 ## Akış
 
 ```
-Mevcut klip (veya metadata) → Transkript (mevcut veya güncel) → Yeni ASS üretimi → Burn-in → Yeni klip
+Mevcut klip → Transkript (mevcut veya güncel) → Yeni ASS → burn-in → kalite metadata güncelleme
 ```
 
 ## Tetikleyici
@@ -30,11 +30,13 @@ Mevcut klip (veya metadata) → Transkript (mevcut veya güncel) → Yeni ASS ü
 3. Geçici ASS dosyası üret
 4. `SubtitleRenderer.burn_subtitles_to_video()` ile mevcut videoya burn-in
 5. Orijinal klip üzerine yazılır (in-place)
+6. Clip metadata içindeki kalite alanları yeniden hesaplanır
 
 ## Kullanım Senaryoları
 
 - **SubtitleEditor**: Proje/klip transkriptini düzenledikten sonra yeni stille reburn
 - **Editor**: Klip üzerinde sadece stil değiştirip reburn (kadraj/zaman değişmez)
+- Clip modunda kalite özeti `render_metadata` içinden gösterilir
 
 ## Script
 

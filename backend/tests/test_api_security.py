@@ -4,6 +4,8 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from backend.api.security import (
+    ClerkProviderUnavailableError,
+    ClerkTokenExpiredError,
     authenticate_request,
     authenticate_websocket_token,
     require_policy,
@@ -94,3 +96,49 @@ def test_authenticate_websocket_token_with_static_token(monkeypatch: pytest.Monk
     auth = authenticate_websocket_token("token123")
     assert auth.subject.startswith("static-token:")
     assert "viewer" in auth.roles
+
+
+def test_expired_clerk_token_returns_specific_code(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("API_BEARER_TOKENS", raising=False)
+    monkeypatch.setenv("CLERK_ISSUER_URL", "https://example.clerk.accounts.dev")
+    monkeypatch.setenv("CLERK_AUDIENCE", "godtier-shorts-api")
+
+    def _raise_expired(*_args, **_kwargs):
+        raise ClerkTokenExpiredError("expired")
+
+    monkeypatch.setattr("backend.api.security._decode_jwt", _raise_expired)
+
+    app = FastAPI()
+
+    @app.get("/projects")
+    def projects(_: object = Depends(require_policy("view_projects"))):
+        return {"ok": True}
+
+    client = TestClient(app)
+    response = client.get("/projects", headers={"Authorization": "Bearer jwt-token"})
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["error"]["code"] == "token_expired"
+
+
+def test_unreachable_clerk_provider_returns_503(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("API_BEARER_TOKENS", raising=False)
+    monkeypatch.setenv("CLERK_ISSUER_URL", "https://example.clerk.accounts.dev")
+    monkeypatch.setenv("CLERK_AUDIENCE", "godtier-shorts-api")
+
+    def _raise_provider_error(*_args, **_kwargs):
+        raise ClerkProviderUnavailableError("down")
+
+    monkeypatch.setattr("backend.api.security._decode_jwt", _raise_provider_error)
+
+    app = FastAPI()
+
+    @app.get("/projects")
+    def projects(_: object = Depends(require_policy("view_projects"))):
+        return {"ok": True}
+
+    client = TestClient(app)
+    response = client.get("/projects", headers={"Authorization": "Bearer jwt-token"})
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["error"]["code"] == "auth_provider_unavailable"

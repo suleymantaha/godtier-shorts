@@ -2,6 +2,17 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const authRuntimeState = {
+  canUseProtectedRequests: true,
+};
+
+vi.mock('../../auth/runtime', () => ({
+  useAuthRuntimeStore: Object.assign(
+    (selector: (state: typeof authRuntimeState) => unknown) => selector(authRuntimeState),
+    { getState: () => authRuntimeState },
+  ),
+}));
+
 import {
   mockGetClipTranscript,
   mockRecoverClipTranscript,
@@ -24,6 +35,7 @@ async function switchToClipModeAndSelectClip() {
 
 describe('SubtitleEditor clip mode', () => {
   beforeEach(() => {
+    authRuntimeState.canUseProtectedRequests = true;
     resetSubtitleEditorMocks();
   });
 
@@ -35,6 +47,7 @@ describe('SubtitleEditor clip mode', () => {
 
     await waitFor(() => {
       expect(mockReburn).toHaveBeenCalledWith({
+        animation_type: 'default',
         clip_name: 'clip_1.mp4',
         project_id: 'proj_1',
         style_name: 'HORMOZI',
@@ -49,6 +62,74 @@ describe('SubtitleEditor clip mode', () => {
     await waitFor(() => expect(mockGetClipTranscript).toHaveBeenCalledWith('clip_1.mp4', 'proj_1'));
     expect(screen.queryByRole('button', { name: /^klip$/i })).not.toBeInTheDocument();
     expect(screen.getByText(/odak klip: clip_1\.mp4/i)).toBeInTheDocument();
+  });
+
+  it('shows a render quality summary for clip-focused sessions', async () => {
+    mockGetClipTranscript.mockResolvedValue({
+      active_job_id: null,
+      capabilities: {
+        can_recover_from_project: true,
+        can_transcribe_source: true,
+        has_clip_metadata: true,
+        has_clip_transcript: true,
+        has_raw_backup: true,
+        project_has_transcript: true,
+        resolved_project_id: 'proj_1',
+      },
+      last_error: null,
+      recommended_strategy: null,
+      render_metadata: {
+        audio_validation: { audio_validation_status: 'ok', has_audio: true },
+        debug_timing: { merged_output_drift_ms: 12.4 },
+        render_quality_score: 88,
+        tracking_quality: { status: 'good' },
+        transcript_quality: { status: 'good' },
+      },
+      transcript: subtitleTranscript,
+      transcript_status: 'ready',
+    });
+
+    await renderSubtitleEditor({ lockedToClip: true, targetClip: subtitleClip });
+
+    expect(await screen.findByTestId('render-quality-summary')).toBeInTheDocument();
+    expect(screen.getByText(/score 88 \/ 100/i)).toBeInTheDocument();
+    expect(screen.getByText(/kalite özeti/i)).toBeInTheDocument();
+    expect(screen.getByText(/tracking/i)).toBeInTheDocument();
+  });
+
+  it('limits render quality warnings to the top three clip issues', async () => {
+    mockGetClipTranscript.mockResolvedValue({
+      active_job_id: null,
+      capabilities: {
+        can_recover_from_project: true,
+        can_transcribe_source: true,
+        has_clip_metadata: true,
+        has_clip_transcript: true,
+        has_raw_backup: true,
+        project_has_transcript: true,
+        resolved_project_id: 'proj_1',
+      },
+      last_error: null,
+      recommended_strategy: null,
+      render_metadata: {
+        audio_validation: { audio_validation_status: 'missing', has_audio: false },
+        debug_timing: { merged_output_drift_ms: 120 },
+        render_quality_score: 61,
+        subtitle_layout_quality: { subtitle_overflow_detected: true },
+        tracking_quality: { status: 'fallback' },
+        transcript_quality: { status: 'partial' },
+      },
+      transcript: subtitleTranscript,
+      transcript_status: 'ready',
+    });
+
+    await renderSubtitleEditor({ lockedToClip: true, targetClip: subtitleClip });
+
+    expect(await screen.findByText(/tracking fallback aktifti/i)).toBeInTheDocument();
+    expect(screen.getByText(/transcript kalitesi tam değil/i)).toBeInTheDocument();
+    expect(screen.getByText(/subtitle overflow tespit edildi/i)).toBeInTheDocument();
+    expect(screen.queryByText(/a\/v drift yükseldi/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/audio muted veya geçersiz/i)).not.toBeInTheDocument();
   });
 
   it('auto-starts smart transcript recovery when the selected clip transcript is missing', async () => {

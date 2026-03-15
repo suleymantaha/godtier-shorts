@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 
 from backend.core.exceptions import AppError
+from backend.core.log_sanitizer import sanitize_log_value
 
 
 def _trace_id(request: Request) -> str:
@@ -32,13 +33,15 @@ def _error_payload(*, code: str, message: str, details: object, trace_id: str) -
 async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     trace_id = _trace_id(request)
     log_fn = logger.error if exc.log_level == "error" else logger.warning
-    log_fn(f"trace_id={trace_id} code={exc.code} message={exc.message} details={exc.details}")
+    sanitized_message = sanitize_log_value(exc.message)
+    sanitized_details = sanitize_log_value(exc.details)
+    log_fn(f"trace_id={trace_id} code={exc.code} message={sanitized_message} details={sanitized_details}")
     return JSONResponse(
         status_code=exc.status_code,
         content=_error_payload(
             code=exc.code,
-            message=exc.message,
-            details=exc.details,
+            message=sanitized_message,
+            details=sanitized_details,
             trace_id=trace_id,
         ),
     )
@@ -46,13 +49,13 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
 
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     trace_id = _trace_id(request)
-    logger.warning(f"trace_id={trace_id} code=REQUEST_VALIDATION_ERROR details={exc.errors()}")
+    logger.warning(f"trace_id={trace_id} code=REQUEST_VALIDATION_ERROR details={sanitize_log_value(exc.errors())}")
     return JSONResponse(
         status_code=422,
         content=_error_payload(
             code="REQUEST_VALIDATION_ERROR",
             message="Request validation failed",
-            details=exc.errors(),
+            details=sanitize_log_value(exc.errors()),
             trace_id=trace_id,
         ),
     )
@@ -60,13 +63,13 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     trace_id = _trace_id(request)
-    logger.error(f"trace_id={trace_id} code=INTERNAL_SERVER_ERROR message={exc}")
+    logger.error(f"trace_id={trace_id} code=INTERNAL_SERVER_ERROR message={sanitize_log_value(str(exc))}")
     return JSONResponse(
         status_code=500,
         content=_error_payload(
             code="INTERNAL_SERVER_ERROR",
             message="Beklenmeyen bir hata oluştu.",
-            details=str(exc),
+            details=sanitize_log_value(str(exc)),
             trace_id=trace_id,
         ),
     )

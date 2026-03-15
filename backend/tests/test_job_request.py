@@ -100,3 +100,42 @@ def test_job_request_duration_bounds():
             duration_min=120,
             duration_max=350,
         )
+
+
+def test_job_request_rejects_unknown_style_name():
+    with pytest.raises(ValidationError) as exc_info:
+        JobRequest(
+            youtube_url="https://youtube.com/watch?v=test",
+            style_name="CUSTOM",
+        )
+    assert "unknown style_name" in str(exc_info.value)
+
+
+def test_job_request_validates_layout_name():
+    req = JobRequest(
+        youtube_url="https://youtube.com/watch?v=test",
+        layout="split",
+    )
+    assert req.layout == "split"
+
+    with pytest.raises(ValidationError) as exc_info:
+        JobRequest(
+            youtube_url="https://youtube.com/watch?v=test",
+            layout="grid",
+        )
+    assert "unknown layout" in str(exc_info.value)
+
+
+def test_job_request_validates_animation_type():
+    req = JobRequest(
+        youtube_url="https://youtube.com/watch?v=test",
+        animation_type="shake",
+    )
+    assert req.animation_type == "shake"
+
+    with pytest.raises(ValidationError) as exc_info:
+        JobRequest(
+            youtube_url="https://youtube.com/watch?v=test",
+            animation_type="warp",
+        )
+    assert "unknown animation_type" in str(exc_info.value)

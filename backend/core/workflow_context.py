@@ -7,12 +7,15 @@ from typing import Any, Callable, Optional, Protocol
 
 from backend.config import ProjectPaths
 from backend.services.subtitle_renderer import SubtitleRenderer
+from backend.services.video_processor import VideoProcessor
 
 
 class OrchestratorContext(Protocol):
     ui_callback: Optional[Callable[[dict], None]]
     cancel_event: threading.Event
     project: Optional[ProjectPaths]
+    subject: Optional[str]
+    video_processor: VideoProcessor
 
     def _check_cancelled(self) -> None:
         ...
@@ -61,7 +64,8 @@ class OrchestratorContext(Protocol):
         layout: str = "single",
         center_x: Optional[float] = None,
         cut_as_short: bool = True,
-    ) -> None:
+        require_audio: bool = False,
+    ) -> dict:
         ...
 
     @staticmethod

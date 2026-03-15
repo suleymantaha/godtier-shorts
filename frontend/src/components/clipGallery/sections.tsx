@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  ArrowUpDown,
   CalendarClock,
   Download,
   Edit3,
@@ -10,14 +11,15 @@ import {
   Video,
   X,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
 
 import type { Clip } from '../../types';
 import type { ClipSortOrder } from './useClipGalleryController';
 import { getClipUrl } from '../../utils/url';
 import { IconButton } from '../ui/IconButton';
 import { LazyVideo } from '../ui/LazyVideo';
+import { Select } from '../ui/Select';
 import { downloadMediaSource } from '../ui/protectedMedia';
+import type { JSX } from 'react';
 
 const DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
   dateStyle: 'medium',
@@ -52,7 +54,7 @@ export function GalleryHeader({
   visibleCount: number;
 }) {
   return (
-    <div className="glass-card p-5 border-primary/15 space-y-4">
+    <div className="relative z-10 glass-card p-5 border-primary/15 space-y-4">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-3">
@@ -72,22 +74,25 @@ export function GalleryHeader({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 xl:min-w-[420px]">
-          <ToolbarField label="Project" value={projectFilter} onChange={setProjectFilter} ariaLabel="Project Filter">
-            {projectOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </ToolbarField>
           <ToolbarField
+            ariaLabel="Project Filter"
+            icon={<FolderKanban className="w-4 h-4 text-primary/60" aria-hidden="true" />}
+            label="Project"
+            options={projectOptions}
+            value={projectFilter}
+            onChange={setProjectFilter}
+          />
+          <ToolbarField
+            ariaLabel="Sort Clips"
+            icon={<ArrowUpDown className="w-4 h-4 text-primary/60" aria-hidden="true" />}
             label="Sort"
+            options={[
+              { label: 'Newest', value: 'newest' },
+              { label: 'Oldest', value: 'oldest' },
+            ]}
             value={sortOrder}
             onChange={(value) => setSortOrder(value as ClipSortOrder)}
-            ariaLabel="Sort Clips"
-          >
-            <option value="newest">Newest</option>
-            <option value="oldest">Oldest</option>
-          </ToolbarField>
+          />
         </div>
       </div>
     </div>
@@ -96,29 +101,29 @@ export function GalleryHeader({
 
 function ToolbarField({
   ariaLabel,
-  children,
+  icon,
   label,
+  options,
   onChange,
   value,
 }: {
   ariaLabel: string;
-  children: ReactNode;
+  icon: JSX.Element;
   label: string;
+  options: Array<{ label: string; value: string }>;
   onChange: (value: string) => void;
   value: string;
 }) {
   return (
-    <label className="space-y-2">
-      <span className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground">{label}</span>
-      <select
-        aria-label={ariaLabel}
-        className="input-field w-full text-sm"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {children}
-      </select>
-    </label>
+    <Select
+      ariaLabel={ariaLabel}
+      className="text-sm"
+      icon={icon}
+      label={label}
+      onChange={onChange}
+      options={options}
+      value={value}
+    />
   );
 }
 
@@ -210,7 +215,7 @@ function ClipCard({
   onEditClip?: (clip: Clip) => void;
   onShareClip: (clip: Clip) => void;
 }) {
-  const clipUrl = getClipUrl(clip);
+  const clipUrl = getClipUrl(clip, { cacheBust: clip.created_at });
 
   return (
     <div className="glass-card group hover:border-primary/40 transition-all duration-500 overflow-hidden">

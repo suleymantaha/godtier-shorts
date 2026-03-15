@@ -24,6 +24,12 @@ Proje veya klip transkriptini düzenleme. SubtitleEditor bileşeni bu sayfayı o
 4. **Reburn**
    - Stil değiştir → "Reburn" ile yeni altyazı basma
 
+5. **Kalite Özeti (clip modu)**
+   - `render_quality_score`
+   - tracking durumu
+   - transcript durumu
+   - drift / overflow / audio validation uyarıları
+
 ## API Endpoint'leri
 
 | Method | Endpoint | Açıklama |
@@ -42,7 +48,16 @@ Proje veya klip transkriptini düzenleme. SubtitleEditor bileşeni bu sayfayı o
 3. Transkript yüklenir
 4. Gerekirse metin düzenle
 5. "Kaydet" → proje/klip transkript güncellenir
-6. İsteğe bağlı: stil değiştir → "Reburn" ile yeni altyazı bas
+6. Clip modundaysa mevcut render kalite özeti gösterilir
+7. İsteğe bağlı: stil değiştir → "Reburn" ile yeni altyazı bas
+
+## Kalite Kartı
+
+- Yalnız clip transcript/detail response içindeki `render_metadata` kullanılır
+- `good`: `>=85`
+- `watch`: `70-84`
+- `degraded`: `<70`
+- En fazla 3 uyarı gösterilir: tracking fallback, transcript degraded/partial, subtitle overflow, high drift, muted/invalid audio
 
 ## İlgili Dokümantasyon
 

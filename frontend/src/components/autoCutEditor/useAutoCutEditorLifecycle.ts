@@ -12,12 +12,14 @@ interface SyncActiveJobParams {
 }
 
 interface PersistSessionParams {
+  animationType: string;
   currentJobId: string | null;
   endTime: number;
   processing: boolean;
   projectId?: string;
   startTime: number;
   storageKey: string;
+  style: string;
 }
 
 export function useSyncActiveAutoCutJob({
@@ -49,12 +51,14 @@ export function useSyncActiveAutoCutJob({
 }
 
 export function usePersistAutoCutSession({
+  animationType,
   currentJobId,
   endTime,
   processing,
   projectId,
   startTime,
   storageKey,
+  style,
 }: PersistSessionParams) {
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -62,12 +66,12 @@ export function usePersistAutoCutSession({
     }
 
     if (processing && currentJobId) {
-      window.localStorage.setItem(storageKey, JSON.stringify({ currentJobId, endTime, projectId, startTime }));
+      window.localStorage.setItem(storageKey, JSON.stringify({ animationType, currentJobId, endTime, projectId, startTime, style }));
       return;
     }
 
     window.localStorage.removeItem(storageKey);
-  }, [currentJobId, endTime, processing, projectId, startTime, storageKey]);
+  }, [animationType, currentJobId, endTime, processing, projectId, startTime, storageKey, style]);
 }
 
 export function useRevokeLocalVideoUrl(localSrc: string | null) {

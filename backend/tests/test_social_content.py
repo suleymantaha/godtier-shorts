@@ -3,6 +3,8 @@ import json
 
 import pytest
 
+import backend.config as config
+from backend.services.ownership import build_owner_scoped_project_id
 from backend.services.social.content import build_platform_prefill, extract_hashtags, resolve_viral_metadata
 
 
@@ -27,7 +29,10 @@ def test_build_platform_prefill_applies_x_limit():
 
 def test_resolve_viral_metadata_falls_back_to_viral_json(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     project_root = tmp_path / "projects"
-    project_dir = project_root / "proj_x"
+    monkeypatch.setenv("SUBJECT_NAMESPACE_SECRET", "social-content-test-secret")
+    project_id = build_owner_scoped_project_id("proj", "owner-subject", "x")
+    monkeypatch.setattr(config, "PROJECTS_DIR", project_root)
+    project_dir = config.get_project_dir(project_id)
     project_dir.mkdir(parents=True, exist_ok=True)
 
     viral_json = {
@@ -61,8 +66,7 @@ def test_resolve_viral_metadata_falls_back_to_viral_json(monkeypatch: pytest.Mon
         },
     }
 
-    monkeypatch.setattr("backend.config.PROJECTS_DIR", project_root)
-    resolved = resolve_viral_metadata("proj_x", "short_1_test.mp4", clip_meta)
+    resolved = resolve_viral_metadata(project_id, "short_1_test.mp4", clip_meta)
 
     assert resolved is not None
     assert resolved["ui_title"] == "İkinci Segment"

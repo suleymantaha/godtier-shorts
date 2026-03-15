@@ -1,4 +1,12 @@
-import { STYLE_LABELS, STYLE_OPTIONS, type StyleName } from '../../config/subtitleStyles';
+import {
+  ANIMATION_SELECT_OPTIONS,
+  isStyleName,
+  isSubtitleAnimationType,
+  STYLE_LABELS,
+  STYLE_OPTIONS,
+  type StyleName,
+  type SubtitleAnimationType,
+} from '../../config/subtitleStyles';
 import type { StartJobPayload } from '../../types';
 import { readStored } from '../../utils/storage';
 
@@ -19,16 +27,20 @@ export const RESOLUTION_OPTIONS = [
   { label: '720p', value: '720p' },
   { label: '480p', value: '480p' },
 ];
-export const STYLE_SELECT_OPTIONS = STYLE_OPTIONS.filter((style) => style !== 'CUSTOM').map((style) => ({
+export const STYLE_SELECT_OPTIONS = STYLE_OPTIONS.map((style) => ({
   label: STYLE_LABELS[style],
   value: style,
 }));
+export const MOTION_SELECT_OPTIONS = ANIMATION_SELECT_OPTIONS;
 
 interface JobFormPrefs {
+  animationType?: SubtitleAnimationType;
   engine?: string;
+  style?: StyleName;
 }
 
 interface BuildStartJobPayloadInput {
+  animationType: SubtitleAnimationType;
   autoMode: boolean;
   durationMax: number;
   durationMin: number;
@@ -45,6 +57,16 @@ export function readInitialEngine(): string {
   const candidate = (stored.engine ?? DEFAULT_ENGINE).toLowerCase();
 
   return ENGINE_OPTIONS.has(candidate) ? candidate : DEFAULT_ENGINE;
+}
+
+export function readInitialStyle(): StyleName {
+  const stored = readStored<JobFormPrefs>(JOB_FORM_PREFS_STORAGE_KEY, { style: 'TIKTOK' });
+  return isStyleName(stored.style) ? stored.style : 'TIKTOK';
+}
+
+export function readInitialAnimationType(): SubtitleAnimationType {
+  const stored = readStored<JobFormPrefs>(JOB_FORM_PREFS_STORAGE_KEY, { animationType: 'default' });
+  return isSubtitleAnimationType(stored.animationType) ? stored.animationType : 'default';
 }
 
 export function clampClipCount(value: number): number {
@@ -67,6 +89,7 @@ export function resolveDurationRange(autoMode: boolean, durationMin: number, dur
 }
 
 export function buildStartJobPayload({
+  animationType,
   autoMode,
   durationMax,
   durationMin,
@@ -81,6 +104,7 @@ export function buildStartJobPayload({
 
   return {
     ai_engine: engine,
+    animation_type: animationType,
     auto_mode: autoMode,
     duration_max: resolvedDuration.max,
     duration_min: resolvedDuration.min,

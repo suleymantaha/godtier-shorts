@@ -1,12 +1,17 @@
 import json
+import hashlib
 from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from loguru import logger
 
+import backend.config as config
 from backend.api.error_handlers import register_exception_handlers
 from backend.api.routes import social
+from backend.services.ownership import build_owner_scoped_project_id, ensure_project_manifest
+from backend.services.social.service import build_signed_social_export_token
 from backend.services.social.store import SocialStore
 
 
@@ -35,6 +40,25 @@ def _build_app() -> FastAPI:
     return app
 
 
+def _static_subject(token: str) -> str:
+    return f"static-token:{hashlib.sha256(token.encode('utf-8')).hexdigest()[:12]}"
+
+
+def _owned_project_id(owner_token: str, suffix: str) -> str:
+    return build_owner_scoped_project_id("proj", _static_subject(owner_token), suffix)
+
+
+def _write_owned_social_project(project_root: Path, project_id: str, *, owner_token: str, clip_name: str) -> None:
+    clip_dir = config.get_project_path(project_id, "shorts")
+    clip_dir.mkdir(parents=True, exist_ok=True)
+    (clip_dir / clip_name).write_bytes(b"video")
+    (clip_dir / clip_name.replace(".mp4", ".json")).write_text(
+        json.dumps({"transcript": [], "viral_metadata": {}}),
+        encoding="utf-8",
+    )
+    ensure_project_manifest(project_id, owner_subject=_static_subject(owner_token), source="social_test")
+
+
 @pytest.fixture()
 def social_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> SocialStore:
     store = SocialStore(tmp_path / "social_test.db")
@@ -45,6 +69,7 @@ def social_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> SocialStore
 @pytest.fixture(autouse=True)
 def social_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SOCIAL_ENCRYPTION_SECRET", "test-social-encryption-secret")
+    monkeypatch.setenv("SUBJECT_NAMESPACE_SECRET", "social-ownership-test-secret")
 
 
 @pytest.fixture()
@@ -100,7 +125,9 @@ def test_social_prefill_drafts_and_publish(
 
     # Inject isolated workspace projects dir for test clip metadata.
     project_root = tmp_path / "projects"
-    clip_dir = project_root / "proj_1" / "shorts"
+    monkeypatch.setattr(config, "PROJECTS_DIR", project_root)
+    project_id = _owned_project_id("editor-token", "1")
+    clip_dir = config.get_project_path(project_id, "shorts")
     clip_dir.mkdir(parents=True, exist_ok=True)
     (clip_dir / "clip_1.mp4").write_bytes(b"video")
     (clip_dir / "clip_1.json").write_text(
@@ -118,8 +145,7 @@ def test_social_prefill_drafts_and_publish(
         ),
         encoding="utf-8",
     )
-
-    monkeypatch.setattr("backend.config.PROJECTS_DIR", project_root)
+    ensure_project_manifest(project_id, owner_subject=_static_subject("editor-token"), source="social_test")
 
     # Save credential first.
     client = TestClient(_build_app())
@@ -133,7 +159,7 @@ def test_social_prefill_drafts_and_publish(
     prefill = client.get(
         "/api/social/prefill",
         headers=auth_header,
-        params={"project_id": "proj_1", "clip_name": "clip_1.mp4"},
+        params={"project_id": project_id, "clip_name": "clip_1.mp4"},
     )
     assert prefill.status_code == 200
     prefill_payload = prefill.json()
@@ -143,7 +169,7 @@ def test_social_prefill_drafts_and_publish(
         "/api/social/drafts",
         headers=auth_header,
         json={
-            "project_id": "proj_1",
+            "project_id": project_id,
             "clip_name": "clip_1.mp4",
             "platforms": {
                 "youtube_shorts": {
@@ -159,7 +185,7 @@ def test_social_prefill_drafts_and_publish(
     prefill_with_draft = client.get(
         "/api/social/prefill",
         headers=auth_header,
-        params={"project_id": "proj_1", "clip_name": "clip_1.mp4"},
+        params={"project_id": project_id, "clip_name": "clip_1.mp4"},
     )
     assert prefill_with_draft.status_code == 200
     assert prefill_with_draft.json()["platforms"]["youtube_shorts"]["title"] == "Custom Title"
@@ -167,7 +193,7 @@ def test_social_prefill_drafts_and_publish(
     delete_draft = client.delete(
         "/api/social/drafts",
         headers=auth_header,
-        params={"project_id": "proj_1", "clip_name": "clip_1.mp4"},
+        params={"project_id": project_id, "clip_name": "clip_1.mp4"},
     )
     assert delete_draft.status_code == 200
     assert delete_draft.json()["status"] == "deleted"
@@ -175,7 +201,7 @@ def test_social_prefill_drafts_and_publish(
     prefill_after_reset = client.get(
         "/api/social/prefill",
         headers=auth_header,
-        params={"project_id": "proj_1", "clip_name": "clip_1.mp4"},
+        params={"project_id": project_id, "clip_name": "clip_1.mp4"},
     )
     assert prefill_after_reset.status_code == 200
     assert prefill_after_reset.json()["platforms"]["youtube_shorts"]["title"] == "TITLE"
@@ -184,7 +210,7 @@ def test_social_prefill_drafts_and_publish(
         "/api/social/publish",
         headers=auth_header,
         json={
-            "project_id": "proj_1",
+            "project_id": project_id,
             "clip_name": "clip_1.mp4",
             "mode": "now",
             "approval_required": False,
@@ -204,7 +230,7 @@ def test_social_prefill_drafts_and_publish(
     jobs = client.get(
         "/api/social/publish-jobs",
         headers=auth_header,
-        params={"project_id": "proj_1", "clip_name": "clip_1.mp4"},
+        params={"project_id": project_id, "clip_name": "clip_1.mp4"},
     )
     assert jobs.status_code == 200
     assert len(jobs.json()["jobs"]) == 1
@@ -219,11 +245,9 @@ def test_social_user_isolation(
     monkeypatch.setattr(social, "validate_postiz_credential", lambda *_args, **_kwargs: [])
 
     project_root = tmp_path / "projects"
-    clip_dir = project_root / "proj_2" / "shorts"
-    clip_dir.mkdir(parents=True, exist_ok=True)
-    (clip_dir / "clip_2.mp4").write_bytes(b"video")
-    (clip_dir / "clip_2.json").write_text(json.dumps({"transcript": [], "viral_metadata": {}}), encoding="utf-8")
-    monkeypatch.setattr("backend.config.PROJECTS_DIR", project_root)
+    monkeypatch.setattr(config, "PROJECTS_DIR", project_root)
+    project_id = _owned_project_id("editor-token-a", "2")
+    _write_owned_social_project(project_root, project_id, owner_token="editor-token-a", clip_name="clip_2.mp4")
 
     client = TestClient(_build_app())
 
@@ -240,7 +264,7 @@ def test_social_user_isolation(
         "/api/social/publish",
         headers=a_headers,
         json={
-            "project_id": "proj_2",
+            "project_id": project_id,
             "clip_name": "clip_2.mp4",
             "mode": "now",
             "approval_required": False,
@@ -271,14 +295,9 @@ def test_social_publish_dry_run(
     monkeypatch.setattr(social, "validate_postiz_credential", lambda *_args, **_kwargs: [])
 
     project_root = tmp_path / "projects"
-    clip_dir = project_root / "proj_3" / "shorts"
-    clip_dir.mkdir(parents=True, exist_ok=True)
-    (clip_dir / "clip_3.mp4").write_bytes(b"video")
-    (clip_dir / "clip_3.json").write_text(
-        json.dumps({"transcript": [], "viral_metadata": {}}),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr("backend.config.PROJECTS_DIR", project_root)
+    monkeypatch.setattr(config, "PROJECTS_DIR", project_root)
+    project_id = _owned_project_id("editor-token", "3")
+    _write_owned_social_project(project_root, project_id, owner_token="editor-token", clip_name="clip_3.mp4")
 
     fake_client = _FakePostizClient([{"id": "acc_1", "provider": "youtube", "name": "YT Main"}])
     monkeypatch.setattr(social, "get_postiz_client_for_subject", lambda *_args, **_kwargs: (fake_client, {}))
@@ -299,7 +318,7 @@ def test_social_publish_dry_run(
         "/api/social/publish/dry-run",
         headers=auth_header,
         json={
-            "project_id": "proj_3",
+            "project_id": project_id,
             "clip_name": "clip_3.mp4",
             "mode": "now",
             "probe_media_upload": True,
@@ -318,7 +337,134 @@ def test_social_publish_dry_run(
     assert payload["status"] == "ok"
     assert payload["dry_run"]["targets"][0]["settings_type"] == "youtube"
     assert payload["dry_run"]["media_probe"]["attempted"] is True
-    assert fake_client.uploaded is True
+
+
+def test_social_routes_reject_foreign_project_access(
+    monkeypatch: pytest.MonkeyPatch,
+    social_store: SocialStore,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("API_BEARER_TOKENS", "editor-token-a:editor;editor-token-b:editor")
+    monkeypatch.setattr(social, "validate_postiz_credential", lambda *_args, **_kwargs: [])
+
+    project_root = tmp_path / "projects"
+    monkeypatch.setattr(config, "PROJECTS_DIR", project_root)
+    project_id = _owned_project_id("editor-token-a", "4")
+    _write_owned_social_project(project_root, project_id, owner_token="editor-token-a", clip_name="clip_4.mp4")
+
+    client = TestClient(_build_app())
+    a_headers = {"Authorization": "Bearer editor-token-a"}
+    b_headers = {"Authorization": "Bearer editor-token-b"}
+
+    save = client.post(
+        "/api/social/credentials",
+        headers=a_headers,
+        json={"provider": "postiz", "api_key": "postiz_test_key_123"},
+    )
+    assert save.status_code == 200
+
+    client.post(
+        "/api/social/credentials",
+        headers=b_headers,
+        json={"provider": "postiz", "api_key": "postiz_test_key_456"},
+    )
+
+    assert client.get(
+        "/api/social/prefill",
+        headers=b_headers,
+        params={"project_id": project_id, "clip_name": "clip_4.mp4"},
+    ).status_code == 404
+
+    assert client.put(
+        "/api/social/drafts",
+        headers=b_headers,
+        json={
+            "project_id": project_id,
+            "clip_name": "clip_4.mp4",
+            "platforms": {"youtube_shorts": {"title": "nope"}},
+        },
+    ).status_code == 404
+
+    assert client.post(
+        "/api/social/publish",
+        headers=b_headers,
+        json={
+            "project_id": project_id,
+            "clip_name": "clip_4.mp4",
+            "mode": "now",
+            "approval_required": False,
+            "targets": [{"account_id": "acc_1", "platform": "youtube_shorts"}],
+            "content_by_platform": {"youtube_shorts": {"title": "x", "text": "y", "hashtags": []}},
+        },
+    ).status_code == 404
+
+    assert client.post(
+        "/api/social/publish/dry-run",
+        headers=b_headers,
+        json={
+            "project_id": project_id,
+            "clip_name": "clip_4.mp4",
+            "mode": "now",
+            "targets": [{"account_id": "acc_1", "platform": "youtube_shorts"}],
+            "content_by_platform": {"youtube_shorts": {"title": "x", "text": "y", "hashtags": []}},
+        },
+    ).status_code == 404
+
+
+def test_social_export_serves_clip_for_valid_signed_token(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "projects"
+    monkeypatch.setattr(config, "PROJECTS_DIR", project_root)
+    project_id = _owned_project_id("editor-token", "export")
+    _write_owned_social_project(project_root, project_id, owner_token="editor-token", clip_name="clip_export.mp4")
+
+    token = build_signed_social_export_token(
+        subject=_static_subject("editor-token"),
+        project_id=project_id,
+        clip_name="clip_export.mp4",
+        publish_job_id="job-export",
+        ttl_seconds=300,
+    )
+
+    client = TestClient(_build_app())
+    response = client.get("/api/social/export", params={"token": token})
+
+    assert response.status_code == 200
+    assert response.content == b"video"
+
+
+def test_social_export_rejects_invalid_or_expired_token_with_log(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "projects"
+    monkeypatch.setattr(config, "PROJECTS_DIR", project_root)
+    project_id = _owned_project_id("editor-token", "export")
+    _write_owned_social_project(project_root, project_id, owner_token="editor-token", clip_name="clip_export.mp4")
+
+    expired_token = build_signed_social_export_token(
+        subject=_static_subject("editor-token"),
+        project_id=project_id,
+        clip_name="clip_export.mp4",
+        publish_job_id="job-export",
+        ttl_seconds=-1,
+    )
+    invalid_token = f"{expired_token}tampered"
+
+    messages: list[str] = []
+    sink_id = logger.add(messages.append, format="{message}")
+    try:
+        client = TestClient(_build_app())
+        expired_response = client.get("/api/social/export", params={"token": expired_token})
+        invalid_response = client.get("/api/social/export", params={"token": invalid_token})
+    finally:
+        logger.remove(sink_id)
+
+    assert expired_response.status_code == 404
+    assert invalid_response.status_code == 404
+    assert any("social_export_denied" in message for message in messages)
 
 
 def test_social_accounts_uses_env_fallback(
@@ -348,11 +494,9 @@ def test_scheduled_publish_is_synced_to_postiz_immediately(
     monkeypatch.setattr(social, "validate_postiz_credential", lambda *_args, **_kwargs: [])
 
     project_root = tmp_path / "projects"
-    clip_dir = project_root / "proj_4" / "shorts"
-    clip_dir.mkdir(parents=True, exist_ok=True)
-    (clip_dir / "clip_4.mp4").write_bytes(b"video")
-    (clip_dir / "clip_4.json").write_text(json.dumps({"transcript": [], "viral_metadata": {}}), encoding="utf-8")
-    monkeypatch.setattr("backend.config.PROJECTS_DIR", project_root)
+    monkeypatch.setattr(config, "PROJECTS_DIR", project_root)
+    project_id = _owned_project_id("editor-token", "4")
+    _write_owned_social_project(project_root, project_id, owner_token="editor-token", clip_name="clip_4.mp4")
 
     def fake_schedule(job, *, store=None):
         assert store is not None
@@ -378,7 +522,7 @@ def test_scheduled_publish_is_synced_to_postiz_immediately(
         "/api/social/publish",
         headers=auth_header,
         json={
-            "project_id": "proj_4",
+            "project_id": project_id,
             "clip_name": "clip_4.mp4",
             "mode": "scheduled",
             "scheduled_at": "2026-03-16T03:02",
@@ -402,7 +546,7 @@ def test_scheduled_publish_is_synced_to_postiz_immediately(
     jobs = client.get(
         "/api/social/publish-jobs",
         headers=auth_header,
-        params={"project_id": "proj_4", "clip_name": "clip_4.mp4"},
+        params={"project_id": project_id, "clip_name": "clip_4.mp4"},
     )
     assert jobs.status_code == 200
     assert jobs.json()["jobs"][0]["state"] == "scheduled"
@@ -419,11 +563,9 @@ def test_approve_future_scheduled_job_creates_remote_schedule(
     monkeypatch.setattr(social, "validate_postiz_credential", lambda *_args, **_kwargs: [])
 
     project_root = tmp_path / "projects"
-    clip_dir = project_root / "proj_5" / "shorts"
-    clip_dir.mkdir(parents=True, exist_ok=True)
-    (clip_dir / "clip_5.mp4").write_bytes(b"video")
-    (clip_dir / "clip_5.json").write_text(json.dumps({"transcript": [], "viral_metadata": {}}), encoding="utf-8")
-    monkeypatch.setattr("backend.config.PROJECTS_DIR", project_root)
+    monkeypatch.setattr(config, "PROJECTS_DIR", project_root)
+    project_id = _owned_project_id("approver-token", "5")
+    _write_owned_social_project(project_root, project_id, owner_token="approver-token", clip_name="clip_5.mp4")
 
     def fake_schedule(job, *, store=None):
         assert store is not None
@@ -449,7 +591,7 @@ def test_approve_future_scheduled_job_creates_remote_schedule(
         "/api/social/publish",
         headers=auth_header,
         json={
-            "project_id": "proj_5",
+            "project_id": project_id,
             "clip_name": "clip_5.mp4",
             "mode": "scheduled",
             "scheduled_at": "2026-03-16T03:02",
@@ -488,11 +630,9 @@ def test_cancel_scheduled_job_deletes_remote_post(
     deleted: list[str] = []
 
     project_root = tmp_path / "projects"
-    clip_dir = project_root / "proj_6" / "shorts"
-    clip_dir.mkdir(parents=True, exist_ok=True)
-    (clip_dir / "clip_6.mp4").write_bytes(b"video")
-    (clip_dir / "clip_6.json").write_text(json.dumps({"transcript": [], "viral_metadata": {}}), encoding="utf-8")
-    monkeypatch.setattr("backend.config.PROJECTS_DIR", project_root)
+    monkeypatch.setattr(config, "PROJECTS_DIR", project_root)
+    project_id = _owned_project_id("editor-token", "6")
+    _write_owned_social_project(project_root, project_id, owner_token="editor-token", clip_name="clip_6.mp4")
 
     def fake_schedule(job, *, store=None):
         assert store is not None
@@ -522,7 +662,7 @@ def test_cancel_scheduled_job_deletes_remote_post(
         "/api/social/publish",
         headers=auth_header,
         json={
-            "project_id": "proj_6",
+            "project_id": project_id,
             "clip_name": "clip_6.mp4",
             "mode": "scheduled",
             "scheduled_at": "2026-03-16T03:02",

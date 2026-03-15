@@ -13,16 +13,21 @@ from backend.config import PROJECTS_DIR
 from backend.core.orchestrator import GodTierShortsCreator
 
 
+def _sample_project_master() -> Path | None:
+    candidates = sorted(PROJECTS_DIR.glob("*/yt_*_ZPkqcNHz2BM/master.mp4"))
+    return candidates[0] if candidates else None
+
+
 @pytest.mark.skipif(
-    not (PROJECTS_DIR / "yt_ZPkqcNHz2BM" / "master.mp4").exists(),
-    reason="Test projesi yok (yt_ZPkqcNHz2BM/master.mp4)",
+    _sample_project_master() is None,
+    reason="Test projesi yok (*/yt_*_ZPkqcNHz2BM/master.mp4)",
 )
 def test_run_manual_clip_saves_raw_video():
     """Proje modunda klip kesildiğinde _raw.mp4 kaydedilmeli."""
-    project_id = "yt_ZPkqcNHz2BM"
-    master = PROJECTS_DIR / project_id / "master.mp4"
-    if not master.exists():
+    master = _sample_project_master()
+    if master is None or not master.exists():
         pytest.skip("master.mp4 yok")
+    project_id = master.parent.name
 
     transcript = [
         {"text": "Test", "start": 1.0, "end": 2.5, "speaker": "A", "words": []},

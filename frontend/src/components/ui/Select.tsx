@@ -14,6 +14,7 @@ interface SelectProps {
     value: string;
     onChange: (value: string) => void;
     label?: string;
+    ariaLabel?: string;
     icon?: ReactNode;
     placeholder?: string;
     className?: string;
@@ -26,6 +27,7 @@ export const Select: FC<SelectProps> = ({
     value,
     onChange,
     label,
+    ariaLabel,
     icon,
     placeholder = 'Seçiniz...',
     className,
@@ -39,10 +41,14 @@ export const Select: FC<SelectProps> = ({
     useSelectDismissal(containerRef, isOpen, closeMenu);
 
     return (
-        <div className={clsx("relative", label && "space-y-2", className)} ref={containerRef}>
+        <div
+            className={clsx("relative min-w-0 max-w-full", label && "space-y-2", isOpen && "z-20", className)}
+            ref={containerRef}
+        >
             <SelectLabel id={id} label={label} />
             <div className="relative">
                 <SelectTrigger
+                    ariaLabel={ariaLabel}
                     id={id}
                     disabled={disabled}
                     icon={icon}
@@ -112,6 +118,7 @@ function SelectLabel({ id, label }: { id?: string; label?: string }) {
 }
 
 function SelectTrigger({
+    ariaLabel,
     id,
     disabled,
     icon,
@@ -120,6 +127,7 @@ function SelectTrigger({
     placeholder,
     selectedOption,
 }: {
+    ariaLabel?: string;
     id?: string;
     disabled: boolean;
     icon?: ReactNode;
@@ -134,17 +142,18 @@ function SelectTrigger({
             type="button"
             onClick={onToggle}
             disabled={disabled}
+            aria-label={ariaLabel}
             className={clsx(
-                "input-field w-full flex items-center justify-between text-left transition-all duration-300",
+                "input-field w-full min-w-0 max-w-full overflow-hidden flex items-center justify-between gap-3 text-left transition-all duration-300",
                 isOpen ? "border-primary/50 ring-1 ring-primary/20" : "hover:border-primary/30",
                 disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
             )}
             aria-haspopup="listbox"
             aria-expanded={isOpen}
         >
-            <div className="flex items-center gap-3 overflow-hidden">
+            <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
                 {icon && <span className="shrink-0 text-muted-foreground">{icon}</span>}
-                <span className="truncate text-sm">
+                <span className="block min-w-0 truncate text-sm">
                     {selectedOption ? selectedOption.label : <span className="text-muted-foreground italic">{placeholder}</span>}
                 </span>
             </div>

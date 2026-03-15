@@ -1,11 +1,12 @@
-import { AlertCircle, ChevronRight, Film, Save, Scissors, Sparkles } from 'lucide-react';
+import { AlertCircle, ChevronRight, Film, Save, Scissors, Sparkles, Waves } from 'lucide-react';
 
 import { MAX_UPLOAD_BYTES } from '../../config';
-import { STYLE_OPTIONS } from '../../config/subtitleStyles';
+import { ANIMATION_SELECT_OPTIONS, STYLE_OPTIONS, isStyleName, isSubtitleAnimationType } from '../../config/subtitleStyles';
 import { toTimeStr } from '../../utils/time';
 import { RangeSlider } from '../RangeSlider';
 import { TimeRangeHeader } from '../TimeRangeHeader';
 import { VideoOverlay } from '../VideoOverlay';
+import { Select } from '../ui/Select';
 import { useResolvedMediaSource } from '../ui/protectedMedia';
 import { VideoControls } from '../ui/VideoControls';
 import { formatUploadLimit } from './helpers';
@@ -21,6 +22,7 @@ export function EditorLayout({ controller }: { controller: EditorController }) {
         uploading={controller.uploading}
       />
       <EditorPreviewCard
+        animationType={controller.animationType}
         centerX={controller.centerX}
         currentTime={controller.currentTime}
         duration={controller.duration}
@@ -54,9 +56,11 @@ export function EditorLayout({ controller }: { controller: EditorController }) {
         visibleTranscript={controller.visibleTranscript}
       />
       <EditorRenderCard
+        animationType={controller.animationType}
         duration={controller.duration}
         error={controller.error}
         numClips={controller.numClips}
+        onAnimationTypeChange={controller.setAnimationType}
         onBatchRender={controller.handleProcessBatch}
         onManualRender={controller.handleProcessManual}
         onNumClipsChange={controller.setNumClips}
@@ -112,6 +116,7 @@ function EditorUploadCard({
 }
 
 function EditorPreviewCard({
+  animationType,
   centerX,
   currentTime,
   duration,
@@ -132,6 +137,7 @@ function EditorPreviewCard({
   videoRef,
   videoSrc,
 }: {
+  animationType: EditorController['animationType'];
   centerX: number;
   currentTime: number;
   duration: number;
@@ -167,7 +173,14 @@ function EditorPreviewCard({
           onPause={onPause}
           controls={false}
         />
-        <VideoOverlay currentTime={currentTime} transcript={transcript} style={style} centerX={centerX} onCropChange={onCropChange} />
+        <VideoOverlay
+          animationType={animationType}
+          currentTime={currentTime}
+          transcript={transcript}
+          style={style}
+          centerX={centerX}
+          onCropChange={onCropChange}
+        />
         <VideoControls isPlaying={isPlaying} onTogglePlay={togglePlay} />
       </div>
       <div className="p-5 bg-black/30 space-y-6">
@@ -284,9 +297,11 @@ function TranscriptEntry({
 }
 
 function EditorRenderCard({
+  animationType,
   duration,
   error,
   numClips,
+  onAnimationTypeChange,
   onBatchRender,
   onManualRender,
   onNumClipsChange,
@@ -295,9 +310,11 @@ function EditorRenderCard({
   style,
   transcribing,
 }: {
+  animationType: EditorController['animationType'];
   duration: number;
   error: string | null;
   numClips: number;
+  onAnimationTypeChange: React.Dispatch<React.SetStateAction<EditorController['animationType']>>;
   onBatchRender: () => void;
   onManualRender: () => void;
   onNumClipsChange: React.Dispatch<React.SetStateAction<number>>;
@@ -311,7 +328,12 @@ function EditorRenderCard({
       <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-[0.2em] text-secondary">
         <Sparkles className="w-4 h-4" /> Altyazı Stili & Render
       </div>
-      <EditorStylePicker onStyleChange={onStyleChange} style={style} />
+      <EditorStyleControls
+        animationType={animationType}
+        onAnimationTypeChange={onAnimationTypeChange}
+        onStyleChange={onStyleChange}
+        style={style}
+      />
       {error && (
         <div role="alert" className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-xs font-mono text-red-400">
           <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" /> {error}
@@ -337,26 +359,37 @@ function EditorRenderCard({
   );
 }
 
-function EditorStylePicker({
+function EditorStyleControls({
+  animationType,
+  onAnimationTypeChange,
   onStyleChange,
   style,
 }: {
+  animationType: EditorController['animationType'];
+  onAnimationTypeChange: React.Dispatch<React.SetStateAction<EditorController['animationType']>>;
   onStyleChange: React.Dispatch<React.SetStateAction<EditorController['style']>>;
   style: EditorController['style'];
 }) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2" role="radiogroup" aria-label="Altyazi stili">
-      {STYLE_OPTIONS.map((styleOption) => (
-        <button
-          key={styleOption}
-          onClick={() => onStyleChange(styleOption)}
-          role="radio"
-          aria-checked={style === styleOption}
-          className={`py-2.5 rounded-lg text-[11px] font-mono uppercase border transition-all ${style === styleOption ? 'bg-secondary/20 border-secondary/60 text-secondary' : 'bg-white/5 border-white/10 text-muted-foreground hover:border-white/20'}`}
-        >
-          {styleOption}
-        </button>
-      ))}
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div className="space-y-2">
+        <label className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground">Visual Style</label>
+        <Select
+          value={style}
+          onChange={(value) => onStyleChange(isStyleName(value) ? value : 'HORMOZI')}
+          options={STYLE_OPTIONS.map((styleOption) => ({ label: styleOption, value: styleOption }))}
+          icon={<Sparkles className="w-4 h-4 text-secondary/50" />}
+        />
+      </div>
+      <div className="space-y-2">
+        <label className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground">Motion Style</label>
+        <Select
+          value={animationType}
+          onChange={(value) => onAnimationTypeChange(isSubtitleAnimationType(value) ? value : 'default')}
+          options={ANIMATION_SELECT_OPTIONS}
+          icon={<Waves className="w-4 h-4 text-secondary/50" />}
+        />
+      </div>
     </div>
   );
 }

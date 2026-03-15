@@ -7,6 +7,7 @@ import { useThrottledCallback } from '../../hooks/useThrottle';
 import { useJobStore } from '../../store/useJobStore';
 import type { Clip, Job, Segment } from '../../types';
 import { normalizeTranscript } from '../../utils/transcript';
+import { isStyleName, isSubtitleAnimationType } from '../../config/subtitleStyles';
 import {
   buildEditorSessionKey,
   buildStoredEditorSession,
@@ -69,6 +70,7 @@ function useEditorState(initialProjectId: string | undefined) {
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [style, setStyle] = useState<ResolvedEditorSessionState['style']>('HORMOZI');
+  const [animationType, setAnimationType] = useState<ResolvedEditorSessionState['animationType']>('default');
   const [numClips, setNumClips] = useState(3);
   const [centerX, setCenterX] = useState(0.5);
   const [projectId, setProjectId] = useState<string | undefined>(initialProjectId);
@@ -78,6 +80,7 @@ function useEditorState(initialProjectId: string | undefined) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   return {
+    animationType,
     centerX,
     currentJobId,
     currentTime,
@@ -97,6 +100,7 @@ function useEditorState(initialProjectId: string | undefined) {
     setDuration,
     setEndTime,
     setError,
+    setAnimationType,
     setIsPlaying,
     setNumClips,
     setProcessing,
@@ -136,6 +140,7 @@ function useHydrateEditorSessionEffect({
   targetClip,
 }: Omit<EditorEffectsParams, 'jobs'>) {
   const {
+    setAnimationType,
     setCenterX,
     setCurrentJobId,
     setEndTime,
@@ -159,6 +164,7 @@ function useHydrateEditorSessionEffect({
     setStartTime(nextState.startTime);
     setEndTime(nextState.endTime);
     setStyle(nextState.style);
+    setAnimationType(nextState.animationType);
     setNumClips(nextState.numClips);
     setCenterX(nextState.centerX);
     setCurrentJobId(nextState.currentJobId);
@@ -181,6 +187,7 @@ function useHydrateEditorSessionEffect({
     setProjectId,
     setSessionReady,
     setStartTime,
+    setAnimationType,
     setStyle,
     setTranscript,
     targetClip,
@@ -195,6 +202,7 @@ function usePersistEditorSessionEffect({ sessionKey, state }: Pick<EditorEffects
 
     window.localStorage.setItem(sessionKey, JSON.stringify(buildStoredEditorSession({
       centerX: state.centerX,
+      animationType: state.animationType,
       currentJobId: state.currentJobId,
       endTime: state.endTime,
       numClips: state.numClips,
@@ -206,6 +214,7 @@ function usePersistEditorSessionEffect({ sessionKey, state }: Pick<EditorEffects
   }, [
     sessionKey,
     state.centerX,
+    state.animationType,
     state.currentJobId,
     state.endTime,
     state.numClips,
@@ -293,9 +302,14 @@ function useTrackEditorJobEffect({ jobs, state }: Pick<EditorEffectsParams, 'job
 function useClipTranscriptEffect({
   clipProjectId,
   mode,
+  setAnimationType,
   state,
+  setStyle,
   targetClip,
-}: Pick<EditorEffectsParams, 'clipProjectId' | 'mode' | 'state' | 'targetClip'>) {
+}: Pick<EditorEffectsParams, 'clipProjectId' | 'mode' | 'state' | 'targetClip'> & {
+  setAnimationType: React.Dispatch<React.SetStateAction<ResolvedEditorSessionState['animationType']>>;
+  setStyle: React.Dispatch<React.SetStateAction<ResolvedEditorSessionState['style']>>;
+}) {
   const { sessionReady, setError, setTranscript, transcript } = state;
 
   useEffect(() => {
@@ -303,10 +317,24 @@ function useClipTranscriptEffect({
       return;
     }
 
+    if (!clipProjectId) {
+      setError('Bu klip icin proje baglami bulunamadi.');
+      return;
+    }
+
     void clipsApi.getTranscript(targetClip.name, clipProjectId)
-      .then((response) => setTranscript(normalizeTranscript(response)))
+      .then((response) => {
+        setTranscript(normalizeTranscript(response));
+        const renderMetadata = response.render_metadata;
+        if (renderMetadata?.style_name && isStyleName(renderMetadata.style_name)) {
+          setStyle(renderMetadata.style_name);
+        }
+        if (renderMetadata?.animation_type && isSubtitleAnimationType(renderMetadata.animation_type)) {
+          setAnimationType(renderMetadata.animation_type);
+        }
+      })
       .catch((error) => setError(getErrorMessage(error, 'Transkript yüklenemedi.')));
-  }, [clipProjectId, mode, sessionReady, setError, setTranscript, targetClip, transcript.length]);
+  }, [clipProjectId, mode, sessionReady, setAnimationType, setError, setStyle, setTranscript, targetClip, transcript.length]);
 }
 
 function useEditorEffects(params: EditorEffectsParams) {
@@ -314,7 +342,11 @@ function useEditorEffects(params: EditorEffectsParams) {
   usePersistEditorSessionEffect(params);
   useProjectTranscriptEffect(params);
   useTrackEditorJobEffect(params);
-  useClipTranscriptEffect(params);
+  useClipTranscriptEffect({
+    ...params,
+    setAnimationType: params.state.setAnimationType,
+    setStyle: params.state.setStyle,
+  });
 }
 
 function useEditorPlaybackActions({
@@ -462,6 +494,7 @@ function useEditorSaveAction({
   setError,
   setProcessing,
   setSaving,
+  animationType,
   style,
   targetClip,
   transcript,
@@ -473,6 +506,7 @@ function useEditorSaveAction({
   setError: React.Dispatch<React.SetStateAction<string | null>>;
   setProcessing: React.Dispatch<React.SetStateAction<boolean>>;
   setSaving: React.Dispatch<React.SetStateAction<boolean>>;
+  animationType: ResolvedEditorSessionState['animationType'];
   style: ResolvedEditorSessionState['style'];
   targetClip?: Clip;
   transcript: Segment[];
@@ -483,7 +517,12 @@ function useEditorSaveAction({
 
     try {
       if (mode === 'clip' && targetClip) {
+        if (!clipProjectId) {
+          throw new Error('Bu klip icin proje baglami bulunamadi.');
+        }
+
         const response = await editorApi.reburn({
+          animation_type: animationType,
           clip_name: targetClip.name,
           project_id: clipProjectId,
           style_name: style,
@@ -499,7 +538,7 @@ function useEditorSaveAction({
     } finally {
       setSaving(false);
     }
-  }, [clipProjectId, mode, projectId, setCurrentJobId, setError, setProcessing, setSaving, style, targetClip, transcript]);
+  }, [animationType, clipProjectId, mode, projectId, setCurrentJobId, setError, setProcessing, setSaving, style, targetClip, transcript]);
 }
 
 function useEditorProcessActions({
@@ -511,6 +550,7 @@ function useEditorProcessActions({
   setError,
   setProcessing,
   startTime,
+  animationType,
   style,
   transcript,
 }: {
@@ -522,6 +562,7 @@ function useEditorProcessActions({
   setError: React.Dispatch<React.SetStateAction<string | null>>;
   setProcessing: React.Dispatch<React.SetStateAction<boolean>>;
   startTime: number;
+  animationType: ResolvedEditorSessionState['animationType'];
   style: ResolvedEditorSessionState['style'];
   transcript: Segment[];
 }) {
@@ -536,6 +577,7 @@ function useEditorProcessActions({
     setError(null);
     try {
       const response = await editorApi.processBatch({
+        animation_type: animationType,
         end_time: endTime,
         num_clips: numClips,
         project_id: projectId,
@@ -547,7 +589,7 @@ function useEditorProcessActions({
       setError(getErrorMessage(error, 'Toplu iş başarısız.'));
       setProcessing(false);
     }
-  }, [endTime, numClips, projectId, setCurrentJobId, setError, setProcessing, startTime, style]);
+  }, [animationType, endTime, numClips, projectId, setCurrentJobId, setError, setProcessing, startTime, style]);
 
   const handleProcessManual = useCallback(async () => {
     const rangeError = getTimeRangeError(startTime, endTime);
@@ -560,6 +602,7 @@ function useEditorProcessActions({
     setError(null);
     try {
       const response = await editorApi.processManual({
+        animation_type: animationType,
         center_x: centerX,
         end_time: endTime,
         project_id: projectId,
@@ -572,7 +615,7 @@ function useEditorProcessActions({
       setError(getErrorMessage(error, 'Manuel iş başarısız.'));
       setProcessing(false);
     }
-  }, [centerX, endTime, projectId, setCurrentJobId, setError, setProcessing, startTime, style, transcript]);
+  }, [animationType, centerX, endTime, projectId, setCurrentJobId, setError, setProcessing, startTime, style, transcript]);
 
   return { handleProcessBatch, handleProcessManual };
 }
@@ -649,6 +692,7 @@ function useEditorActions({
     setError: state.setError,
     setProcessing: state.setProcessing,
     setSaving: state.setSaving,
+    animationType: state.animationType,
     style: state.style,
     targetClip,
     transcript: state.transcript,
@@ -662,6 +706,7 @@ function useEditorActions({
     setError: state.setError,
     setProcessing: state.setProcessing,
     startTime: state.startTime,
+    animationType: state.animationType,
     style: state.style,
     transcript: state.transcript,
   });
@@ -690,6 +735,7 @@ export function useEditorController({ mode = 'master', targetClip }: EditorProps
 
   return {
     centerX: state.centerX,
+    animationType: state.animationType,
     currentTime: state.currentTime,
     duration: state.duration,
     endTime: state.endTime,
@@ -709,6 +755,7 @@ export function useEditorController({ mode = 'master', targetClip }: EditorProps
     processing: state.processing,
     saving: state.saving,
     setCenterX: state.setCenterX,
+    setAnimationType: state.setAnimationType,
     setEndTime: state.setEndTime,
     setIsPlaying: state.setIsPlaying,
     setNumClips: state.setNumClips,

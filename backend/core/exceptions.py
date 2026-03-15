@@ -89,3 +89,14 @@ class JobExecutionError(AppError):
             status_code=500,
             log_level="error",
         )
+
+
+class RateLimitError(AppError):
+    def __init__(self, message: str, details: Any | None = None) -> None:
+        super().__init__(
+            code="RATE_LIMITED",
+            message=message,
+            details=details,
+            status_code=429,
+            log_level="warning",
+        )

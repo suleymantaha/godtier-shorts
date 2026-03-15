@@ -1,6 +1,17 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const authRuntimeState = {
+  canUseProtectedRequests: true,
+};
+
+vi.mock('../../auth/runtime', () => ({
+  useAuthRuntimeStore: Object.assign(
+    (selector: (state: typeof authRuntimeState) => unknown) => selector(authRuntimeState),
+    { getState: () => authRuntimeState },
+  ),
+}));
 
 import {
   mockGetProjectTranscript,
@@ -23,6 +34,7 @@ async function selectProject(projectId: string) {
 
 describe('SubtitleEditor project mode', () => {
   beforeEach(() => {
+    authRuntimeState.canUseProtectedRequests = true;
     resetSubtitleEditorMocks();
   });
 
@@ -43,6 +55,7 @@ describe('SubtitleEditor project mode', () => {
     });
 
     expect(await screen.findByText(/transcript kaydedildi/i)).toBeInTheDocument();
+    expect(screen.queryByTestId('render-quality-summary')).not.toBeInTheDocument();
   });
 
   it('starts manual clip rendering from the selected project range', async () => {
@@ -53,6 +66,7 @@ describe('SubtitleEditor project mode', () => {
 
     await waitFor(() => {
       expect(mockProcessManual).toHaveBeenCalledWith({
+        animation_type: 'default',
         end_time: 60,
         project_id: 'proj_1',
         start_time: 0,

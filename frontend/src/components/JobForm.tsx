@@ -1,9 +1,8 @@
 import {
   JobFormAutoPilotSection,
-  JobFormClipCountField,
+  JobFormControlGridSection,
   JobFormErrorAlert,
   JobFormSourceSection,
-  JobFormStyleAndEngineSection,
   JobFormSubmitButton,
 } from './jobForm/sections';
 import { type JobFormProps, useJobFormController } from './jobForm/useJobFormController';
@@ -12,7 +11,7 @@ export const JobForm = (props: JobFormProps = {}) => {
   const controller = useJobFormController(props);
 
   return (
-    <form onSubmit={controller.handleStart} className="space-y-6">
+    <form onSubmit={controller.handleStart} className="space-y-5">
       <JobFormSourceSection
         isSubmitting={controller.isSubmitting}
         onResolutionChange={controller.setResolution}
@@ -22,22 +21,22 @@ export const JobForm = (props: JobFormProps = {}) => {
         url={controller.url}
         urlId={controller.urlId}
       />
-      <JobFormStyleAndEngineSection
+      <JobFormControlGridSection
+        animationId={controller.animationId}
+        animationType={controller.animationType}
         engine={controller.engine}
         engineId={controller.engineId}
         isSubmitting={controller.isSubmitting}
+        numClips={controller.numClips}
+        numClipsId={controller.numClipsId}
+        onAnimationChange={controller.setAnimationType}
         onEngineChange={controller.setEngine}
+        onNumClipsChange={controller.setNumClips}
         onSkipSubtitlesChange={controller.setSkipSubtitles}
         onStyleChange={controller.setStyle}
         skipSubtitles={controller.skipSubtitles}
         style={controller.style}
         styleId={controller.styleId}
-      />
-      <JobFormClipCountField
-        isSubmitting={controller.isSubmitting}
-        numClips={controller.numClips}
-        numClipsId={controller.numClipsId}
-        onNumClipsChange={controller.setNumClips}
       />
       <JobFormAutoPilotSection
         autoMode={controller.autoMode}

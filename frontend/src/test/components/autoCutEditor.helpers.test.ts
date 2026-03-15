@@ -62,6 +62,7 @@ describe('autoCutEditor job helpers', () => {
 describe('autoCutEditor payload helpers', () => {
   it('builds sorted cut points for manual markers', () => {
     const payload = buildAutoCutUploadPayload({
+      animationType: 'default',
       cutAsShort: true,
       duration: 180,
       endTime: 42,
@@ -73,6 +74,7 @@ describe('autoCutEditor payload helpers', () => {
     });
 
     expect(payload.cut_points).toEqual([5, 12, 30, 42]);
+    expect(payload.animation_type).toBe('default');
     expect(payload.num_clips).toBe(3);
     expect(payload.start_time).toBe(5);
     expect(payload.end_time).toBe(42);
@@ -80,6 +82,7 @@ describe('autoCutEditor payload helpers', () => {
 
   it('uses the full video for AI clip generation without manual markers', () => {
     const payload = buildAutoCutUploadPayload({
+      animationType: 'default',
       cutAsShort: true,
       duration: 95,
       endTime: 35,
@@ -91,6 +94,7 @@ describe('autoCutEditor payload helpers', () => {
     });
 
     expect(payload.cut_points).toBeUndefined();
+    expect(payload.animation_type).toBe('default');
     expect(payload.num_clips).toBe(4);
     expect(payload.start_time).toBe(0);
     expect(payload.end_time).toBe(95);

@@ -15,6 +15,7 @@ def run_transcription(
     status_callback=None,
     language: str = "tr",
     model_size: str = "large-v3",
+    cancel_event: threading.Event | None = None,
 ) -> str
 ```
 
@@ -50,6 +51,7 @@ def run_transcription(
 | word_timestamps | True | Kelime zaman damgaları |
 | vad_filter | True | Ses aktivite filtreleme |
 | vad_parameters | min_silence_duration_ms=500 | Sessizlik eşiği |
+| cancel_event | None | Pipeline iptal sinyali |
 
 ## Ortam Değişkenleri
 
@@ -60,3 +62,9 @@ def run_transcription(
 
 - YouTube pipeline: İndirme sonrası ses ayrıştırma → transkripsiyon
 - Upload: `ensure_project_transcript()` → `run_transcription()`
+
+## v2.1 Notları
+
+- `cancel_event` keyword arg olarak geçirilir; iptal kontrolü model yükleme, transkripsiyon ve yazma aşamalarında yapılır.
+- Segmentlerde `words=[]` görülebilir; boundary snap ve clip-local transcript işlemleri bu durumda degrade/fallback kurallarıyla çalışır.
+- `word_coverage_ratio`, boundary snap kararlarında kullanılan türetilmiş kalite metriğidir.

@@ -5,7 +5,7 @@ Mevcut klibe yeni stil/layout ile altyazı yeniden basma. Video kesimi yapılmaz
 ## Akış
 
 ```
-Mevcut klip (veya metadata) → Transkript (mevcut veya güncel) → Yeni ASS üretimi → Burn-in → Yeni klip
+Mevcut klip → Transkript (mevcut veya güncel) → Yeni ASS → burn-in → kalite metadata güncelleme
 ```
 
 ## Tetikleyici
@@ -30,6 +30,7 @@ Mevcut klip (veya metadata) → Transkript (mevcut veya güncel) → Yeni ASS ü
 3. Geçici ASS dosyası üret
 4. `SubtitleRenderer.burn_subtitles_to_video()` ile mevcut videoya burn-in
 5. Orijinal klip üzerine yazılır (in-place)
+6. `transcript_quality`, `subtitle_layout_quality`, `render_quality_score` ve varsa `debug_artifacts` güncellenir
 
 ## Kullanım Senaryoları
 
@@ -53,6 +54,11 @@ Reburn öncesi transkript düzenlemesi yapıldığında `POST /api/transcript` i
 - **Hedef**: `project_id` varsa `workspace/projects/{project_id}/transcript.json`, yoksa varsayılan proje
 - **Body**: `TranscriptSegment[]` (Pydantic list)
 - **Not**: Proje transkripti tüm videonun; klip transkripti `shorts/{clip}.json` metadata'da – reburn/save ile güncellenir
+
+## Kalite Özeti
+
+- Reburn yeni tracking üretmez; varsa mevcut tracking/audio metriklerini metadata'dan korur.
+- Clip modunda SubtitleEditor bu metadata içinden read-only kalite kartı gösterir.
 
 ## İlgili
 

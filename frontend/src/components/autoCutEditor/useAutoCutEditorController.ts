@@ -51,18 +51,21 @@ export function useAutoCutEditorController() {
     storageKey: AUTO_CUT_SESSION_KEY,
   });
   usePersistAutoCutSession({
+    animationType: state.animationType,
     currentJobId: state.currentJobId,
     endTime: state.endTime,
     processing: jobState.processing,
     projectId: state.projectId,
     startTime: state.startTime,
     storageKey: AUTO_CUT_SESSION_KEY,
+    style: state.style,
   });
   useRevokeLocalVideoUrl(state.localSrc);
 
   return {
     ...actions,
     ...jobState,
+    animationType: state.animationType,
     busy: isProjectBusy(state.projectId, jobs),
     currentJob,
     currentJobId: state.currentJobId,
@@ -78,6 +81,7 @@ export function useAutoCutEditorController() {
     queuePosition: state.currentJobId ? getQueuePosition(state.currentJobId, jobs) : null,
     resultVideoSrc: jobState.resultUrl ? getClipUrl({ url: jobState.resultUrl }) : undefined,
     selectedFile: state.selectedFile,
+    setAnimationType: state.setAnimationType,
     setCutAsShort: state.setCutAsShort,
     setIsPlaying: state.setIsPlaying,
     setSkipSubtitles: state.setSkipSubtitles,

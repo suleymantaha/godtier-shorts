@@ -5,8 +5,8 @@ Projenin tek hakikat kaynağı (single source of truth).
 Tüm klasör yolları ve sabitler buradan yönetilir.
 Bir yolu değiştirmek istersen, sadece bu dosyayı düzenle.
 """
-import re
 import os
+import re
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -28,7 +28,9 @@ TEMP_DIR      = WORKSPACE / "temp"
 OUTPUTS_DIR   = WORKSPACE / "outputs"     # Genel çıktılar (opsiyonel/eski)
 METADATA_DIR  = WORKSPACE / "metadata"
 LOGS_DIR      = WORKSPACE / "logs"
-PROJECTS_DIR  = WORKSPACE / "projects"    # Yeni proje tabanlı yapı
+PROJECTS_DIR  = WORKSPACE / "projects"    # Subject bazlı proje yapısı
+
+SUBJECT_HASH_PATTERN = re.compile(r"(?:^|_)([0-9a-f]{32})(?:_|$)")
 
 # ---------------------------------------------------------------------------
 # Yol Yardımcıları (Path traversal güvenliği)
@@ -46,6 +48,21 @@ def sanitize_project_name(project_name: str) -> str:
     return safe
 
 
+def sanitize_subject_hash(subject_hash: str) -> str:
+    normalized = (subject_hash or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{32}", normalized):
+        raise ValueError("Geçersiz subject hash")
+    return normalized
+
+
+def extract_subject_hash_from_project_id(project_name: str) -> str:
+    safe_name = sanitize_project_name(project_name)
+    match = SUBJECT_HASH_PATTERN.search(safe_name)
+    if not match:
+        raise ValueError("Geçersiz proje adı: owner subject hash bulunamadı")
+    return sanitize_subject_hash(match.group(1))
+
+
 def sanitize_clip_name(clip_name: str) -> str:
     """Path traversal önleme: sadece güvenli dosya adına izin verir."""
     if not clip_name or not clip_name.strip():
@@ -61,26 +78,56 @@ def sanitize_clip_name(clip_name: str) -> str:
 def get_project_dir(project_name: str) -> Path:
     """Proje klasör yolunu döner (path traversal korumalı)."""
     safe_name = sanitize_project_name(project_name)
-    pdir = PROJECTS_DIR / safe_name
+    subject_hash = extract_subject_hash_from_project_id(safe_name)
+    pdir = get_subject_projects_dir(subject_hash) / safe_name
     pdir.mkdir(parents=True, exist_ok=True)
     return pdir
+
+
+def get_subject_projects_dir(subject_hash: str) -> Path:
+    safe_subject_hash = sanitize_subject_hash(subject_hash)
+    subject_dir = PROJECTS_DIR / safe_subject_hash
+    subject_dir.mkdir(parents=True, exist_ok=True)
+    return subject_dir
 
 
 def get_project_path(project_name: str, *parts: str) -> Path:
     """Proje içinde klasör oluşturmadan güvenli bir path döner."""
     safe_name = sanitize_project_name(project_name)
-    return PROJECTS_DIR / safe_name / Path(*parts)
+    subject_hash = extract_subject_hash_from_project_id(safe_name)
+    return PROJECTS_DIR / subject_hash / safe_name / Path(*parts)
+
+
+def iter_project_dirs(projects_root: Path | None = None):
+    """Tüm subject/project köklerini döner."""
+    root = projects_root or PROJECTS_DIR
+    if not root.exists():
+        return
+
+    for subject_dir in sorted(root.iterdir(), key=lambda path: path.name):
+        if not subject_dir.is_dir():
+            continue
+        try:
+            sanitize_subject_hash(subject_dir.name)
+        except ValueError:
+            continue
+        for project_dir in sorted(subject_dir.iterdir(), key=lambda path: path.name):
+            if project_dir.is_dir():
+                yield project_dir
 
 
 class ProjectPaths:
     """Bir projenin içindeki tüm kritik dosyaları yönetir (path traversal korumalı)."""
     def __init__(self, project_name: str):
         self.root = get_project_dir(project_name)  # sanitize_project_name içeride çağrılır
+        self.manifest     = self.root / "project_manifest.json"
+        self.debug        = self.root / "debug"
         self.master_video = self.root / "master.mp4"
         self.master_audio = self.root / "master.wav"
         self.transcript   = self.root / "transcript.json"
         self.viral_meta   = self.root / "viral.json"
         self.outputs      = self.root / "shorts"
+        self.debug.mkdir(exist_ok=True)
         self.outputs.mkdir(exist_ok=True)
 
 # ---------------------------------------------------------------------------

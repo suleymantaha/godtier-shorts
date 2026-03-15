@@ -13,6 +13,12 @@ from loguru import logger
 
 from backend.config import MASTER_AUDIO, MASTER_VIDEO, ProjectPaths
 from backend.core.command_runner import CommandRunner
+from backend.core.subtitle_timing import (
+    collect_valid_words,
+    compute_word_coverage_ratio,
+    count_normalized_tokens,
+    normalize_subtitle_text,
+)
 from backend.services.subtitle_renderer import SubtitleRenderer
 from backend.services.video_processor import VideoProcessor
 
@@ -86,12 +92,32 @@ def shift_timestamps(
     with open(original_json, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    shifted = build_shifted_transcript_segments(data, start_time, end_time)
+    shifted, _report = build_shifted_transcript_segments_with_report(data, start_time, end_time)
 
     with open(output_json, "w", encoding="utf-8") as f:
         json.dump(shifted, f, ensure_ascii=False, indent=4)
 
     return output_json
+
+
+def shift_timestamps_with_report(
+    original_json: str,
+    start_time: float,
+    end_time: float,
+    output_json: str,
+) -> dict:
+    """Aligns subtitle timestamps and returns transcript quality metrics."""
+    with open(original_json, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    shifted, report = build_shifted_transcript_segments_with_report(data, start_time, end_time)
+    with open(output_json, "w", encoding="utf-8") as f:
+        json.dump(shifted, f, ensure_ascii=False, indent=4)
+    return {
+        "path": output_json,
+        "segments": shifted,
+        "transcript_quality": report,
+    }
 
 
 def build_shifted_transcript_segments(
@@ -100,8 +126,21 @@ def build_shifted_transcript_segments(
     end_time: float,
 ) -> list[dict]:
     """Slice transcript data into a clip-local timeline."""
-    shifted = []
+    shifted, _report = build_shifted_transcript_segments_with_report(data, start_time, end_time)
+    return shifted
+
+
+def build_shifted_transcript_segments_with_report(
+    data: list[dict],
+    start_time: float,
+    end_time: float,
+) -> tuple[list[dict], dict]:
+    """Slice transcript data into a clip-local timeline and collect quality metrics."""
+    shifted: list[dict] = []
     duration = end_time - start_time
+    clamped_words_count = 0
+    reconstructed_segments_count = 0
+    text_word_mismatches = 0
     for seg in data:
         if seg["end"] > start_time and seg["start"] < end_time:
             new_start = max(0, seg["start"] - start_time)
@@ -110,30 +149,105 @@ def build_shifted_transcript_segments(
             shifted_words = []
             for word in seg.get("words", []):
                 if "start" in word and "end" in word:
-                    ws = word["start"] - start_time
-                    we = min(word["end"] - start_time, duration)
+                    raw_start = float(word["start"]) - start_time
+                    raw_end = float(word["end"]) - start_time
+                    ws = max(0.0, raw_start)
+                    we = min(raw_end, duration)
+                    if raw_start != ws or raw_end != we:
+                        clamped_words_count += 1
                     if we > 0 and ws < duration:
                         shifted_words.append(
                             {
                                 "word": word["word"],
-                                "start": max(0, ws),
+                                "start": ws,
                                 "end": we,
                                 "score": word.get("score", 1.0),
                             }
                         )
 
-            if shifted_words:
-                shifted.append(
-                    {
-                        "text": seg["text"],
-                        "start": new_start,
-                        "end": new_end,
-                        "speaker": seg.get("speaker", "Bilinmeyen"),
-                        "words": shifted_words,
-                    }
-                )
+            if new_end <= new_start:
+                continue
 
-    return shifted
+            rebuilt_text = " ".join(
+                str(word.get("word", "")).strip()
+                for word in shifted_words
+                if str(word.get("word", "")).strip()
+            )
+            original_text = str(seg.get("text", "")).strip()
+            if shifted_words:
+                if normalize_subtitle_text(original_text) and normalize_subtitle_text(original_text) != normalize_subtitle_text(rebuilt_text):
+                    text_word_mismatches += 1
+                if rebuilt_text and rebuilt_text != original_text:
+                    reconstructed_segments_count += 1
+
+            shifted.append(
+                {
+                    "text": rebuilt_text or seg["text"],
+                    "start": new_start,
+                    "end": new_end,
+                    "speaker": seg.get("speaker", "Bilinmeyen"),
+                    "words": shifted_words,
+                }
+            )
+
+    report = analyze_transcript_segments(
+        shifted,
+        clamped_words_count=clamped_words_count,
+        reconstructed_segments_count=reconstructed_segments_count,
+        text_word_mismatches=text_word_mismatches,
+    )
+    return shifted, report
+
+
+def analyze_transcript_segments(
+    segments: list[dict],
+    *,
+    clamped_words_count: int = 0,
+    reconstructed_segments_count: int = 0,
+    text_word_mismatches: int = 0,
+) -> dict:
+    valid_words = collect_valid_words(segments)
+    segments_without_words = 0
+    empty_text_segments_after_rebuild = 0
+    for segment in segments:
+        text = str(segment.get("text", "")).strip()
+        segment_words = [
+            word for word in segment.get("words", []) or []
+            if str(word.get("word", "")).strip()
+        ]
+        if not segment_words:
+            segments_without_words += 1
+        if not normalize_subtitle_text(text):
+            empty_text_segments_after_rebuild += 1
+
+    return {
+        "status": _resolve_transcript_quality_status(
+            word_coverage_ratio=compute_word_coverage_ratio(segments),
+            segments_without_words=segments_without_words,
+            empty_text_segments_after_rebuild=empty_text_segments_after_rebuild,
+        ),
+        "segments_without_words": segments_without_words,
+        "text_word_mismatches": text_word_mismatches,
+        "clamped_words_count": clamped_words_count,
+        "reconstructed_segments_count": reconstructed_segments_count,
+        "empty_text_segments_after_rebuild": empty_text_segments_after_rebuild,
+        "word_coverage_ratio": round(compute_word_coverage_ratio(segments), 4),
+        "valid_word_tokens": len(valid_words),
+        "normalized_text_tokens": sum(count_normalized_tokens(str(segment.get("text", ""))) for segment in segments),
+    }
+
+
+def _resolve_transcript_quality_status(
+    *,
+    word_coverage_ratio: float,
+    segments_without_words: int,
+    empty_text_segments_after_rebuild: int,
+) -> str:
+    if word_coverage_ratio >= 0.80 and segments_without_words == 0 and empty_text_segments_after_rebuild == 0:
+        return "good"
+    if word_coverage_ratio >= 0.60:
+        return "partial"
+    return "degraded"
 
 
 def cut_and_burn_clip(
@@ -150,11 +264,13 @@ def cut_and_burn_clip(
     layout: str,
     center_x: Optional[float],
     cut_as_short: bool,
-) -> None:
+    require_audio: bool = False,
+) -> dict:
     """Cuts clip and optionally burns subtitles."""
+    render_report: dict = {}
     if cut_as_short:
         try:
-            video_processor.create_viral_short(
+            render_report = video_processor.create_viral_short(
                 input_video=master_video,
                 start_time=start_t,
                 end_time=end_t,
@@ -163,17 +279,21 @@ def cut_and_burn_clip(
                 manual_center_x=center_x,
                 layout=layout,
                 cancel_event=cancel_event,
+                require_audio=require_audio,
             )
         finally:
             video_processor.cleanup_gpu()
     else:
-        video_processor.cut_segment_only(
+        render_report = video_processor.cut_segment_only(
             input_video=master_video,
             start_time=start_t,
             end_time=end_t,
             output_filename=temp_cropped,
             cancel_event=cancel_event,
+            require_audio=require_audio,
         )
+    if not isinstance(render_report, dict):
+        render_report = {}
 
     if subtitle_engine is not None and Path(ass_file).exists():
         raw_path = final_output.replace(".mp4", "_raw.mp4")
@@ -186,3 +306,7 @@ def cut_and_burn_clip(
         )
     else:
         shutil.move(temp_cropped, final_output)
+
+    if subtitle_engine is not None:
+        render_report["subtitle_layout_quality"] = dict(getattr(subtitle_engine, "last_render_report", {}) or {})
+    return render_report

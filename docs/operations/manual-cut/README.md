@@ -19,8 +19,9 @@ Tek veya çoklu manuel kesim. Zaman aralığı veya cut_points ile belirlenir.
 5. Video işleme:
    - `cut_as_short=True`: YOLO + SteadyCam crop
    - `cut_as_short=False`: Sadece segment kesimi (crop yok)
+   - `center_x` verildiyse tracking by-pass edilir
 6. Burn-in (altyazı varsa)
-7. Metadata JSON kaydetme
+7. Kalite metadata'sı ve opsiyonel debug artifact kaydetme
 
 ## Cut Points Akışı
 
@@ -57,7 +58,7 @@ Her aralık için `run_manual_clip()` çağrılır.
 ## Çıktı
 
 - `workspace/projects/{project_id}/shorts/manual_{job_id}.mp4` veya `cut_{n}_{start}_{end}.mp4`
-- Her klip için `.json` metadata
+- Her klip için `.json` metadata; kalite alanları ve opsiyonel debug bundle referanslarıyla birlikte
 
 ## İlgili
 

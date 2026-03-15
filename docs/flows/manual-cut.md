@@ -4,11 +4,11 @@ Tek veya çoklu manuel kesim. Zaman aralığı veya cut_points ile belirlenir.
 
 ## Varyantlar
 
-| Varyant | Tetikleyici | Orchestrator Metodu |
-|---------|-------------|---------------------|
-| Tek klip | `POST /api/manual-cut-upload` (num_clips=1, cut_points yok) | `run_manual_clip()` |
-| Cut points | `POST /api/manual-cut-upload` (cut_points JSON) | `run_manual_clips_from_cut_points()` |
-| Tek klip (mevcut proje) | `POST /api/process-manual` | `run_manual_clip()` |
+| Varyant                 | Tetikleyici                                                 | Orchestrator Metodu                  |
+| ----------------------- | ----------------------------------------------------------- | ------------------------------------ |
+| Tek klip                | `POST /api/manual-cut-upload` (num_clips=1, cut_points yok) | `run_manual_clip()`                  |
+| Cut points              | `POST /api/manual-cut-upload` (cut_points JSON)             | `run_manual_clips_from_cut_points()` |
+| Tek klip (mevcut proje) | `POST /api/process-manual`                                  | `run_manual_clip()`                  |
 
 ## Tek Klip Akışı
 
@@ -19,8 +19,9 @@ Tek veya çoklu manuel kesim. Zaman aralığı veya cut_points ile belirlenir.
 5. Video işleme:
    - `cut_as_short=True`: YOLO + SteadyCam crop
    - `cut_as_short=False`: Sadece segment kesimi (crop yok)
+   - `center_x` verildiyse tracking yerine manuel merkez kullanılır
 6. Burn-in (altyazı varsa)
-7. Metadata JSON kaydetme
+7. Kalite metadata'sı ve opsiyonel debug artifact kaydetme
 
 ## Cut Points Akışı
 
@@ -32,33 +33,33 @@ Her aralık için `run_manual_clip()` çağrılır.
 
 ### manual-cut-upload (Form)
 
-| Parametre | Tip | Açıklama |
-|-----------|-----|----------|
-| file | UploadFile | Video dosyası |
-| start_time | float | Başlangıç (sn) |
-| end_time | float | Bitiş (sn) |
-| style_name | str | HORMOZI vb. |
-| skip_subtitles | bool | Altyazı atlama |
-| num_clips | int | 1-20 (batch için) |
-| cut_points | str | JSON array [t0,t1,...] |
-| cut_as_short | bool | YOLO crop kullan |
+| Parametre      | Tip        | Açıklama               |
+| -------------- | ---------- | ---------------------- |
+| file           | UploadFile | Video dosyası          |
+| start_time     | float      | Başlangıç (sn)         |
+| end_time       | float      | Bitiş (sn)             |
+| style_name     | str        | HORMOZI vb.            |
+| skip_subtitles | bool       | Altyazı atlama         |
+| num_clips      | int        | 1-20 (batch için)      |
+| cut_points     | str        | JSON array [t0,t1,...] |
+| cut_as_short   | bool       | YOLO crop kullan       |
 
 ### process-manual (JSON)
 
-| Parametre | Açıklama |
-|-----------|----------|
-| project_id | Proje ID |
-| start_time, end_time | Aralık |
-| transcript | Opsiyonel segment listesi |
-| style_name | Altyazı stili |
-| center_x | Manuel kadraj merkezi (0-1) |
-| layout | single / split |
+| Parametre            | Açıklama                    |
+| -------------------- | --------------------------- |
+| project_id           | Proje ID                    |
+| start_time, end_time | Aralık                      |
+| transcript           | Opsiyonel segment listesi   |
+| style_name           | Altyazı stili               |
+| center_x             | Manuel kadraj merkezi (0-1) |
+| layout               | single / split              |
 
 ## Çıktı
 
 - `workspace/projects/{project_id}/shorts/manual_{job_id}.mp4` veya `cut_{n}_{start}_{end}.mp4`
 - Public erişim: `/api/projects/{project_id}/shorts/{clip_name}`
-- Her klip için `.json` metadata
+- Her klip için `.json` metadata; `render_quality_score`, `tracking_quality`, `transcript_quality`, `audio_validation`, `debug_artifacts` alanlarını içerebilir
 
 ## İlgili
 

@@ -3,17 +3,35 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import App from '../App';
 import { APP_STATE_STORAGE_KEY } from '../app/helpers';
+import { AUTH_IDENTITY_STORAGE_KEY } from '../auth/isolation';
+import { AUTH_SNAPSHOT_STORAGE_KEY } from '../auth/session';
+import type { ResilientAuthState } from '../auth/useResilientAuth';
 
-const getTokenMock = vi.fn().mockResolvedValue('jwt-token');
 const toggleThemeMock = vi.fn();
 const useWebSocketMock = vi.fn();
+const resetJobStoreMock = vi.fn();
+const resilientAuthState: ResilientAuthState = {
+  backendAuthStatus: 'fresh',
+  canAccessApp: true,
+  canUseBackend: true,
+  error: null,
+  identityKey: 'user-1',
+  isOnline: true,
+  notice: null,
+  pauseReason: null,
+  showUserMenu: true,
+  status: 'authenticated',
+  tokenExpiresAt: null,
+};
 
 vi.mock('@clerk/clerk-react', () => ({
-  SignedIn: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  SignedOut: () => null,
   SignIn: () => <div>SignIn</div>,
   UserButton: () => <div>UserButton</div>,
-  useAuth: () => ({ getToken: getTokenMock, isLoaded: true, isSignedIn: true }),
+  useUser: () => ({ user: { delete: vi.fn() } }),
+}));
+
+vi.mock('../auth/useResilientAuth', () => ({
+  useResilientAuth: () => resilientAuthState,
 }));
 
 vi.mock('../hooks/useWebSocket', () => ({
@@ -21,7 +39,10 @@ vi.mock('../hooks/useWebSocket', () => ({
 }));
 
 vi.mock('../store/useJobStore', () => ({
-  useJobStore: (selector: (state: { wsStatus: string }) => unknown) => selector({ wsStatus: 'connected' }),
+  useJobStore: Object.assign(
+    (selector: (state: { wsStatus: string }) => unknown) => selector({ wsStatus: 'connected' }),
+    { getState: () => ({ reset: resetJobStoreMock }) },
+  ),
 }));
 
 vi.mock('../store/useThemeStore', () => ({
@@ -43,11 +64,11 @@ vi.mock('../components/JobForm', () => ({
   ),
 }));
 
-vi.mock('../components/HoloTerminal', () => ({ HoloTerminal: () => <div>HoloTerminal</div> }));
-vi.mock('../components/JobQueue', () => ({ JobQueue: () => <div>JobQueue</div> }));
+vi.mock('../components/HoloTerminal', () => ({ HoloTerminal: () => <div data-testid="config-logs">HoloTerminal</div> }));
+vi.mock('../components/JobQueue', () => ({ JobQueue: () => <div data-testid="job-queue">JobQueue</div> }));
 vi.mock('../components/SubtitlePreview', () => ({
-  SubtitlePreview: ({ disabled, styleName }: { disabled: boolean; styleName: string }) => (
-    <div>{`SubtitlePreview:${styleName}:${String(disabled)}`}</div>
+  SubtitlePreview: ({ disabled, size, styleName }: { disabled: boolean; size?: 'compact' | 'default' | 'tall'; styleName: string }) => (
+    <div data-testid="config-preview">{`SubtitlePreview:${styleName}:${String(disabled)}:${size ?? 'default'}`}</div>
   ),
 }));
 vi.mock('../components/ClipGallery', () => ({
@@ -87,12 +108,24 @@ describe('App', () => {
   beforeEach(() => {
     localStorage.clear();
     document.documentElement.removeAttribute('data-theme');
-    getTokenMock.mockClear();
     toggleThemeMock.mockClear();
     useWebSocketMock.mockClear();
+    resetJobStoreMock.mockClear();
+    resilientAuthState.backendAuthStatus = 'fresh';
+    resilientAuthState.canAccessApp = true;
+    resilientAuthState.canUseBackend = true;
+    resilientAuthState.error = null;
+    resilientAuthState.identityKey = 'user-1';
+    resilientAuthState.isOnline = true;
+    resilientAuthState.notice = null;
+    resilientAuthState.pauseReason = null;
+    resilientAuthState.showUserMenu = true;
+    resilientAuthState.status = 'authenticated';
+    resilientAuthState.tokenExpiresAt = null;
   });
 
   it('restores the saved mode and persists navigation changes', async () => {
+    localStorage.setItem(AUTH_IDENTITY_STORAGE_KEY, 'user-1');
     localStorage.setItem(APP_STATE_STORAGE_KEY, JSON.stringify({ viewMode: 'subtitle', editingClip: null, subtitleTargetClip: null }));
 
     render(<App />);
@@ -103,15 +136,29 @@ describe('App', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /configure/i }));
     expect(await screen.findByText('HoloTerminal')).toBeInTheDocument();
+    expect(screen.getByText('SubtitlePreview:TIKTOK:false:tall')).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(getTokenMock).toHaveBeenCalled();
       expect(JSON.parse(localStorage.getItem(APP_STATE_STORAGE_KEY) ?? '{}')).toEqual({
         editingClip: null,
         subtitleTargetClip: null,
         viewMode: 'config',
       });
     });
+  });
+
+  it('renders config workspace in form, preview, logs, queue order', async () => {
+    const { container } = render(<App />);
+
+    await screen.findByText('HoloTerminal');
+
+    const content = container.textContent ?? '';
+    expect(content.indexOf('Change Style')).toBeLessThan(content.indexOf('SubtitlePreview:TIKTOK:false:tall'));
+    expect(content.indexOf('SubtitlePreview:TIKTOK:false:tall')).toBeLessThan(content.indexOf('HoloTerminal'));
+    expect(content.indexOf('HoloTerminal')).toBeLessThan(content.indexOf('JobQueue'));
+    expect(screen.getByText('Danger Zone')).toBeInTheDocument();
+    expect(screen.queryByText(/Preview Snapshot/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Seçilen kombinasyonun kısa görünümü/i)).not.toBeInTheDocument();
   });
 
   it('opens the locked subtitle editor for gallery edit actions', async () => {
@@ -137,6 +184,7 @@ describe('App', () => {
   });
 
   it('clears locked subtitle targets when opening subtitle mode from navigation', async () => {
+    localStorage.setItem(AUTH_IDENTITY_STORAGE_KEY, 'user-1');
     localStorage.setItem(APP_STATE_STORAGE_KEY, JSON.stringify({
       editingClip: null,
       subtitleTargetClip: { created_at: 1, has_transcript: true, name: 'clip-1.mp4', project: 'proj-1', url: '/clip-1.mp4' },
@@ -148,5 +196,74 @@ describe('App', () => {
     expect(await screen.findByText('SubtitleEditor:clip-1.mp4:true')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /subtitle edit/i }));
     expect(await screen.findByText('SubtitleEditor:none:false')).toBeInTheDocument();
+  });
+
+  it('shows offline fallback banner and hides the user menu when auth falls back to cache', async () => {
+    resilientAuthState.backendAuthStatus = 'paused';
+    resilientAuthState.notice = {
+      message: 'Onbellekteki oturum kullaniliyor.',
+      title: 'Offline mod',
+      tone: 'warning',
+    };
+    resilientAuthState.showUserMenu = false;
+    resilientAuthState.pauseReason = 'network_offline';
+    resilientAuthState.status = 'offline_authenticated';
+
+    render(<App />);
+
+    expect(await screen.findByText('Onbellekteki oturum kullaniliyor.')).toBeInTheDocument();
+    expect(screen.getByText('OFFLINE_SESSION')).toBeInTheDocument();
+    expect(screen.queryByText('UserButton')).not.toBeInTheDocument();
+  });
+
+  it('keeps the user menu visible while signed in but backend requests are paused', async () => {
+    resilientAuthState.backendAuthStatus = 'paused';
+    resilientAuthState.canUseBackend = false;
+    resilientAuthState.notice = {
+      message: 'Oturum yenilenemedi, korumali islemler beklemeye alindi.',
+      title: 'Oturum yenileme gerekli',
+      tone: 'warning',
+    };
+    resilientAuthState.pauseReason = 'token_expired';
+
+    render(<App />);
+
+    expect(await screen.findByText('Oturum yenilenemedi, korumali islemler beklemeye alindi.')).toBeInTheDocument();
+    expect(screen.getByText('UserButton')).toBeInTheDocument();
+    expect(screen.queryByText('AUTH_FALLBACK')).not.toBeInTheDocument();
+    expect(useWebSocketMock).toHaveBeenCalledWith(false);
+  });
+
+  it('clears user-scoped persisted state when the authenticated identity changes', async () => {
+    localStorage.setItem(AUTH_IDENTITY_STORAGE_KEY, 'user-legacy');
+    localStorage.setItem(APP_STATE_STORAGE_KEY, JSON.stringify({
+      editingClip: { created_at: 1, has_transcript: true, name: 'clip-1.mp4', project: 'proj-1', url: '/clip-1.mp4' },
+      subtitleTargetClip: null,
+      viewMode: 'subtitle',
+    }));
+    localStorage.setItem(AUTH_SNAPSHOT_STORAGE_KEY, JSON.stringify({ isSignedIn: true }));
+    localStorage.setItem('godtier-auto-cut-session', JSON.stringify({ projectId: 'proj-1' }));
+    localStorage.setItem('godtier-editor-master-session', JSON.stringify({ projectId: 'proj-1' }));
+    localStorage.setItem('godtier-editor-clip-session:proj-1:clip-1.mp4', JSON.stringify({ projectId: 'proj-1' }));
+    localStorage.setItem('social-share-buffer:proj-1:clip-1.mp4', JSON.stringify({ youtube_shorts: { title: 'draft' } }));
+    resilientAuthState.identityKey = 'user-2';
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(localStorage.getItem(AUTH_IDENTITY_STORAGE_KEY)).toBe('user-2');
+      expect(localStorage.getItem(AUTH_SNAPSHOT_STORAGE_KEY)).toBeNull();
+      expect(localStorage.getItem('godtier-auto-cut-session')).toBeNull();
+      expect(localStorage.getItem('godtier-editor-master-session')).toBeNull();
+      expect(localStorage.getItem('godtier-editor-clip-session:proj-1:clip-1.mp4')).toBeNull();
+      expect(localStorage.getItem('social-share-buffer:proj-1:clip-1.mp4')).toBeNull();
+      expect(JSON.parse(localStorage.getItem(APP_STATE_STORAGE_KEY) ?? '{}')).toEqual({
+        editingClip: null,
+        subtitleTargetClip: null,
+        viewMode: 'config',
+      });
+    });
+
+    expect(resetJobStoreMock).toHaveBeenCalledTimes(1);
   });
 });

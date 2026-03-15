@@ -1,7 +1,5 @@
 """Manual clip workflows (single + cut-points)."""
-
 from __future__ import annotations
-
 import asyncio
 import json
 import os
@@ -9,12 +7,20 @@ import time
 from typing import Optional
 
 from backend.config import TEMP_DIR
+from backend.core.media_ops import build_shifted_transcript_segments_with_report
+from backend.core.render_quality import (
+    build_debug_environment,
+    compute_render_quality_score,
+    merge_transcript_quality,
+)
 from backend.core.workflow_context import OrchestratorContext
-from backend.core.workflow_helpers import TempArtifactManager
-from backend.core.workflow_runtime import create_subtitle_renderer, resolve_project_master_video
+from backend.core.workflow_helpers import (
+    TempArtifactManager,
+    persist_debug_artifacts,
+    run_blocking,
+    run_cut_points_workflow,
+)
 from backend.services.subtitle_renderer import SubtitleRenderer
-
-
 class ManualClipWorkflow:
     def __init__(self, ctx: OrchestratorContext):
         self.ctx = ctx
@@ -25,6 +31,7 @@ class ManualClipWorkflow:
         end_t: float,
         transcript_data: Optional[list],
         style_name: str = "HORMOZI",
+        animation_type: str = "default",
         project_id: Optional[str] = None,
         center_x: Optional[float] = None,
         layout: str = "single",
@@ -32,7 +39,18 @@ class ManualClipWorkflow:
         skip_subtitles: bool = False,
         cut_as_short: bool = True,
     ) -> str:
-        self.ctx.project, master_video = resolve_project_master_video(project_id, generated_prefix="manual")
+        from backend.core.workflow_runtime import (
+            create_subtitle_renderer,
+            resolve_project_master_video,
+            resolve_subtitle_render_plan,
+        )
+        from backend.services.subtitle_styles import StyleManager
+
+        self.ctx.project, master_video = resolve_project_master_video(
+            project_id,
+            generated_prefix="manual",
+            owner_subject=self.ctx.subject,
+        )
         if not os.path.exists(master_video):
             raise FileNotFoundError(f"Orijinal video bulunamadı: {master_video}")
 
@@ -56,6 +74,10 @@ class ManualClipWorkflow:
         if self.ctx.project is None:
             raise RuntimeError("Proje bağlamı bulunamadı.")
         final_output = str(self.ctx.project.outputs / clip_filename)
+        debug_environment = build_debug_environment(
+            model_identifier=os.path.basename(str(self.ctx.video_processor._model_path)),
+            model_path=str(self.ctx.video_processor._model_path),
+        )
 
         with TempArtifactManager(temp_json, shifted_json, temp_cropped) as artifacts:
             if not skip_subtitles:
@@ -64,14 +86,32 @@ class ManualClipWorkflow:
             with open(temp_json, "w", encoding="utf-8") as f:
                 json.dump(normalized_transcript, f, ensure_ascii=False, indent=4)
 
-            self.ctx._shift_timestamps(temp_json, start_t, end_t, shifted_json)
+            shifted_segments, shifted_quality = build_shifted_transcript_segments_with_report(normalized_transcript, start_t, end_t)
+            with open(shifted_json, "w", encoding="utf-8") as shifted_handle:
+                json.dump(shifted_segments, shifted_handle, ensure_ascii=False, indent=4)
+            render_plan = resolve_subtitle_render_plan(
+                video_processor=self.ctx.video_processor,
+                source_video=master_video,
+                start_t=start_t,
+                end_t=end_t,
+                requested_layout=layout,
+                cut_as_short=cut_as_short,
+                manual_center_x=center_x,
+            )
+            resolved_style = StyleManager.resolve_style(style_name, animation_type)
 
             subtitle_engine: Optional[SubtitleRenderer] = None
             if not skip_subtitles:
-                subtitle_engine = create_subtitle_renderer(style_name)
+                subtitle_engine = create_subtitle_renderer(
+                    style_name,
+                    animation_type=animation_type,
+                    canvas_width=render_plan.canvas_width,
+                    canvas_height=render_plan.canvas_height,
+                    layout=render_plan.resolved_layout,
+                )
                 subtitle_engine.generate_ass_file(shifted_json, ass_file, max_words_per_screen=3)
 
-            await asyncio.to_thread(
+            render_report = await run_blocking(
                 self.ctx._cut_and_burn_clip,
                 master_video,
                 start_t,
@@ -80,18 +120,41 @@ class ManualClipWorkflow:
                 final_output,
                 ass_file,
                 subtitle_engine,
-                layout,
+                render_plan.resolved_layout,
                 center_x,
                 cut_as_short,
+                False,
             )
+            if isinstance(render_report, dict):
+                artifacts.add(render_report.get("debug_overlay_temp_path"))
 
             meta_path = final_output.replace(".mp4", ".json")
-            with open(shifted_json, "r", encoding="utf-8") as f:
-                shifted_transcript = json.load(f)
+            subtitle_layout_quality = render_report.get("subtitle_layout_quality") if isinstance(render_report, dict) else None
+            transcript_quality = merge_transcript_quality(
+                base_quality=shifted_quality,
+                subtitle_layout_quality=subtitle_layout_quality if isinstance(subtitle_layout_quality, dict) else None,
+                snapping_report=None,
+            )
+            tracking_quality = render_report.get("tracking_quality") if isinstance(render_report, dict) else None
+            debug_timing = render_report.get("debug_timing") if isinstance(render_report, dict) else None
+            render_quality_score = compute_render_quality_score(
+                tracking_quality=tracking_quality if isinstance(tracking_quality, dict) else None,
+                transcript_quality=transcript_quality,
+                debug_timing=debug_timing if isinstance(debug_timing, dict) else None,
+                subtitle_layout_quality=subtitle_layout_quality if isinstance(subtitle_layout_quality, dict) else None,
+            )
+            debug_artifacts = persist_debug_artifacts(
+                project=self.ctx.project,
+                clip_name=clip_filename,
+                render_report=render_report if isinstance(render_report, dict) else None,
+                subtitle_layout_quality=subtitle_layout_quality if isinstance(subtitle_layout_quality, dict) else None,
+                snap_report=None,
+                debug_timing=debug_timing if isinstance(debug_timing, dict) else None,
+            )
             with open(meta_path, "w", encoding="utf-8") as f:
                 json.dump(
                     self.ctx._build_clip_metadata(
-                        shifted_transcript,
+                        shifted_segments,
                         viral_metadata=None,
                         render_metadata={
                             "mode": "manual_auto" if center_x is None else "manual_custom_crop",
@@ -102,8 +165,21 @@ class ManualClipWorkflow:
                             "crop_mode": "auto" if center_x is None else "manual",
                             "center_x": center_x,
                             "layout": layout,
+                            "resolved_layout": render_plan.resolved_layout,
+                            "layout_fallback_reason": render_plan.layout_fallback_reason,
                             "style_name": style_name,
+                            "animation_type": animation_type,
+                            "resolved_animation_type": resolved_style.animation_type,
                             "cut_as_short": cut_as_short,
+                            "tracking_quality": tracking_quality,
+                            "transcript_quality": transcript_quality,
+                            "debug_timing": debug_timing,
+                            "debug_tracking": render_report.get("debug_tracking") if isinstance(render_report, dict) else None,
+                            "debug_environment": debug_environment,
+                            "render_quality_score": render_quality_score,
+                            "audio_validation": render_report.get("audio_validation") if isinstance(render_report, dict) else None,
+                            "subtitle_layout_quality": subtitle_layout_quality,
+                            **({"debug_artifacts": debug_artifacts} if debug_artifacts else {}),
                         },
                     ),
                     f,
@@ -124,43 +200,20 @@ class CutPointsWorkflow:
         cut_points: list[float],
         transcript_data: list,
         style_name: str = "HORMOZI",
+        animation_type: str = "default",
         project_id: Optional[str] = None,
         layout: str = "single",
         skip_subtitles: bool = False,
         cut_as_short: bool = True,
     ) -> list[str]:
-        if len(cut_points) < 2:
-            return []
-
-        results: list[str] = []
-        total = len(cut_points) - 1
-        manual_workflow = ManualClipWorkflow(self.ctx)
-
-        for i in range(total):
-            self.ctx._check_cancelled()
-            start_t = cut_points[i]
-            end_t = cut_points[i + 1]
-            if end_t <= start_t:
-                continue
-
-            clip_num = i + 1
-            pct = 10 + int((i / total) * 85)
-            self.ctx._update_status(f"Klip {clip_num}/{total}: {start_t:.1f}-{end_t:.1f} sn...", pct)
-            output_name = f"cut_{clip_num}_{int(start_t)}_{int(end_t)}.mp4"
-
-            path = await manual_workflow.run(
-                start_t=start_t,
-                end_t=end_t,
-                transcript_data=transcript_data,
-                style_name=style_name,
-                project_id=project_id,
-                center_x=None,
-                layout=layout,
-                output_name=output_name,
-                skip_subtitles=skip_subtitles,
-                cut_as_short=cut_as_short,
-            )
-            results.append(path)
-
-        self.ctx._update_status("Tüm kesim noktaları işlendi!", 100)
-        return results
+        return await run_cut_points_workflow(
+            self.ctx,
+            cut_points=cut_points,
+            transcript_data=transcript_data,
+            style_name=style_name,
+            animation_type=animation_type,
+            project_id=project_id,
+            layout=layout,
+            skip_subtitles=skip_subtitles,
+            cut_as_short=cut_as_short,
+        )

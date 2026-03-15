@@ -1,22 +1,21 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useAuth } from '@clerk/clerk-react';
+import { startTransition, useCallback, useEffect, useState } from 'react';
 
-import { setApiToken } from '../api/client';
-import { CLERK_JWT_TEMPLATE } from '../config';
+import { syncIdentityBoundary } from '../auth/isolation';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useJobStore } from '../store/useJobStore';
 import { useThemeStore } from '../store/useThemeStore';
 import type { Clip } from '../types';
 import { persistAppState, readAppState, type AppViewMode } from './helpers';
+import type { SubtitleAnimationType } from '../config/subtitleStyles';
 
-export function useAppShellController() {
-  const { getToken, isLoaded, isSignedIn } = useAuth();
-  useWebSocket(isLoaded && isSignedIn);
+export function useAppShellController(canUseBackend = true, identityKey: string | null = null) {
+  useWebSocket(canUseBackend);
   const wsStatus = useJobStore((store) => store.wsStatus);
   const [viewMode, setViewMode] = useState<AppViewMode>(() => readAppState().viewMode);
   const [editingClip, setEditingClip] = useState<Clip | null>(() => readAppState().editingClip);
   const [subtitleTargetClip, setSubtitleTargetClip] = useState<Clip | null>(() => readAppState().subtitleTargetClip);
   const [currentStyle, setCurrentStyle] = useState('TIKTOK');
+  const [currentAnimationType, setCurrentAnimationType] = useState<SubtitleAnimationType>('default');
   const [subtitlesDisabled, setSubtitlesDisabled] = useState(false);
   const { theme, toggleTheme } = useThemeStore();
 
@@ -45,6 +44,7 @@ export function useAppShellController() {
   }, []);
 
   const closeEditor = useCallback(() => setEditingClip(null), []);
+  const handleAnimationChange = useCallback((animationType: SubtitleAnimationType) => setCurrentAnimationType(animationType), []);
   const handleStyleChange = useCallback((styleName: string) => setCurrentStyle(styleName), []);
   const handleSkipSubtitlesChange = useCallback((disabled: boolean) => setSubtitlesDisabled(disabled), []);
 
@@ -53,8 +53,21 @@ export function useAppShellController() {
   }, [theme]);
 
   useEffect(() => {
-    void syncApiToken(getToken, isLoaded, isSignedIn);
-  }, [getToken, isLoaded, isSignedIn]);
+    if (!syncIdentityBoundary(identityKey)) {
+      return;
+    }
+
+    const resetTimer = window.setTimeout(() => {
+      startTransition(() => {
+        setViewMode('config');
+        setEditingClip(null);
+        setSubtitleTargetClip(null);
+      });
+      useJobStore.getState?.().reset?.();
+    }, 0);
+
+    return () => window.clearTimeout(resetTimer);
+  }, [identityKey]);
 
   useEffect(() => {
     persistAppState(viewMode, editingClip, subtitleTargetClip);
@@ -62,8 +75,10 @@ export function useAppShellController() {
 
   return {
     closeEditor,
+    currentAnimationType,
     currentStyle,
     editingClip,
+    handleAnimationChange,
     handleSkipSubtitlesChange,
     handleStyleChange,
     openClipSubtitleEditor,
@@ -78,19 +93,4 @@ export function useAppShellController() {
     viewMode,
     wsStatus,
   };
-}
-
-async function syncApiToken(
-  getToken: (options?: { template?: string }) => Promise<string | null>,
-  isLoaded: boolean,
-  isSignedIn: boolean | undefined,
-) {
-  if (!isLoaded || !isSignedIn) {
-    setApiToken(null);
-    return;
-  }
-
-  const options = CLERK_JWT_TEMPLATE ? { template: CLERK_JWT_TEMPLATE } : undefined;
-  const token = await getToken(options);
-  setApiToken(token);
 }

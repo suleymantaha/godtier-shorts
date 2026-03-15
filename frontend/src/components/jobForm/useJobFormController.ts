@@ -1,22 +1,26 @@
 import { useEffect, useId, useState, type FormEvent } from 'react';
 
 import { jobsApi } from '../../api/client';
-import type { StyleName } from '../../config/subtitleStyles';
+import type { StyleName, SubtitleAnimationType } from '../../config/subtitleStyles';
 import { useJobStore } from '../../store/useJobStore';
 import {
   JOB_FORM_PREFS_STORAGE_KEY,
   buildStartJobPayload,
+  readInitialAnimationType,
   readInitialEngine,
+  readInitialStyle,
 } from './helpers';
 
 export interface JobFormProps {
+  onAnimationChange?: (animationType: SubtitleAnimationType) => void;
   onSkipSubtitlesChange?: (skip: boolean) => void;
   onStyleChange?: (style: string) => void;
 }
 
-export function useJobFormController({ onSkipSubtitlesChange, onStyleChange }: JobFormProps) {
+export function useJobFormController({ onAnimationChange, onSkipSubtitlesChange, onStyleChange }: JobFormProps) {
   const [url, setUrl] = useState('');
-  const [style, setStyle] = useState<StyleName>('TIKTOK');
+  const [style, setStyle] = useState<StyleName>(() => readInitialStyle());
+  const [animationType, setAnimationType] = useState<SubtitleAnimationType>(() => readInitialAnimationType());
   const [engine, setEngine] = useState<string>(() => readInitialEngine());
   const [skipSubtitles, setSkipSubtitles] = useState(false);
   const [numClips, setNumClips] = useState(8);
@@ -30,6 +34,7 @@ export function useJobFormController({ onSkipSubtitlesChange, onStyleChange }: J
 
   const urlId = useId();
   const styleId = useId();
+  const animationId = useId();
   const engineId = useId();
   const numClipsId = useId();
   const durationMinId = useId();
@@ -37,12 +42,13 @@ export function useJobFormController({ onSkipSubtitlesChange, onStyleChange }: J
   const resolutionId = useId();
 
   useEffect(() => onStyleChange?.(style), [onStyleChange, style]);
+  useEffect(() => onAnimationChange?.(animationType), [animationType, onAnimationChange]);
   useEffect(() => onSkipSubtitlesChange?.(skipSubtitles), [onSkipSubtitlesChange, skipSubtitles]);
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(JOB_FORM_PREFS_STORAGE_KEY, JSON.stringify({ engine }));
+      window.localStorage.setItem(JOB_FORM_PREFS_STORAGE_KEY, JSON.stringify({ animationType, engine, style }));
     }
-  }, [engine]);
+  }, [animationType, engine, style]);
 
   const handleStart = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -53,7 +59,7 @@ export function useJobFormController({ onSkipSubtitlesChange, onStyleChange }: J
     setIsSubmitting(true);
     setError(null);
     try {
-      await jobsApi.start(buildStartJobPayload({ autoMode, durationMax, durationMin, engine, numClips, resolution, skipSubtitles, style, url }));
+      await jobsApi.start(buildStartJobPayload({ animationType, autoMode, durationMax, durationMin, engine, numClips, resolution, skipSubtitles, style, url }));
       await fetchJobs();
       setUrl('');
     } catch (error) {
@@ -64,6 +70,8 @@ export function useJobFormController({ onSkipSubtitlesChange, onStyleChange }: J
   };
 
   return {
+    animationId,
+    animationType,
     autoMode,
     durationMax,
     durationMaxId,
@@ -79,6 +87,7 @@ export function useJobFormController({ onSkipSubtitlesChange, onStyleChange }: J
     resolution,
     resolutionId,
     setAutoMode,
+    setAnimationType,
     setDurationMax,
     setDurationMin,
     setEngine,

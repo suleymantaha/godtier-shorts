@@ -6,9 +6,10 @@
 
 - **Transkript**: faster-whisper large-v3, kelime düzeyinde zaman damgaları, VRAM optimizasyonu
 - **Viral Analiz**: LLM (OpenRouter/Claude veya LM Studio) ile viral segment seçimi
-- **Video İşleme**: YOLO11 + SteadyCam modu, 9:16 crop, NVENC hızlandırma
-- **Kinetic Altyazı**: ASS stilleri (HORMOZI, TIKTOK vb.), pop/fade animasyonları, burn-in
-- **Arayüz**: React, Zustand, Tailwind, WebSocket ile gerçek zamanlı job takibi
+- **Video İşleme**: YOLO11 `track(..., persist=True)` tabanlı kişi takibi, grace/reacquire, shot-cut farkındalığı, 9:16 crop, NVENC hızlandırma
+- **Kinetic Altyazı**: ASS stilleri (HORMOZI, TIKTOK vb.), pop/fade animasyonları, süre kontrollü chunking, overflow güvenliği, burn-in
+- **Kalite ve Tanı**: `render_metadata` kalite skorları, debug artifact bundle'ı, determinism benchmark scripti
+- **Arayüz**: React, Zustand, Tailwind, WebSocket ile gerçek zamanlı job takibi ve clip bazlı kalite özeti
 
 ## Hızlı Başlangıç
 
@@ -86,6 +87,15 @@ cd frontend && npm run dev      # Frontend: http://localhost:5173
 | Batch Clips | Aralıkta AI ile toplu klip | [docs/flows/batch-clips](docs/flows/batch-clips.md) |
 | Reburn | Altyazı yeniden basma (transkript kaydetme dahil) | [docs/flows/reburn](docs/flows/reburn.md) |
 
+## v2.1 Stabilizasyon Notları
+
+- Tracking yalnız `person` sınıfı için çalışır; seçim artık confidence eşiği, birleşik aday skoru, grace/reacquire ve controlled-return kuralları ile yapılır.
+- Auto segmentlerde boundary snap, transcript `word_coverage_ratio` değerine göre açılır, daralır veya kapanır.
+- Subtitle chunking yalnız kelime sayısına değil süreye de bakar; overflow tespit edilirse önce daha konservatif chunking denenir.
+- Pipeline, batch, manual ve reburn çıktıları `render_metadata` altında `tracking_quality`, `transcript_quality`, `audio_validation`, `subtitle_layout_quality`, `debug_timing`, `render_quality_score` ve opsiyonel `debug_artifacts` alanlarını taşıyabilir.
+- `DEBUG_RENDER_ARTIFACTS=1` ile `workspace/projects/<project_id>/debug/<clip_stem>/` altına tanı bundle'ı yazılır.
+- `python scripts/benchmark_render_stability.py --project ID --clip NAME` ile aynı klip için determinism ve throughput raporu üretilebilir.
+
 ## Mimari (Backend Servisleri)
 
 > Not: Subtitle renderer için **tek doğru giriş noktası** `backend/services/subtitle_renderer.py` dosyasıdır.
@@ -147,6 +157,16 @@ flowchart TB
     Orch --> Video
     Orch --> Render
 ```
+
+Her clip için yazılan metadata dosyası artık yalnız transcript ve viral alanlarını değil, kalite kararlarını da taşır:
+
+- `render_metadata.tracking_quality`
+- `render_metadata.transcript_quality`
+- `render_metadata.audio_validation`
+- `render_metadata.subtitle_layout_quality`
+- `render_metadata.debug_timing`
+- `render_metadata.render_quality_score`
+- `render_metadata.debug_artifacts` (`DEBUG_RENDER_ARTIFACTS=1` ise)
 
 ### YouTube Pipeline Akışı
 
@@ -232,6 +252,9 @@ pytest backend/tests -v -m "not integration"
 # Frontend
 cd frontend && npm run test
 cd frontend && npm run verify
+
+# Determinism / throughput
+python scripts/benchmark_render_stability.py --project ID --clip NAME --runs 3 --samples 5
 ```
 
 `bash scripts/verify.sh` kanonik tam dogrulama komutudur; toolchain check + runtime config check + frontend `lint + test + build` ile backend `pytest backend/tests -q` adimlarini fail-fast kosar. `python scripts/check_system_deps.py` ise yeni makine hazirligi ve medya pipeline bagimliliklari icin ayrica kosulmalidir.

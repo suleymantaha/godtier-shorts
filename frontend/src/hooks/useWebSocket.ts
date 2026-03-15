@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 import { getFreshToken } from '../api/client';
+import { useAuthRuntimeStore } from '../auth/runtime';
 import { WS_BASE } from '../config';
 import { useJobStore } from '../store/useJobStore';
 import {
@@ -27,13 +28,16 @@ export const useWebSocket = (enabled = true) => {
   const retryCount = useRef(0);
   const reconnectTimeoutId = useRef<number | null>(null);
   const isUnmounted = useRef(false);
+  const backendAuthStatus = useAuthRuntimeStore((state) => state.backendAuthStatus);
+  const canUseProtectedRequests = useAuthRuntimeStore((state) => state.canUseProtectedRequests);
   const { updateJobProgress, fetchJobs, setWsStatus } = useJobStore();
   const updateJobProgressRef = useLatestRef(updateJobProgress);
   const fetchJobsRef = useLatestRef(fetchJobs);
   const setWsStatusRef = useLatestRef(setWsStatus);
+  const canConnect = enabled && canUseProtectedRequests && backendAuthStatus === 'fresh';
 
   useEffect(() => {
-    if (!enabled) {
+    if (!canConnect) {
       setWsStatusRef.current('disconnected');
       return;
     }
@@ -46,8 +50,17 @@ export const useWebSocket = (enabled = true) => {
         return;
       }
 
-      setWsStatusRef.current(getConnectStatus(retryCount.current));
-      ws.current = createProgressWebSocket(await getFreshToken(), WS_BASE);
+      try {
+        setWsStatusRef.current(getConnectStatus(retryCount.current));
+        const token = await getFreshToken();
+        if (isUnmounted.current) {
+          return;
+        }
+        ws.current = createProgressWebSocket(token, WS_BASE);
+      } catch {
+        setWsStatusRef.current('disconnected');
+        return;
+      }
 
       ws.current.onopen = () => {
         retryCount.current = 0;
@@ -78,6 +91,12 @@ export const useWebSocket = (enabled = true) => {
           return;
         }
 
+        const runtimeState = useAuthRuntimeStore.getState();
+        if (!runtimeState.canUseProtectedRequests || runtimeState.backendAuthStatus !== 'fresh') {
+          setWsStatusRef.current('disconnected');
+          return;
+        }
+
         const reconnectState = getReconnectState(retryCount.current, MAX_WEBSOCKET_RETRY);
         retryCount.current = reconnectState.nextRetryCount;
 
@@ -88,6 +107,11 @@ export const useWebSocket = (enabled = true) => {
 
         setWsStatusRef.current(reconnectState.status);
         reconnectTimeoutId.current = window.setTimeout(() => {
+          const runtimeState = useAuthRuntimeStore.getState();
+          if (!runtimeState.canUseProtectedRequests || runtimeState.backendAuthStatus !== 'fresh') {
+            setWsStatusRef.current('disconnected');
+            return;
+          }
           void connect();
         }, RETRY_DELAY_MS);
       };
@@ -108,5 +132,5 @@ export const useWebSocket = (enabled = true) => {
         reconnectTimeoutId.current = null;
       }
     };
-  }, [enabled, fetchJobsRef, setWsStatusRef, updateJobProgressRef]);
+  }, [canConnect, fetchJobsRef, setWsStatusRef, updateJobProgressRef]);
 };

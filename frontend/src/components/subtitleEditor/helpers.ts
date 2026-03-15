@@ -1,11 +1,11 @@
-import { STYLE_OPTIONS, type StyleName } from '../../config/subtitleStyles';
+import { ANIMATION_SELECT_OPTIONS, STYLE_OPTIONS } from '../../config/subtitleStyles';
 import { API_BASE } from '../../config';
 import type { Clip, ClipTranscriptCapabilities, ProjectSummary, Segment } from '../../types';
 import { getClipUrl } from '../../utils/url';
 
 export type SubtitleEditorMode = 'project' | 'clip';
 
-export interface SubtitleProject extends ProjectSummary {}
+export type SubtitleProject = ProjectSummary;
 
 export interface VisibleTranscriptEntry {
   index: number;
@@ -23,8 +23,9 @@ export const EMPTY_CLIP_TRANSCRIPT_CAPABILITIES: ClipTranscriptCapabilities = {
 };
 
 export const SUBTITLE_STYLE_OPTIONS = STYLE_OPTIONS
-  .filter((style): style is Exclude<StyleName, 'CUSTOM'> => style !== 'CUSTOM')
   .map((style) => ({ label: style, value: style }));
+
+export const SUBTITLE_ANIMATION_OPTIONS = ANIMATION_SELECT_OPTIONS;
 
 export function filterSubtitleProjects(projects: SubtitleProject[]): SubtitleProject[] {
   return projects.filter((project) => project.has_master);
@@ -54,7 +55,7 @@ export function resolveSubtitleVideoSrc({
   }
 
   if (mode === 'clip' && selectedClip) {
-    return `${getClipUrl(selectedClip)}${cacheBust ? `?t=${cacheBust}` : ''}`;
+    return getClipUrl(selectedClip, { cacheBust: cacheBust || undefined });
   }
 
   return undefined;

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -17,6 +17,14 @@ let mockClipsResponse: {
 let mockShouldReject: boolean;
 const mockDeleteClip = vi.fn();
 const mockListClips = vi.fn();
+const authRuntimeState = {
+  canUseProtectedRequests: true,
+};
+
+async function chooseSelectOption(user: ReturnType<typeof userEvent.setup>, label: RegExp, option: RegExp) {
+  await user.click(screen.getByLabelText(label));
+  await user.click(screen.getByRole('option', { name: option }));
+}
 
 vi.mock('../../api/client', () => ({
   clipsApi: {
@@ -53,6 +61,10 @@ vi.mock('../../api/client', () => ({
   },
 }));
 
+vi.mock('../../auth/runtime', () => ({
+  useAuthRuntimeStore: (selector: (state: typeof authRuntimeState) => unknown) => selector(authRuntimeState),
+}));
+
 vi.mock('../../config', () => ({
   API_BASE: 'http://localhost:8000',
 }));
@@ -66,6 +78,7 @@ vi.mock('../../components/ui/LazyVideo', () => ({
 describe('ClipGallery', () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    authRuntimeState.canUseProtectedRequests = true;
     mockClipsResponse = { clips: [] };
     mockShouldReject = false;
     mockDeleteClip.mockReset();
@@ -105,6 +118,10 @@ describe('ClipGallery', () => {
     expect(screen.getByText(/clip library/i)).toBeInTheDocument();
     expect(screen.getByText(/250 clips/i)).toBeInTheDocument();
     expect(screen.getByText(/showing newest 200 clips/i)).toBeInTheDocument();
+    expect(screen.getByTestId('lazy-video')).toHaveAttribute(
+      'data-src',
+      'http://localhost:8000/clips/clip-1.mp4?t=123',
+    );
     expect(mockListClips).toHaveBeenCalledWith(1, 200);
   });
 
@@ -125,6 +142,18 @@ describe('ClipGallery', () => {
 
     const retryBtn = screen.getByRole('button', { name: /tekrar|retry/i });
     expect(retryBtn).toBeInTheDocument();
+  });
+
+  it('does not start clip polling before protected auth is ready', async () => {
+    authRuntimeState.canUseProtectedRequests = false;
+    const { ClipGallery } = await import('../../components/ClipGallery');
+
+    render(<ClipGallery />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(35_000);
+    });
+
+    expect(mockListClips).not.toHaveBeenCalled();
   });
 
   it('renders ready clips, supports sort/filter, and forwards edit actions', async () => {
@@ -161,13 +190,13 @@ describe('ClipGallery', () => {
       'clip-1.mp4',
     ]);
 
-    await user.selectOptions(screen.getByLabelText(/sort clips/i), 'oldest');
+    await chooseSelectOption(user, /sort clips/i, /oldest/i);
     expect(screen.getAllByText(/clip-[12]\.mp4/i).map((element) => element.textContent)).toEqual([
       'clip-1.mp4',
       'clip-2.mp4',
     ]);
 
-    await user.selectOptions(screen.getByLabelText(/project filter/i), 'project-1');
+    await chooseSelectOption(user, /project filter/i, /project-1/i);
     expect(screen.getByText('clip-1.mp4')).toBeInTheDocument();
     expect(screen.queryByText('clip-2.mp4')).not.toBeInTheDocument();
 

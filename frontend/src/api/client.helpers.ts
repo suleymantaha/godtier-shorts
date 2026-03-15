@@ -15,23 +15,41 @@ export function mergeApiHeaders(
   return result;
 }
 
-export function extractApiErrorMessage(text: string, status: number): string {
+export interface ParsedApiError {
+  code: string | null;
+  message: string;
+}
+
+export function extractApiErrorPayload(text: string, status: number): ParsedApiError {
   const detail = parseApiErrorDetail(text);
 
   if (typeof detail === 'string') {
-    return detail;
+    return {
+      code: null,
+      message: detail,
+    };
   }
 
-  const nestedMessage = readNestedErrorMessage(detail);
-  if (nestedMessage) {
-    return nestedMessage;
+  const nestedError = readNestedError(detail);
+  if (nestedError) {
+    return nestedError;
   }
 
   if (Array.isArray(detail)) {
-    return detail.map((entry) => readArrayErrorMessage(entry)).join('; ');
+    return {
+      code: null,
+      message: detail.map((entry) => readArrayErrorMessage(entry)).join('; '),
+    };
   }
 
-  return text || `HTTP ${status}`;
+  return {
+    code: null,
+    message: text || `HTTP ${status}`,
+  };
+}
+
+export function extractApiErrorMessage(text: string, status: number): string {
+  return extractApiErrorPayload(text, status).message;
 }
 
 function parseApiErrorDetail(text: string): unknown {
@@ -46,13 +64,20 @@ function parseApiErrorDetail(text: string): unknown {
   }
 }
 
-function readNestedErrorMessage(detail: unknown): string | null {
+function readNestedError(detail: unknown): ParsedApiError | null {
   if (!detail || typeof detail !== 'object' || !('error' in detail)) {
     return null;
   }
 
-  const errorValue = (detail as { error?: { message?: string } }).error;
-  return errorValue?.message ?? null;
+  const errorValue = (detail as { error?: { code?: string; message?: string } }).error;
+  if (!errorValue?.message) {
+    return null;
+  }
+
+  return {
+    code: errorValue.code ?? null,
+    message: errorValue.message,
+  };
 }
 
 function readArrayErrorMessage(entry: unknown): string {

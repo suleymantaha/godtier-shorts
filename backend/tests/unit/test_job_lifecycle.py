@@ -14,8 +14,8 @@ class DummyWs:
 def test_job_lifecycle_queued_processing_completed():
     manager = ConnectionManager()
     ws = DummyWs()
-    manager.active_connections.append(ws)
-    manager.jobs['j1'] = {'status': 'queued', 'progress': 0, 'last_message': ''}
+    manager.active_connections[ws] = "subject-a"
+    manager.jobs['j1'] = {'status': 'queued', 'progress': 0, 'last_message': '', 'subject': 'subject-a'}
 
     asyncio.run(manager.broadcast_progress('started', 10, 'j1'))
     asyncio.run(manager.broadcast_progress('done', 100, 'j1'))
@@ -26,7 +26,7 @@ def test_job_lifecycle_queued_processing_completed():
 
 def test_job_lifecycle_processing_error():
     manager = ConnectionManager()
-    manager.jobs['j2'] = {'status': 'queued', 'progress': 0, 'last_message': ''}
+    manager.jobs['j2'] = {'status': 'queued', 'progress': 0, 'last_message': '', 'subject': 'subject-a'}
 
     asyncio.run(manager.broadcast_progress('fail', -1, 'j2'))
 

@@ -1,12 +1,13 @@
 import { AlertCircle, CheckCircle2, Film, RefreshCw, Save, Scissors, Subtitles } from 'lucide-react';
 
+import type { RenderMetadata } from '../../types';
 import { toTimeStr } from '../../utils/time';
 import { RangeSlider } from '../RangeSlider';
 import { TimeRangeHeader } from '../TimeRangeHeader';
 import { Select } from '../ui/Select';
 import { useResolvedMediaSource } from '../ui/protectedMedia';
 import { VideoControls } from '../ui/VideoControls';
-import { SUBTITLE_STYLE_OPTIONS } from './helpers';
+import { SUBTITLE_ANIMATION_OPTIONS, SUBTITLE_STYLE_OPTIONS } from './helpers';
 import type { SubtitleEditorController } from './useSubtitleEditorController';
 
 export function SubtitleEditorLayout({ controller }: { controller: SubtitleEditorController }) {
@@ -19,8 +20,10 @@ export function SubtitleEditorLayout({ controller }: { controller: SubtitleEdito
 
 function resolveSubtitlePanelProps(controller: SubtitleEditorController) {
   const {
+    animationType,
     clipTranscriptCapabilities,
     clipTranscriptStatus,
+    clipRenderMetadata,
     clips,
     currentJob,
     currentTime,
@@ -54,6 +57,7 @@ function resolveSubtitlePanelProps(controller: SubtitleEditorController) {
     setIsPlaying,
     setSelectedProjectId,
     setStartTime,
+    setAnimationType,
     setStyle,
     startTime,
     style,
@@ -67,8 +71,10 @@ function resolveSubtitlePanelProps(controller: SubtitleEditorController) {
   } = controller;
 
   return {
+    animationType,
     clipTranscriptCapabilities,
     clipTranscriptStatus,
+    clipRenderMetadata,
     clips,
     currentJob,
     currentTime,
@@ -102,6 +108,7 @@ function resolveSubtitlePanelProps(controller: SubtitleEditorController) {
     setIsPlaying,
     setSelectedProjectId,
     setStartTime,
+    setAnimationType,
     setStyle,
     startTime,
     style,
@@ -139,6 +146,7 @@ function SubtitleEditorPanels({ controller }: { controller: SubtitleEditorContro
         <SubtitleEditorContent
           clipTranscriptCapabilities={props.clipTranscriptCapabilities}
           clipTranscriptStatus={props.clipTranscriptStatus}
+          clipRenderMetadata={props.clipRenderMetadata}
           currentJob={props.currentJob}
           currentTime={props.currentTime}
           duration={props.duration}
@@ -160,10 +168,12 @@ function SubtitleEditorPanels({ controller }: { controller: SubtitleEditorContro
           saving={props.saving}
           selectedClip={props.selectedClip}
           selectedProjectId={props.selectedProjectId}
+          setAnimationType={props.setAnimationType}
           setEndTime={props.setEndTime}
           setIsPlaying={props.setIsPlaying}
           setStartTime={props.setStartTime}
           setStyle={props.setStyle}
+          animationType={props.animationType}
           startTime={props.startTime}
           style={props.style}
           successMessage={props.successMessage}
@@ -182,6 +192,8 @@ function SubtitleEditorPanels({ controller }: { controller: SubtitleEditorContro
 function SubtitleEditorContent(props: {
   clipTranscriptCapabilities: SubtitleEditorController['clipTranscriptCapabilities'];
   clipTranscriptStatus: SubtitleEditorController['clipTranscriptStatus'];
+  clipRenderMetadata: SubtitleEditorController['clipRenderMetadata'];
+  animationType: SubtitleEditorController['animationType'];
   currentJob: SubtitleEditorController['currentJob'];
   currentTime: number;
   duration: number;
@@ -203,6 +215,7 @@ function SubtitleEditorContent(props: {
   saving: boolean;
   selectedClip: SubtitleEditorController['selectedClip'];
   selectedProjectId: string | null;
+  setAnimationType: SubtitleEditorController['setAnimationType'];
   setEndTime: SubtitleEditorController['setEndTime'];
   setIsPlaying: SubtitleEditorController['setIsPlaying'];
   setStartTime: SubtitleEditorController['setStartTime'];
@@ -238,6 +251,9 @@ function SubtitleEditorContent(props: {
           visibleCount={props.visibleTranscriptEntries.length}
         />
       )}
+      {props.mode === 'clip' && props.selectedClip && props.clipRenderMetadata && (
+        <RenderQualitySummaryCard renderMetadata={props.clipRenderMetadata} />
+      )}
       <TranscriptCard
         clipTranscriptCapabilities={props.clipTranscriptCapabilities}
         clipTranscriptStatus={props.clipTranscriptStatus}
@@ -258,7 +274,9 @@ function SubtitleEditorContent(props: {
         saving={props.saving}
         selectedClip={props.selectedClip}
         selectedProjectId={props.selectedProjectId}
+        setAnimationType={props.setAnimationType}
         setStyle={props.setStyle}
+        animationType={props.animationType}
         startTime={props.startTime}
         style={props.style}
         successMessage={props.successMessage}
@@ -268,6 +286,101 @@ function SubtitleEditorContent(props: {
         visibleTranscriptEntries={props.visibleTranscriptEntries}
       />
     </>
+  );
+}
+
+const QUALITY_TONE_CLASSNAMES = {
+  degraded: 'border-red-500/25 bg-red-500/8 text-red-100',
+  good: 'border-emerald-500/25 bg-emerald-500/8 text-emerald-100',
+  watch: 'border-amber-500/25 bg-amber-500/8 text-amber-100',
+} as const;
+
+const QUALITY_DRIFT_WARNING_MS = 80;
+
+function resolveQualityTone(score?: number | null): keyof typeof QUALITY_TONE_CLASSNAMES {
+  if ((score ?? 0) >= 85) {
+    return 'good';
+  }
+  if ((score ?? 0) >= 70) {
+    return 'watch';
+  }
+  return 'degraded';
+}
+
+function buildRenderWarnings(renderMetadata: RenderMetadata): string[] {
+  const warnings: string[] = [];
+  if (renderMetadata.tracking_quality?.status === 'fallback') {
+    warnings.push('Tracking fallback aktifti.');
+  }
+  if (renderMetadata.transcript_quality?.status === 'partial' || renderMetadata.transcript_quality?.status === 'degraded') {
+    warnings.push('Transcript kalitesi tam değil.');
+  }
+  if (renderMetadata.subtitle_layout_quality?.subtitle_overflow_detected || renderMetadata.transcript_quality?.subtitle_overflow_detected) {
+    warnings.push('Subtitle overflow tespit edildi.');
+  }
+  if ((renderMetadata.debug_timing?.merged_output_drift_ms ?? 0) >= QUALITY_DRIFT_WARNING_MS) {
+    warnings.push('A/V drift yükseldi.');
+  }
+  const audioStatus = renderMetadata.audio_validation?.audio_validation_status;
+  if (audioStatus === 'missing' || audioStatus === 'invalid' || renderMetadata.audio_validation?.has_audio === false) {
+    warnings.push('Audio muted veya geçersiz.');
+  }
+  return warnings.slice(0, 3);
+}
+
+function RenderQualitySummaryCard({ renderMetadata }: { renderMetadata: RenderMetadata }) {
+  const score = renderMetadata.render_quality_score ?? 0;
+  const tone = resolveQualityTone(score);
+  const warnings = buildRenderWarnings(renderMetadata);
+  const transcriptStatus = renderMetadata.transcript_quality?.status ?? 'unknown';
+  const trackingStatus = renderMetadata.tracking_quality?.status ?? 'unknown';
+  const driftMs = renderMetadata.debug_timing?.merged_output_drift_ms ?? 0;
+  const audioStatus = renderMetadata.audio_validation?.audio_validation_status ?? 'unknown';
+
+  return (
+    <div className={`glass-card p-5 space-y-4 ${QUALITY_TONE_CLASSNAMES[tone]}`} data-testid="render-quality-summary">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="space-y-1">
+          <p className="text-[11px] font-mono uppercase tracking-[0.24em] opacity-80">Render Quality</p>
+          <h3 className="text-sm font-bold uppercase tracking-[0.18em]">Kalite Özeti</h3>
+        </div>
+        <div className="rounded-full border border-current/25 px-3 py-1 text-[11px] font-mono uppercase tracking-widest">
+          Score {score} / 100
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+        <MetricPill label="Tracking" value={trackingStatus} />
+        <MetricPill label="Transcript" value={transcriptStatus} />
+        <MetricPill label="Drift" value={`${driftMs.toFixed(1)} ms`} />
+        <MetricPill label="Audio" value={audioStatus} />
+      </div>
+
+      {warnings.length > 0 ? (
+        <div className="space-y-2">
+          {warnings.map((warning) => (
+            <div key={warning} className="flex items-start gap-2 text-xs leading-5">
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{warning}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="flex items-start gap-2 text-xs leading-5">
+          <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>Bu clip için takip, transcript ve zamanlama sinyalleri temiz görünüyor.</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MetricPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-current/15 bg-black/15 px-3 py-2">
+      <p className="text-[10px] font-mono uppercase tracking-[0.2em] opacity-75">{label}</p>
+      <p className="mt-1 font-medium uppercase tracking-[0.08em]">{value}</p>
+    </div>
   );
 }
 
@@ -494,6 +607,7 @@ function RangeCard({
 }
 
 function TranscriptCard({
+  animationType,
   clipTranscriptCapabilities,
   clipTranscriptStatus,
   currentJob,
@@ -513,6 +627,7 @@ function TranscriptCard({
   saving,
   selectedClip,
   selectedProjectId,
+  setAnimationType,
   setStyle,
   startTime,
   style,
@@ -523,6 +638,7 @@ function TranscriptCard({
   visibleTranscriptEntries,
 }: Pick<
   SubtitleEditorController,
+  | 'animationType'
   | 'clipTranscriptCapabilities'
   | 'clipTranscriptStatus'
   | 'currentJob'
@@ -542,6 +658,7 @@ function TranscriptCard({
   | 'saving'
   | 'selectedClip'
   | 'selectedProjectId'
+  | 'setAnimationType'
   | 'setStyle'
   | 'startTime'
   | 'style'
@@ -568,6 +685,7 @@ function TranscriptCard({
   return (
     <div className="glass-card p-5 space-y-4">
       <TranscriptHeader
+        animationType={animationType}
         endTime={endTime}
         handleRenderClip={handleRenderClip}
         handleSave={handleSave}
@@ -577,6 +695,7 @@ function TranscriptCard({
         saving={saving}
         selectedClip={selectedClip}
         selectedProjectId={selectedProjectId}
+        setAnimationType={setAnimationType}
         setStyle={setStyle}
         startTime={startTime}
         style={style}
@@ -621,6 +740,7 @@ function TranscriptCard({
 }
 
 function TranscriptHeader({
+  animationType,
   endTime,
   handleRenderClip,
   handleSave,
@@ -630,12 +750,14 @@ function TranscriptHeader({
   saving,
   selectedClip,
   selectedProjectId,
+  setAnimationType,
   setStyle,
   startTime,
   style,
   transcript,
   visibleCount,
 }: {
+  animationType: SubtitleEditorController['animationType'];
   endTime: number;
   handleRenderClip: SubtitleEditorController['handleRenderClip'];
   handleSave: SubtitleEditorController['handleSave'];
@@ -645,6 +767,7 @@ function TranscriptHeader({
   saving: boolean;
   selectedClip: SubtitleEditorController['selectedClip'];
   selectedProjectId: string | null;
+  setAnimationType: SubtitleEditorController['setAnimationType'];
   setStyle: SubtitleEditorController['setStyle'];
   startTime: number;
   style: SubtitleEditorController['style'];
@@ -669,6 +792,12 @@ function TranscriptHeader({
           value={style}
           onChange={setStyle}
           options={SUBTITLE_STYLE_OPTIONS}
+          className="w-40 text-xs"
+        />
+        <Select
+          value={animationType}
+          onChange={setAnimationType}
+          options={SUBTITLE_ANIMATION_OPTIONS}
           className="w-40 text-xs"
         />
         {!loading && (

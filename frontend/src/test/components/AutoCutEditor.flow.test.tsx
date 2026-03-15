@@ -16,6 +16,7 @@ vi.mock('../../components/autoCutEditor/useAutoCutEditorController', () => ({
 function createController(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     addCurrentMarker: vi.fn(),
+    animationType: 'default',
     busy: false,
     currentJob: null,
     currentJobId: null,
@@ -42,6 +43,7 @@ function createController(overrides: Partial<Record<string, unknown>> = {}) {
     selectedFile: new File(['video'], 'clip.mp4', { type: 'video/mp4' }),
     setCutAsShort: vi.fn(),
     setIsPlaying: vi.fn(),
+    setAnimationType: vi.fn(),
     setSkipSubtitles: vi.fn(),
     setStyle: vi.fn(),
     skipSubtitles: false,
@@ -75,5 +77,12 @@ describe('AutoCutEditor page flow', () => {
     render(<AutoCutEditor />);
 
     expect(screen.getByRole('button', { name: /ai ile 3 klip uret/i })).toBeInTheDocument();
+  });
+
+  it('passes editor state into the subtitle preview shell', () => {
+    render(<AutoCutEditor />);
+
+    expect(screen.getByLabelText('subtitle-preview-stage')).toHaveAttribute('data-shell-type', 'phone');
+    expect(screen.getByTestId('subtitle-preview-media')).toHaveAttribute('src', 'blob:auto-cut');
   });
 });

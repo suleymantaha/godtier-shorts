@@ -5,7 +5,7 @@ Seçilen zaman aralığında AI ile toplu klip üretimi. Viral analiz ile segmen
 ## Akış
 
 ```
-Aralık seçimi (start_time, end_time) → Transkript filtreleme → Viral analiz (analyze_transcript_segment) → N segment → Her biri için run_manual_clip
+Aralık seçimi → overlap bazlı transcript filtreleme → viral analiz → snapping/render → kalite skoruna göre sıralama
 ```
 
 ## Tetikleyici
@@ -28,7 +28,7 @@ Aralık seçimi (start_time, end_time) → Transkript filtreleme → Viral anali
 ## Viral Analiz
 
 `ViralAnalyzer.analyze_transcript_segment()`:
-- Aralık içindeki transkript segmentlerini filtreler
+- Aralıkla kısmen çakışan segmentleri de analize dahil eder
 - LLM veya fallback ile en viral N segment seçer
 - Her segment: start_time, end_time, hook_text, ui_title, viral_score
 
@@ -44,7 +44,7 @@ Aralık seçimi (start_time, end_time) → Transkript filtreleme → Viral anali
 ## Çıktı
 
 - `workspace/projects/{project_id}/shorts/short_{n}_{hook_slug}.mp4`
-- Job tamamlanınca `output_paths` listesi job metadata'da
+- Job tamamlanınca `output_paths` listesi kalite skoruna göre sıralanır
 
 ## İlgili
 

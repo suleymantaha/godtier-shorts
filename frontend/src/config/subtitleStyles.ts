@@ -1,69 +1,51 @@
-export const STYLE_OPTIONS = [
-  'HORMOZI',
-  'MRBEAST',
-  'MINIMALIST',
-  'TIKTOK',
-  'YOUTUBE_SHORT',
-  'PODCAST',
-  'CORPORATE',
-  'HIGHCARE',
-  'CYBER_PUNK',
-  'STORY_TELLER',
-  'GLOW_KARAOKE',
-  'GLASS_MORPH',
-  'ALI_ABDAAL',
-  'RETRO_WAVE',
-  'HACKER_TERMINAL',
-  'CINEMATIC_FILM',
-  'CUSTOM',
-] as const;
+import type { CSSProperties } from 'react';
 
-export type StyleName = (typeof STYLE_OPTIONS)[number];
+export type SubtitleLayout = 'single' | 'split';
+export type SubtitleSurface = 'overlay' | 'preview';
+export type PreviewAnimationType = 'fade' | 'none' | 'pop' | 'shake' | 'slide_up' | 'typewriter';
+export type SubtitleAnimationType = 'default' | PreviewAnimationType;
+export type PreviewScreenTheme = 'cinematic' | 'glass' | 'minimal' | 'neon' | 'studio' | 'terminal';
+export type PreviewBandVariant = 'plain' | 'bold_plate' | 'soft_plate' | 'glass_plate' | 'terminal_plate';
 
-export const STYLE_LABELS: Record<StyleName, string> = {
-  HORMOZI: 'Hormozi',
-  MRBEAST: 'MrBeast',
-  MINIMALIST: 'Minimalist',
-  TIKTOK: 'TikTok',
-  YOUTUBE_SHORT: 'YouTube Shorts',
-  PODCAST: 'Podcast',
-  CORPORATE: 'Kurumsal',
-  HIGHCARE: 'Yüksek Kontrast',
-  CYBER_PUNK: 'Cyber Glitch',
-  STORY_TELLER: 'Storyteller',
-  GLOW_KARAOKE: 'Neon Karaoke',
-  GLASS_MORPH: 'Glassmorphism',
-  ALI_ABDAAL: 'Productivity Vlog',
-  RETRO_WAVE: '80s Synthwave',
-  HACKER_TERMINAL: 'Terminal Code',
-  CINEMATIC_FILM: 'Documentary Film',
-  CUSTOM: 'Özel',
-};
+export interface SubtitleInlineStyle {
+  primaryColor: string;
+  highlightColor: string;
+  outlineColor: string;
+  outlineWidth: number;
+  fontSize: string;
+  fontWeight: number;
+  fontFamily: string;
+  backgroundColor: string | null;
+  fontStyle?: 'normal' | 'italic';
+  letterSpacing?: string;
+  textDecoration?: string;
+  textTransform?: 'none' | 'uppercase';
+}
 
-export const SUBTITLE_STYLES: Record<StyleName, string> = {
-  HORMOZI:       'text-4xl text-yellow-400 italic',
-  MRBEAST:       'text-3xl text-white underline decoration-blue-500 decoration-8',
-  MINIMALIST:    'text-xl text-white font-mono lowercase',
-  TIKTOK:        'text-4xl text-white font-black tracking-tighter',
-  YOUTUBE_SHORT: 'text-3xl text-white font-bold',
-  PODCAST:       'text-xl text-gray-200 font-sans',
-  CORPORATE:     'text-lg text-white font-medium',
-  HIGHCARE:      'text-2xl text-yellow-400 font-black',
-  CYBER_PUNK:    'text-4xl text-white font-bold',
-  STORY_TELLER:  'text-xl text-gray-200 font-mono',
-  GLOW_KARAOKE:  'text-4xl text-white font-black',
-  GLASS_MORPH:   'text-2xl text-white/50 font-semibold p-2 rounded bg-white/20 backdrop-blur-md border border-black/20',
-  ALI_ABDAAL:    'text-3xl text-white font-bold tracking-tight',
-  RETRO_WAVE:    'text-4xl text-pink-500 font-black italic tracking-widest',
-  HACKER_TERMINAL: 'text-xl text-green-500 font-mono bg-black/80 px-2 py-1',
-  CINEMATIC_FILM: 'text-2xl text-gray-200 font-serif italic tracking-wide',
-  CUSTOM:        'text-2xl text-primary',
-};
+export interface SubtitlePreviewMotion {
+  animationDurationMs: number;
+  animationType: PreviewAnimationType;
+  emphasisScale: number;
+}
 
-/**
- * ASS renk formati &HAABBGGRR -> CSS hex donusumu.
- * ASS'de byte sirasi: Alpha, Blue, Green, Red (BGR).
- */
+interface SubtitlePreviewDefinition {
+  bandVariant: PreviewBandVariant;
+  motion: SubtitlePreviewMotion;
+  screenTheme: PreviewScreenTheme;
+}
+
+interface SubtitleStyleDefinition {
+  label: string;
+  overlayClassName: string;
+  inline: SubtitleInlineStyle;
+  preview: SubtitlePreviewDefinition;
+}
+
+interface SubtitleAnimationDefinition {
+  label: string;
+  motion: SubtitlePreviewMotion;
+}
+
 function assToHex(ass: string): string {
   const h = ass.replace('&H', '');
   const r = h.slice(6, 8);
@@ -82,204 +64,462 @@ function assToRgba(ass: string): string {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
-export interface SubtitleInlineStyle {
-  primaryColor: string;
-  highlightColor: string;
-  outlineColor: string;
-  outlineWidth: number;
-  fontSize: string;
-  fontWeight: number;
-  fontFamily: string;
-  backgroundColor: string | null;
+function scaleRem(rem: string, factor = 1.08): string {
+  const numeric = Number.parseFloat(rem);
+  return `${(numeric * factor).toFixed(2)}rem`;
 }
 
-/*
- * Backend subtitle_styles.py ile birebir eslestirilmis stil haritasi.
- * ASS &HAABBGGRR formatindan CSS'e donusturulmustur.
- *
- * Backend kaynak:
- *   HORMOZI:       primary=&H00FFFFFF(white),  highlight=&H0000FFFF(yellow),  font=Montserrat Black 120pt, outline=10
- *   MRBEAST:       primary=&H00FFFFFF(white),  highlight=&H0000FF00(green),   font=Komika Axis 130pt,      outline=12
- *   MINIMALIST:    primary=&H00E0E0E0(gray),   highlight=&H00FFFFFF(white),   font=Helvetica Neue 18pt,    outline=0
- *   TIKTOK:        primary=&H00FFFFFF(white),  highlight=&H00FF00FF(magenta), font=Montserrat Black 140pt, outline=8
- *   YOUTUBE_SHORT: primary=&H00FFFFFF(white),  highlight=&H0000FFFF(yellow),  font=Poppins Bold 110pt,     outline=10, bg=semi-black
- *   PODCAST:       primary=&H00F0F0F0(lgray),  highlight=&H00FFFFFF(white),   font=Inter 32pt,             outline=0,  bg=semi-black
- *   CORPORATE:     primary=&H00FFFFFF(white),  highlight=default,             font=Roboto 36pt w500,       outline=2
- *   HIGHCARE:      primary=&H00FFFF00(cyan),   highlight=&H00FFFFFF(white),   font=Arial Black 48pt w900,  outline=4
- */
-export const SUBTITLE_INLINE_STYLES: Record<StyleName, SubtitleInlineStyle> = {
+function softenOutline(width: number, factor = 0.78): number {
+  return +(width * factor).toFixed(2);
+}
+
+function preview(
+  animationType: PreviewAnimationType,
+  animationDurationMs: number,
+  emphasisScale: number,
+  screenTheme: PreviewScreenTheme,
+  bandVariant: PreviewBandVariant = 'plain',
+): SubtitlePreviewDefinition {
+  return {
+    bandVariant,
+    motion: {
+      animationDurationMs,
+      animationType,
+      emphasisScale,
+    },
+    screenTheme,
+  };
+}
+
+export const STYLE_REGISTRY = {
   HORMOZI: {
-    primaryColor:    assToHex('&H00FFFFFF'),
-    highlightColor:  assToHex('&H0000FFFF'),
-    outlineColor:    assToHex('&H00000000'),
-    outlineWidth:    10,
-    fontSize:        '2rem',
-    fontWeight:      900,
-    fontFamily:      '"Montserrat", "Outfit", sans-serif',
-    backgroundColor: null,
+    label: 'Hormozi',
+    overlayClassName: 'font-black uppercase tracking-tight',
+    preview: preview('pop', 820, 1.16, 'studio'),
+    inline: {
+      primaryColor: assToHex('&H00FFFFFF'),
+      highlightColor: assToHex('&H0000FFFF'),
+      outlineColor: assToHex('&H00000000'),
+      outlineWidth: softenOutline(8),
+      fontSize: scaleRem('2.4rem'),
+      fontWeight: 900,
+      fontFamily: '"Montserrat", "Outfit", sans-serif',
+      backgroundColor: null,
+      letterSpacing: '-0.02em',
+      textTransform: 'uppercase',
+    },
   },
   MRBEAST: {
-    primaryColor:    assToHex('&H00FFFFFF'),
-    highlightColor:  assToHex('&H0000FF00'),
-    outlineColor:    assToHex('&H00000000'),
-    outlineWidth:    12,
-    fontSize:        '2.2rem',
-    fontWeight:      900,
-    fontFamily:      '"Comic Sans MS", "Outfit", cursive',
-    backgroundColor: null,
+    label: 'MrBeast',
+    overlayClassName: 'font-black uppercase tracking-tight',
+    preview: preview('pop', 760, 1.18, 'neon'),
+    inline: {
+      primaryColor: assToHex('&H00FFFFFF'),
+      highlightColor: assToHex('&H0000FF00'),
+      outlineColor: assToHex('&H00000000'),
+      outlineWidth: softenOutline(9),
+      fontSize: scaleRem('2.15rem'),
+      fontWeight: 900,
+      fontFamily: '"Komika Axis", "Outfit", sans-serif',
+      backgroundColor: null,
+      letterSpacing: '-0.02em',
+      textTransform: 'uppercase',
+    },
   },
   MINIMALIST: {
-    primaryColor:    assToHex('&H00E0E0E0'),
-    highlightColor:  assToHex('&H00FFFFFF'),
-    outlineColor:    assToHex('&H00000000'),
-    outlineWidth:    0,
-    fontSize:        '1rem',
-    fontWeight:      400,
-    fontFamily:      '"Helvetica Neue", "Inter", sans-serif',
-    backgroundColor: null,
+    label: 'Minimalist',
+    overlayClassName: 'font-medium',
+    preview: preview('fade', 980, 1.04, 'minimal'),
+    inline: {
+      primaryColor: assToHex('&H00E0E0E0'),
+      highlightColor: assToHex('&H00FFFFFF'),
+      outlineColor: assToHex('&H00000000'),
+      outlineWidth: 0,
+      fontSize: scaleRem('1rem'),
+      fontWeight: 400,
+      fontFamily: '"Helvetica Neue", "Inter", sans-serif',
+      backgroundColor: null,
+      textTransform: 'none',
+    },
   },
   TIKTOK: {
-    primaryColor:    assToHex('&H00FFFFFF'),
-    highlightColor:  assToHex('&H00FF00FF'),
-    outlineColor:    assToHex('&H00000000'),
-    outlineWidth:    8,
-    fontSize:        '2.2rem',
-    fontWeight:      900,
-    fontFamily:      '"Montserrat", "Outfit", sans-serif',
-    backgroundColor: null,
+    label: 'TikTok',
+    overlayClassName: 'font-black uppercase tracking-tight',
+    preview: preview('slide_up', 720, 1.14, 'neon'),
+    inline: {
+      primaryColor: assToHex('&H00FFFFFF'),
+      highlightColor: assToHex('&H00FF00FF'),
+      outlineColor: assToHex('&H00000000'),
+      outlineWidth: softenOutline(7),
+      fontSize: scaleRem('2.2rem'),
+      fontWeight: 900,
+      fontFamily: '"Montserrat", "Outfit", sans-serif',
+      backgroundColor: null,
+      letterSpacing: '-0.02em',
+      textTransform: 'uppercase',
+    },
   },
   YOUTUBE_SHORT: {
-    primaryColor:    assToHex('&H00FFFFFF'),
-    highlightColor:  assToHex('&H0000FFFF'),
-    outlineColor:    assToHex('&H00000000'),
-    outlineWidth:    10,
-    fontSize:        '1.8rem',
-    fontWeight:      700,
-    fontFamily:      '"Poppins", "Outfit", sans-serif',
-    backgroundColor: assToRgba('&H80000000'),
+    label: 'YouTube Shorts',
+    overlayClassName: 'font-bold uppercase tracking-tight',
+    preview: preview('pop', 820, 1.1, 'studio', 'bold_plate'),
+    inline: {
+      primaryColor: assToHex('&H00FFFFFF'),
+      highlightColor: assToHex('&H0000FFFF'),
+      outlineColor: assToHex('&H00000000'),
+      outlineWidth: softenOutline(8),
+      fontSize: scaleRem('1.85rem'),
+      fontWeight: 700,
+      fontFamily: '"Poppins", "Outfit", sans-serif',
+      backgroundColor: assToRgba('&H80000000'),
+      textTransform: 'uppercase',
+    },
   },
   PODCAST: {
-    primaryColor:    assToHex('&H00F0F0F0'),
-    highlightColor:  assToHex('&H00FFFFFF'),
-    outlineColor:    assToHex('&H00000000'),
-    outlineWidth:    0,
-    fontSize:        '1.1rem',
-    fontWeight:      400,
-    fontFamily:      '"Inter", sans-serif',
-    backgroundColor: assToRgba('&H40000000'),
+    label: 'Podcast',
+    overlayClassName: 'font-medium',
+    preview: preview('fade', 1050, 1.02, 'cinematic', 'soft_plate'),
+    inline: {
+      primaryColor: assToHex('&H00F0F0F0'),
+      highlightColor: assToHex('&H00FFFFFF'),
+      outlineColor: assToHex('&H00000000'),
+      outlineWidth: 0,
+      fontSize: scaleRem('1.1rem'),
+      fontWeight: 500,
+      fontFamily: '"Inter", sans-serif',
+      backgroundColor: assToRgba('&H40000000'),
+      textTransform: 'none',
+    },
   },
   CORPORATE: {
-    primaryColor:    assToHex('&H00FFFFFF'),
-    highlightColor:  assToHex('&H00FFFFFF'),
-    outlineColor:    assToHex('&H00000000'),
-    outlineWidth:    2,
-    fontSize:        '1.15rem',
-    fontWeight:      500,
-    fontFamily:      '"Inter", "Roboto", sans-serif',
-    backgroundColor: null,
+    label: 'Kurumsal',
+    overlayClassName: 'font-medium',
+    preview: preview('none', 1000, 1.01, 'studio'),
+    inline: {
+      primaryColor: assToHex('&H00FFFFFF'),
+      highlightColor: assToHex('&H00FFFFFF'),
+      outlineColor: assToHex('&H00000000'),
+      outlineWidth: softenOutline(2),
+      fontSize: scaleRem('1.15rem'),
+      fontWeight: 500,
+      fontFamily: '"Roboto", "Inter", sans-serif',
+      backgroundColor: null,
+      textTransform: 'none',
+    },
   },
   HIGHCARE: {
-    primaryColor:    assToHex('&H00FFFF00'),
-    highlightColor:  assToHex('&H00FFFFFF'),
-    outlineColor:    assToHex('&H00000000'),
-    outlineWidth:    4,
-    fontSize:        '1.5rem',
-    fontWeight:      900,
-    fontFamily:      '"Arial Black", "Outfit", sans-serif',
-    backgroundColor: null,
+    label: 'Yüksek Kontrast',
+    overlayClassName: 'font-black uppercase',
+    preview: preview('shake', 700, 1.12, 'studio'),
+    inline: {
+      primaryColor: assToHex('&H00FFFF00'),
+      highlightColor: assToHex('&H00FFFFFF'),
+      outlineColor: assToHex('&H00000000'),
+      outlineWidth: softenOutline(4),
+      fontSize: scaleRem('1.45rem'),
+      fontWeight: 900,
+      fontFamily: '"Arial Black", "Outfit", sans-serif',
+      backgroundColor: null,
+      textTransform: 'uppercase',
+    },
   },
   CYBER_PUNK: {
-    primaryColor:    assToHex('&H00FFFFFF'),
-    highlightColor:  assToHex('&H0000FFFF'),
-    outlineColor:    assToHex('&H00FF00FF'),
-    outlineWidth:    4,
-    fontSize:        '2.2rem',
-    fontWeight:      700,
-    fontFamily:      '"Orbitron", "Outfit", sans-serif',
-    backgroundColor: null,
+    label: 'Cyber Glitch',
+    overlayClassName: 'font-bold uppercase tracking-tight',
+    preview: preview('shake', 680, 1.12, 'neon'),
+    inline: {
+      primaryColor: assToHex('&H00FFFFFF'),
+      highlightColor: assToHex('&H0000FFFF'),
+      outlineColor: assToHex('&H00FF00FF'),
+      outlineWidth: softenOutline(4),
+      fontSize: scaleRem('2.1rem'),
+      fontWeight: 700,
+      fontFamily: '"Orbitron", "Outfit", sans-serif',
+      backgroundColor: null,
+      textTransform: 'uppercase',
+    },
   },
   STORY_TELLER: {
-    primaryColor:    assToHex('&H00E0E0E0'),
-    highlightColor:  assToHex('&H00E0E0E0'),
-    outlineColor:    assToHex('&H00000000'),
-    outlineWidth:    0,
-    fontSize:        '1.2rem',
-    fontWeight:      400,
-    fontFamily:      '"Courier New", "Courier", monospace',
-    backgroundColor: null,
+    label: 'Storyteller',
+    overlayClassName: 'font-normal',
+    preview: preview('typewriter', 900, 1.02, 'cinematic'),
+    inline: {
+      primaryColor: assToHex('&H00E0E0E0'),
+      highlightColor: assToHex('&H00E0E0E0'),
+      outlineColor: assToHex('&H00000000'),
+      outlineWidth: 0,
+      fontSize: scaleRem('1.2rem'),
+      fontWeight: 400,
+      fontFamily: '"Courier New", "Courier", monospace',
+      backgroundColor: null,
+      textTransform: 'none',
+    },
   },
   GLOW_KARAOKE: {
-    primaryColor:    assToHex('&H80FFFFFF'),
-    highlightColor:  assToHex('&H0000FFFF'),
-    outlineColor:    assToHex('&H00000000'),
-    outlineWidth:    2,
-    fontSize:        '1.8rem',
-    fontWeight:      800,
-    fontFamily:      '"Montserrat", "Outfit", sans-serif',
-    backgroundColor: null,
+    label: 'Neon Karaoke',
+    overlayClassName: 'font-black uppercase',
+    preview: preview('fade', 760, 1.08, 'neon'),
+    inline: {
+      primaryColor: assToHex('&H80FFFFFF'),
+      highlightColor: assToHex('&H0000FFFF'),
+      outlineColor: assToHex('&H00000000'),
+      outlineWidth: softenOutline(2),
+      fontSize: scaleRem('1.85rem'),
+      fontWeight: 800,
+      fontFamily: '"Montserrat", "Outfit", sans-serif',
+      backgroundColor: null,
+      textTransform: 'uppercase',
+    },
   },
   GLASS_MORPH: {
-    primaryColor:    assToHex('&H20FFFFFF'),
-    highlightColor:  assToHex('&H20FFFFFF'),
-    outlineColor:    assToHex('&H40000000'),
-    outlineWidth:    1,
-    fontSize:        '1.2rem',
-    fontWeight:      600,
-    fontFamily:      '"Inter", "Outfit", sans-serif',
-    backgroundColor: assToRgba('&H80FFFFFF'),
+    label: 'Glassmorphism',
+    overlayClassName: 'font-semibold',
+    preview: preview('fade', 980, 1.04, 'glass', 'glass_plate'),
+    inline: {
+      primaryColor: assToHex('&H20FFFFFF'),
+      highlightColor: assToHex('&H20FFFFFF'),
+      outlineColor: assToHex('&H40000000'),
+      outlineWidth: softenOutline(1),
+      fontSize: scaleRem('1.2rem'),
+      fontWeight: 600,
+      fontFamily: '"Inter", "Outfit", sans-serif',
+      backgroundColor: assToRgba('&H80FFFFFF'),
+      textTransform: 'none',
+    },
   },
   ALI_ABDAAL: {
-    primaryColor:    assToHex('&H00FFFFFF'),
-    highlightColor:  assToHex('&H0032CD32'),
-    outlineColor:    assToHex('&H60000000'),
-    outlineWidth:    0,
-    fontSize:        '1.6rem',
-    fontWeight:      700,
-    fontFamily:      '"Outfit", "Inter", sans-serif',
-    backgroundColor: null,
+    label: 'Productivity Vlog',
+    overlayClassName: 'font-bold',
+    preview: preview('slide_up', 840, 1.08, 'cinematic'),
+    inline: {
+      primaryColor: assToHex('&H00FFFFFF'),
+      highlightColor: assToHex('&H0032CD32'),
+      outlineColor: assToHex('&H60000000'),
+      outlineWidth: 0,
+      fontSize: scaleRem('1.6rem'),
+      fontWeight: 700,
+      fontFamily: '"Outfit", "Inter", sans-serif',
+      backgroundColor: null,
+      textTransform: 'none',
+    },
   },
   RETRO_WAVE: {
-    primaryColor:    assToHex('&H00FF00FF'),
-    highlightColor:  assToHex('&H0000FFFF'),
-    outlineColor:    assToHex('&H00000000'),
-    outlineWidth:    6,
-    fontSize:        '2.2rem',
-    fontWeight:      900,
-    fontFamily:      '"Vampire", "Impact", sans-serif',
-    backgroundColor: null,
+    label: '80s Synthwave',
+    overlayClassName: 'font-black uppercase tracking-[0.08em]',
+    preview: preview('shake', 740, 1.15, 'neon'),
+    inline: {
+      primaryColor: assToHex('&H00FF00FF'),
+      highlightColor: assToHex('&H0000FFFF'),
+      outlineColor: assToHex('&H00000000'),
+      outlineWidth: softenOutline(6),
+      fontSize: scaleRem('2.1rem'),
+      fontWeight: 900,
+      fontFamily: '"Vampire", "Impact", sans-serif',
+      backgroundColor: null,
+      textTransform: 'uppercase',
+    },
   },
   HACKER_TERMINAL: {
-    primaryColor:    assToHex('&H0000FF00'),
-    highlightColor:  assToHex('&H00FFFFFF'),
-    outlineColor:    assToHex('&H00000000'),
-    outlineWidth:    0,
-    fontSize:        '1.1rem',
-    fontWeight:      400,
-    fontFamily:      '"Consolas", "Courier New", monospace',
-    backgroundColor: assToRgba('&HB0000000'),
+    label: 'Terminal Code',
+    overlayClassName: 'font-normal uppercase',
+    preview: preview('typewriter', 880, 1.03, 'terminal', 'terminal_plate'),
+    inline: {
+      primaryColor: assToHex('&H0000FF00'),
+      highlightColor: assToHex('&H00FFFFFF'),
+      outlineColor: assToHex('&H00000000'),
+      outlineWidth: 0,
+      fontSize: scaleRem('1.1rem'),
+      fontWeight: 400,
+      fontFamily: '"Consolas", "Courier New", monospace',
+      backgroundColor: assToRgba('&HB0000000'),
+      textTransform: 'uppercase',
+    },
   },
   CINEMATIC_FILM: {
-    primaryColor:    assToHex('&H00E6E6E6'),
-    highlightColor:  assToHex('&H00D4AF37'),
-    outlineColor:    assToHex('&H40000000'),
-    outlineWidth:    1,
-    fontSize:        '1.3rem',
-    fontWeight:      400,
-    fontFamily:      '"Times New Roman", "Georgia", serif',
-    backgroundColor: null,
+    label: 'Documentary Film',
+    overlayClassName: 'font-normal tracking-[0.04em]',
+    preview: preview('fade', 1100, 1.05, 'cinematic'),
+    inline: {
+      primaryColor: assToHex('&H00E6E6E6'),
+      highlightColor: assToHex('&H00D4AF37'),
+      outlineColor: assToHex('&H40000000'),
+      outlineWidth: softenOutline(1),
+      fontSize: scaleRem('2.5rem'),
+      fontWeight: 400,
+      fontFamily: '"Times New Roman", "Georgia", serif',
+      backgroundColor: null,
+      fontStyle: 'italic',
+      textTransform: 'none',
+    },
   },
-  CUSTOM: {
-    primaryColor:    '#00f2ff',
-    highlightColor:  '#00f2ff',
-    outlineColor:    '#000000',
-    outlineWidth:    2,
-    fontSize:        '1.5rem',
-    fontWeight:      600,
-    fontFamily:      '"Outfit", sans-serif',
-    backgroundColor: null,
+} as const satisfies Record<string, SubtitleStyleDefinition>;
+
+export const STYLE_OPTIONS = Object.keys(STYLE_REGISTRY) as Array<keyof typeof STYLE_REGISTRY>;
+export type StyleName = (typeof STYLE_OPTIONS)[number];
+
+export const ANIMATION_REGISTRY = {
+  pop: {
+    label: 'Pop',
+    motion: {
+      animationDurationMs: 820,
+      animationType: 'pop',
+      emphasisScale: 1.16,
+    },
   },
-};
+  shake: {
+    label: 'Shake',
+    motion: {
+      animationDurationMs: 720,
+      animationType: 'shake',
+      emphasisScale: 1.12,
+    },
+  },
+  slide_up: {
+    label: 'Slide Up',
+    motion: {
+      animationDurationMs: 760,
+      animationType: 'slide_up',
+      emphasisScale: 1.1,
+    },
+  },
+  fade: {
+    label: 'Fade',
+    motion: {
+      animationDurationMs: 980,
+      animationType: 'fade',
+      emphasisScale: 1.04,
+    },
+  },
+  typewriter: {
+    label: 'Typewriter',
+    motion: {
+      animationDurationMs: 900,
+      animationType: 'typewriter',
+      emphasisScale: 1.02,
+    },
+  },
+  none: {
+    label: 'None',
+    motion: {
+      animationDurationMs: 1000,
+      animationType: 'none',
+      emphasisScale: 1,
+    },
+  },
+} as const satisfies Record<PreviewAnimationType, SubtitleAnimationDefinition>;
+
+const EXPLICIT_ANIMATION_OPTIONS = Object.keys(ANIMATION_REGISTRY) as PreviewAnimationType[];
+export const ANIMATION_OPTIONS = ['default', ...EXPLICIT_ANIMATION_OPTIONS] as const satisfies readonly SubtitleAnimationType[];
+
+export const STYLE_LABELS: Record<StyleName, string> = Object.fromEntries(
+  STYLE_OPTIONS.map((styleName) => [styleName, STYLE_REGISTRY[styleName].label]),
+) as Record<StyleName, string>;
+
+export const ANIMATION_LABELS: Record<SubtitleAnimationType, string> = {
+  default: 'Preset Default',
+  ...Object.fromEntries(
+    EXPLICIT_ANIMATION_OPTIONS.map((animationType) => [animationType, ANIMATION_REGISTRY[animationType].label]),
+  ),
+} as Record<SubtitleAnimationType, string>;
+
+export const SUBTITLE_STYLES: Record<StyleName, string> = Object.fromEntries(
+  STYLE_OPTIONS.map((styleName) => [styleName, STYLE_REGISTRY[styleName].overlayClassName]),
+) as Record<StyleName, string>;
+
+export const SUBTITLE_INLINE_STYLES: Record<StyleName, SubtitleInlineStyle> = Object.fromEntries(
+  STYLE_OPTIONS.map((styleName) => [styleName, STYLE_REGISTRY[styleName].inline]),
+) as Record<StyleName, SubtitleInlineStyle>;
+
+export const ANIMATION_SELECT_OPTIONS = ANIMATION_OPTIONS.map((animationType) => ({
+  label: ANIMATION_LABELS[animationType],
+  value: animationType,
+}));
 
 export function isStyleName(value: unknown): value is StyleName {
   return typeof value === 'string' && STYLE_OPTIONS.includes(value as StyleName);
+}
+
+export function isSubtitleAnimationType(value: unknown): value is SubtitleAnimationType {
+  return typeof value === 'string' && ANIMATION_OPTIONS.includes(value as SubtitleAnimationType);
+}
+
+export function resolveSubtitleMotion(
+  resolvedStyle: StyleName,
+  animationType: SubtitleAnimationType = 'default',
+): {
+  requestedAnimationType: SubtitleAnimationType;
+  resolvedAnimationType: PreviewAnimationType;
+  motion: SubtitlePreviewMotion;
+} {
+  if (!isSubtitleAnimationType(animationType) || animationType === 'default') {
+    const baseMotion = STYLE_REGISTRY[resolvedStyle].preview.motion;
+    return {
+      requestedAnimationType: 'default',
+      resolvedAnimationType: baseMotion.animationType,
+      motion: baseMotion,
+    };
+  }
+
+  return {
+    requestedAnimationType: animationType,
+    resolvedAnimationType: animationType,
+    motion: ANIMATION_REGISTRY[animationType].motion,
+  };
+}
+
+export function resolveSubtitleStyle(
+  styleName: string,
+  animationType: SubtitleAnimationType = 'default',
+): {
+  inline: SubtitleInlineStyle;
+  label: string;
+  overlayClassName: string;
+  preview: SubtitlePreviewDefinition;
+  requestedAnimationType: SubtitleAnimationType;
+  resolvedAnimationType: PreviewAnimationType;
+  resolvedStyle: StyleName;
+} {
+  const resolvedStyle: StyleName = isStyleName(styleName) ? styleName : 'HORMOZI';
+  const resolvedMotion = resolveSubtitleMotion(resolvedStyle, animationType);
+  return {
+    inline: SUBTITLE_INLINE_STYLES[resolvedStyle],
+    label: STYLE_LABELS[resolvedStyle],
+    overlayClassName: SUBTITLE_STYLES[resolvedStyle],
+    preview: {
+      bandVariant: STYLE_REGISTRY[resolvedStyle].preview.bandVariant,
+      motion: resolvedMotion.motion,
+      screenTheme: STYLE_REGISTRY[resolvedStyle].preview.screenTheme,
+    },
+    requestedAnimationType: resolvedMotion.requestedAnimationType,
+    resolvedAnimationType: resolvedMotion.resolvedAnimationType,
+    resolvedStyle,
+  };
+}
+
+export function getSubtitleBoxStyle(
+  layout: SubtitleLayout = 'single',
+  surface: SubtitleSurface = 'overlay',
+): CSSProperties {
+  const horizontalInset = surface === 'preview' ? '9%' : '8%';
+  const horizontalPadding = surface === 'preview' ? '0.35rem' : '1rem';
+
+  if (layout === 'split') {
+    return {
+      left: horizontalInset,
+      right: horizontalInset,
+      top: surface === 'preview' ? '45%' : '45%',
+      minHeight: surface === 'preview' ? '9%' : '10%',
+      paddingLeft: horizontalPadding,
+      paddingRight: horizontalPadding,
+    };
+  }
+
+  return {
+    left: horizontalInset,
+    right: horizontalInset,
+    bottom: surface === 'preview' ? '6.5%' : '14%',
+    minHeight: surface === 'preview' ? '11%' : '14%',
+    paddingLeft: horizontalPadding,
+    paddingRight: horizontalPadding,
+  };
 }

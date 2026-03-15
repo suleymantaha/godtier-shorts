@@ -3,7 +3,11 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from backend.core.media_ops import cut_and_burn_clip
+from backend.core.media_ops import (
+    build_shifted_transcript_segments,
+    build_shifted_transcript_segments_with_report,
+    cut_and_burn_clip,
+)
 
 
 class _DummyVideoProcessor:
@@ -87,3 +91,87 @@ def test_cut_and_burn_clip_moves_final_output_when_subtitles_are_skipped(tmp_pat
     assert final_output.read_bytes() == b"cropped-no-subs"
     assert not (tmp_path / "clip_raw.mp4").exists()
     assert not (tmp_path / "temp.mp4").exists()
+
+
+def test_build_shifted_transcript_segments_rebuilds_text_from_retained_words() -> None:
+    shifted = build_shifted_transcript_segments(
+        [
+            {
+                "text": "alpha beta gamma",
+                "start": 8.0,
+                "end": 12.0,
+                "speaker": "A",
+                "words": [
+                    {"word": "alpha", "start": 8.0, "end": 9.0, "score": 0.9},
+                    {"word": "beta", "start": 9.0, "end": 10.0, "score": 0.9},
+                    {"word": "gamma", "start": 10.0, "end": 11.0, "score": 0.9},
+                ],
+            }
+        ],
+        start_time=9.0,
+        end_time=11.0,
+    )
+
+    assert shifted == [
+        {
+            "text": "beta gamma",
+            "start": 0,
+            "end": 2.0,
+            "speaker": "A",
+            "words": [
+                {"word": "beta", "start": 0, "end": 1.0, "score": 0.9},
+                {"word": "gamma", "start": 1.0, "end": 2.0, "score": 0.9},
+            ],
+        }
+    ]
+
+
+def test_build_shifted_transcript_segments_preserves_overlapping_segments_without_words() -> None:
+    shifted = build_shifted_transcript_segments(
+        [
+            {
+                "text": "kelime zaman damgasi yok",
+                "start": 4.0,
+                "end": 6.0,
+                "speaker": "B",
+                "words": [],
+            }
+        ],
+        start_time=5.0,
+        end_time=7.0,
+    )
+
+    assert shifted == [
+        {
+            "text": "kelime zaman damgasi yok",
+            "start": 0,
+            "end": 1.0,
+            "speaker": "B",
+            "words": [],
+        }
+    ]
+
+
+def test_build_shifted_transcript_segments_with_report_tracks_quality_fields() -> None:
+    shifted, report = build_shifted_transcript_segments_with_report(
+        [
+            {
+                "text": "alpha beta gamma",
+                "start": 8.0,
+                "end": 12.0,
+                "speaker": "A",
+                "words": [
+                    {"word": "alpha", "start": 7.8, "end": 9.0, "score": 0.9},
+                    {"word": "beta", "start": 9.0, "end": 10.0, "score": 0.9},
+                    {"word": "gamma", "start": 10.0, "end": 11.2, "score": 0.9},
+                ],
+            }
+        ],
+        start_time=9.0,
+        end_time=11.0,
+    )
+
+    assert shifted[0]["text"] == "alpha beta gamma" or shifted[0]["text"] == "beta gamma"
+    assert report["clamped_words_count"] >= 1
+    assert report["word_coverage_ratio"] > 0
+    assert report["status"] in {"good", "partial"}

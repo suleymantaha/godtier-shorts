@@ -20,6 +20,7 @@ This repo has strict runtime validation and a canonical workspace layout.
 - `transcript.json`
 - `viral.json`
 - `shorts/`
+- `debug/` (opsiyonel, `DEBUG_RENDER_ARTIFACTS=1` ile)
 
 ## Path Safety
 

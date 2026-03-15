@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import hmac
+import hashlib
+import base64
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -11,6 +14,7 @@ from typing import Any
 from loguru import logger
 
 from backend.config import get_project_path
+from backend.services.ownership import build_subject_hash, read_project_manifest
 
 from .constants import (
     MAX_DIRECT_UPLOAD_BYTES,
@@ -20,7 +24,7 @@ from .constants import (
     SUPPORTED_SOCIAL_PLATFORMS,
 )
 from .content import build_platform_prefill, resolve_clip_metadata_paths, resolve_viral_metadata
-from .crypto import SocialCrypto
+from .crypto import SocialCrypto, get_social_encryption_secret
 from .postiz import PostizApiError, PostizClient
 from .store import SocialStore, get_social_store, parse_iso
 
@@ -163,14 +167,136 @@ def _build_media_url(project_id: str, clip_name: str) -> str:
     public_base = os.getenv("PUBLIC_APP_URL", "").strip().rstrip("/")
     if not public_base:
         raise ValueError("PUBLIC_APP_URL tanımlı olmadığı için URL import kullanılamıyor")
-    return f"{public_base}/api/projects/{project_id}/shorts/{clip_name}"
+    raise ValueError("Legacy public media URL kullanımı devre dışı")
 
 
-def _resolve_media(client: PostizClient, clip_path: Path, *, project_id: str, clip_name: str) -> dict[str, Any]:
+def _get_social_export_ttl_seconds() -> int:
+    raw = os.getenv("SOCIAL_EXPORT_TTL_SECONDS", "").strip()
+    if not raw:
+        return 900
+    try:
+        value = int(raw)
+    except ValueError:
+        return 900
+    return value if value > 0 else 900
+
+
+def _urlsafe_b64encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
+
+
+def _urlsafe_b64decode(value: str) -> bytes:
+    padding = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode(f"{value}{padding}".encode("ascii"))
+
+
+def _build_social_export_signature(payload_segment: str) -> str:
+    secret = get_social_encryption_secret().encode("utf-8")
+    digest = hmac.new(secret, payload_segment.encode("utf-8"), hashlib.sha256).digest()
+    return _urlsafe_b64encode(digest)
+
+
+def build_signed_social_export_token(
+    *,
+    subject: str,
+    project_id: str,
+    clip_name: str,
+    publish_job_id: str,
+    ttl_seconds: int | None = None,
+) -> str:
+    expires_in = _get_social_export_ttl_seconds() if ttl_seconds is None else ttl_seconds
+    payload = {
+        "project_id": project_id,
+        "clip_name": clip_name,
+        "job_id": publish_job_id,
+        "subject_hash": build_subject_hash(subject),
+        "exp": int(datetime.now(timezone.utc).timestamp()) + expires_in,
+    }
+    payload_segment = _urlsafe_b64encode(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
+    signature = _build_social_export_signature(payload_segment)
+    return f"{payload_segment}.{signature}"
+
+
+def resolve_signed_social_export_token(token: str) -> dict[str, Any]:
+    try:
+        payload_segment, signature = token.split(".", 1)
+    except ValueError as exc:
+        raise ValueError("Geçersiz social export token formatı") from exc
+
+    expected_signature = _build_social_export_signature(payload_segment)
+    if not hmac.compare_digest(signature, expected_signature):
+        raise ValueError("Geçersiz social export token imzası")
+
+    try:
+        payload = json.loads(_urlsafe_b64decode(payload_segment).decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise ValueError("Geçersiz social export token içeriği") from exc
+
+    if not isinstance(payload, dict):
+        raise ValueError("Geçersiz social export token içeriği")
+
+    exp = int(payload.get("exp") or 0)
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+    if exp <= now_ts:
+        raise ValueError("Social export token süresi doldu")
+
+    project_id = str(payload.get("project_id") or "").strip()
+    clip_name = str(payload.get("clip_name") or "").strip()
+    job_id = str(payload.get("job_id") or "").strip()
+    subject_hash = str(payload.get("subject_hash") or "").strip()
+    if not project_id or not clip_name or not job_id or not subject_hash:
+        raise ValueError("Social export token alanları eksik")
+
+    manifest = read_project_manifest(project_id)
+    if manifest is None or manifest.status != "active":
+        raise ValueError("Social export kaynağı kullanılamıyor")
+    if manifest.owner_subject_hash != subject_hash:
+        raise ValueError("Social export sahibi eşleşmiyor")
+
+    return payload
+
+
+def build_signed_social_export_url(
+    *,
+    subject: str,
+    project_id: str,
+    clip_name: str,
+    publish_job_id: str,
+    ttl_seconds: int | None = None,
+) -> str:
+    public_base = os.getenv("PUBLIC_APP_URL", "").strip().rstrip("/")
+    if not public_base:
+        raise ValueError("PUBLIC_APP_URL tanımlı olmadığı için URL import kullanılamıyor")
+    token = build_signed_social_export_token(
+        subject=subject,
+        project_id=project_id,
+        clip_name=clip_name,
+        publish_job_id=publish_job_id,
+        ttl_seconds=ttl_seconds,
+    )
+    return f"{public_base}/api/social/export?token={token}"
+
+
+def _resolve_media(
+    client: PostizClient,
+    clip_path: Path,
+    *,
+    subject: str,
+    project_id: str,
+    clip_name: str,
+    publish_job_id: str,
+) -> dict[str, Any]:
     file_size = clip_path.stat().st_size
     if file_size <= MAX_DIRECT_UPLOAD_BYTES:
         return client.upload_media_direct(clip_path)
-    return client.upload_media_from_url(_build_media_url(project_id, clip_name))
+    return client.upload_media_from_url(
+        build_signed_social_export_url(
+            subject=subject,
+            project_id=project_id,
+            clip_name=clip_name,
+            publish_job_id=publish_job_id,
+        )
+    )
 
 
 def _build_post_settings(
@@ -307,7 +433,14 @@ def publish_job_via_postiz(job: dict[str, Any], *, store: SocialStore | None = N
         hashtags=hashtags,
     )
 
-    media = _resolve_media(client, clip_path, project_id=project_id, clip_name=clip_name)
+    media = _resolve_media(
+        client,
+        clip_path,
+        subject=subject,
+        project_id=project_id,
+        clip_name=clip_name,
+        publish_job_id=str(job["id"]),
+    )
 
     mode = "scheduled" if str(job.get("mode")) == "scheduled" else "now"
     scheduled_at = str(job.get("scheduled_at") or "") or None
@@ -424,7 +557,14 @@ def dry_run_publish_via_postiz(
 
     media_probe: dict[str, Any] | None = None
     if probe_media_upload:
-        media = _resolve_media(client, clip_path, project_id=project_id, clip_name=clip_name)
+        media = _resolve_media(
+            client,
+            clip_path,
+            subject=subject,
+            project_id=project_id,
+            clip_name=clip_name,
+            publish_job_id="dry-run",
+        )
         media_probe = {
             "attempted": True,
             "method": "direct" if clip_path.stat().st_size <= MAX_DIRECT_UPLOAD_BYTES else "url",

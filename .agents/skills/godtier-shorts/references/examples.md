@@ -11,6 +11,7 @@
 - Start from `backend/api/routes/editor.py`.
 - Follow the handoff into `backend/core/orchestrator.py` and the relevant workflow module.
 - Use `scripts/reburn_clip.py` when a CLI repro is faster than the UI.
+- If the issue is timing, crop stability, or subtitle mismatch, enable `DEBUG_RENDER_ARTIFACTS=1` and inspect the per-clip debug bundle.
 
 ## Debug Progress WebSocket or Auth
 
@@ -26,3 +27,4 @@
 
 - Preserve thin facade modules and existing public exports.
 - Run guardrail tests before broad refactors.
+- Keep compatibility aliases if tests or external callers still patch workflow module symbols directly.

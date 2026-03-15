@@ -5,7 +5,15 @@ import { VideoOverlay } from '../../components/VideoOverlay';
 
 const baseProps = {
   currentTime: 1.5,
-  transcript: [{ text: 'Hello', start: 1, end: 2, words: [] }],
+  transcript: [{
+    text: 'Hello there',
+    start: 1,
+    end: 2,
+    words: [
+      { word: 'Hello', start: 1, end: 1.4 },
+      { word: 'there', start: 1.4, end: 1.8 },
+    ],
+  }],
   style: 'TIKTOK' as const,
   centerX: 0.5,
   onCropChange: vi.fn(),
@@ -15,6 +23,7 @@ describe('VideoOverlay', () => {
   it('shows current subtitle text', () => {
     render(<VideoOverlay {...baseProps} />);
     expect(screen.getByText('Hello')).toBeInTheDocument();
+    expect(screen.getByText('there')).toBeInTheDocument();
   });
 
   it('renders crop hint always visible', () => {
@@ -46,5 +55,11 @@ describe('VideoOverlay', () => {
     cropControl.focus();
     await user.keyboard('{ArrowRight}');
     expect(onCropChange).toHaveBeenCalled();
+  });
+
+  it('uses split gutter safe area when layout is split', () => {
+    render(<VideoOverlay {...baseProps} layout="split" />);
+    const subtitle = screen.getByText('Hello').parentElement?.parentElement;
+    expect(subtitle).toHaveStyle({ top: '45%' });
   });
 });

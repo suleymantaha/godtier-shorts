@@ -39,6 +39,7 @@ describe('jobForm helpers', () => {
 
   it('builds payload with custom duration and clamped clip count', () => {
     expect(buildStartJobPayload({
+      animationType: 'default',
       autoMode: false,
       durationMax: 95,
       durationMin: 45,
@@ -50,6 +51,7 @@ describe('jobForm helpers', () => {
       url: 'https://youtube.com/watch?v=test123',
     })).toEqual(expect.objectContaining({
       ai_engine: 'cloud',
+      animation_type: 'default',
       auto_mode: false,
       duration_max: 95,
       duration_min: 45,

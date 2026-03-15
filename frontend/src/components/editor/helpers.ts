@@ -1,12 +1,13 @@
 import { API_BASE } from '../../config';
 import type { Clip, Segment } from '../../types';
 import { getClipUrl } from '../../utils/url';
-import { isStyleName, type StyleName } from '../../config/subtitleStyles';
+import { isStyleName, isSubtitleAnimationType, type StyleName, type SubtitleAnimationType } from '../../config/subtitleStyles';
 import { readStored } from '../../utils/storage';
 
 export const MASTER_EDITOR_SESSION_KEY = 'godtier-editor-master-session';
 
 type EditorStateDefaults = {
+  animationType: SubtitleAnimationType;
   centerX: number;
   currentJobId: string | null;
   endTime: number;
@@ -17,6 +18,7 @@ type EditorStateDefaults = {
 };
 
 const DEFAULT_EDITOR_STATE: EditorStateDefaults = {
+  animationType: 'default',
   centerX: 0.5,
   currentJobId: null,
   endTime: 60,
@@ -27,6 +29,7 @@ const DEFAULT_EDITOR_STATE: EditorStateDefaults = {
 };
 
 export interface StoredEditorSession {
+  animationType?: SubtitleAnimationType;
   centerX?: number;
   currentJobId?: string | null;
   endTime?: number;
@@ -89,6 +92,7 @@ export function resolveStoredEditorState(
 
   return {
     centerX: resolveStoredNumber(stored?.centerX, DEFAULT_EDITOR_STATE.centerX),
+    animationType: resolveStoredAnimationType(stored?.animationType),
     clearPersistedSession: false,
     currentJobId: resolveStoredJobId(stored?.currentJobId),
     endTime: resolveStoredNumber(stored?.endTime, DEFAULT_EDITOR_STATE.endTime),
@@ -103,6 +107,7 @@ export function resolveStoredEditorState(
 export function buildStoredEditorSession(state: Omit<ResolvedEditorSessionState, 'clearPersistedSession'>): StoredEditorSession {
   return {
     centerX: state.centerX,
+    animationType: state.animationType,
     currentJobId: state.currentJobId,
     endTime: state.endTime,
     numClips: state.numClips,
@@ -166,6 +171,10 @@ function resolveStoredNumber(value: number | undefined, fallback: number): numbe
 
 function resolveStoredStyle(value: unknown): StyleName {
   return isStyleName(value) ? value : DEFAULT_EDITOR_STATE.style;
+}
+
+function resolveStoredAnimationType(value: unknown): SubtitleAnimationType {
+  return isSubtitleAnimationType(value) ? value : DEFAULT_EDITOR_STATE.animationType;
 }
 
 function resolveStoredTranscript(value: Segment[] | undefined): Segment[] {

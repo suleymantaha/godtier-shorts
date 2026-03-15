@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 
 import { clipsApi, editorApi } from '../../api/client';
-import { isStyleName, type StyleName } from '../../config/subtitleStyles';
+import { useAuthRuntimeStore } from '../../auth/runtime';
+import { isStyleName, isSubtitleAnimationType, type StyleName, type SubtitleAnimationType } from '../../config/subtitleStyles';
 import { useJobStore } from '../../store/useJobStore';
 import type {
   Clip,
@@ -10,6 +11,7 @@ import type {
   ClipTranscriptResponse,
   Job,
   ProjectTranscriptResponse,
+  RenderMetadata,
   Segment,
   TranscriptRecoveryStrategy,
   TranscriptStatus,
@@ -102,6 +104,7 @@ function useSubtitleWorkspaceState() {
     EMPTY_CLIP_TRANSCRIPT_CAPABILITIES,
   );
   const [clipTranscriptStatus, setClipTranscriptStatus] = useState<ClipTranscriptStatus>('needs_recovery');
+  const [clipRenderMetadata, setClipRenderMetadata] = useState<RenderMetadata | null>(null);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -114,12 +117,15 @@ function useSubtitleWorkspaceState() {
   const [saving, setSaving] = useState(false);
   const [startTime, setStartTime] = useState(0);
   const [style, setStyle] = useState<StyleName>('HORMOZI');
+  const [animationType, setAnimationType] = useState<SubtitleAnimationType>('default');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<Segment[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   return {
+    animationType,
     cacheBust,
+    clipRenderMetadata,
     clipTranscriptCapabilities,
     clipTranscriptStatus,
     currentJobId,
@@ -133,6 +139,7 @@ function useSubtitleWorkspaceState() {
     recommendedRecoveryStrategy,
     saving,
     setCacheBust,
+    setClipRenderMetadata,
     setClipTranscriptCapabilities,
     setClipTranscriptStatus,
     setCurrentJobId,
@@ -140,6 +147,7 @@ function useSubtitleWorkspaceState() {
     setDuration,
     setEndTime,
     setError,
+    setAnimationType,
     setIsPlaying,
     setLoading,
     setProjectTranscriptStatus,
@@ -158,17 +166,23 @@ function useSubtitleWorkspaceState() {
 }
 
 function useSubtitleSourcesEffect({
+  canUseProtectedRequests,
   fetchJobs,
   setClips,
   setProjects,
   setProjectsError,
 }: {
+  canUseProtectedRequests: boolean;
   fetchJobs: () => Promise<void>;
   setClips: Dispatch<SetStateAction<Clip[]>>;
   setProjects: Dispatch<SetStateAction<SubtitleProject[]>>;
   setProjectsError: Dispatch<SetStateAction<string | null>>;
 }) {
   useEffect(() => {
+    if (!canUseProtectedRequests) {
+      return;
+    }
+
     void fetchJobs();
     editorApi.getProjects().then((response) => {
       setProjects(filterSubtitleProjects(response.projects));
@@ -177,7 +191,7 @@ function useSubtitleSourcesEffect({
     clipsApi.list()
       .then((response) => setClips(response.clips))
       .catch(() => setClips([]));
-  }, [fetchJobs, setClips, setProjects, setProjectsError]);
+  }, [canUseProtectedRequests, fetchJobs, setClips, setProjects, setProjectsError]);
 }
 
 function useLockedClipSelectionEffect({
@@ -217,12 +231,15 @@ function useLockedClipSelectionEffect({
 }
 
 function useTranscriptLoader({
+  canUseProtectedRequests,
   fetchJobs,
   mode,
   selectedClip,
   selectedProjectId,
+  setAnimationType,
   setClipTranscriptCapabilities,
   setClipTranscriptStatus,
+  setClipRenderMetadata,
   setCurrentJobId,
   setDuration,
   setEndTime,
@@ -231,14 +248,18 @@ function useTranscriptLoader({
   setProjectTranscriptStatus,
   setRecommendedRecoveryStrategy,
   setStartTime,
+  setStyle,
   setTranscript,
 }: {
+  canUseProtectedRequests: boolean;
   fetchJobs: () => Promise<void>;
   mode: SubtitleEditorMode;
   selectedClip: Clip | null;
   selectedProjectId: string | null;
+  setAnimationType: Dispatch<SetStateAction<SubtitleAnimationType>>;
   setClipTranscriptCapabilities: Dispatch<SetStateAction<ClipTranscriptCapabilities>>;
   setClipTranscriptStatus: Dispatch<SetStateAction<ClipTranscriptStatus>>;
+  setClipRenderMetadata: Dispatch<SetStateAction<RenderMetadata | null>>;
   setCurrentJobId: Dispatch<SetStateAction<string | null>>;
   setDuration: Dispatch<SetStateAction<number>>;
   setEndTime: Dispatch<SetStateAction<number>>;
@@ -247,15 +268,21 @@ function useTranscriptLoader({
   setProjectTranscriptStatus: Dispatch<SetStateAction<TranscriptStatus>>;
   setRecommendedRecoveryStrategy: Dispatch<SetStateAction<Exclude<TranscriptRecoveryStrategy, 'auto'> | null>>;
   setStartTime: Dispatch<SetStateAction<number>>;
+  setStyle: Dispatch<SetStateAction<StyleName>>;
   setTranscript: Dispatch<SetStateAction<Segment[]>>;
 }) {
   const loadTranscript = useCallback(async () => {
+    if (!canUseProtectedRequests) {
+      return;
+    }
+
     setError(null);
     setLoading(true);
     try {
       if (mode === 'project' && selectedProjectId) {
         setClipTranscriptCapabilities(EMPTY_CLIP_TRANSCRIPT_CAPABILITIES);
         setClipTranscriptStatus('needs_recovery');
+        setClipRenderMetadata(null);
         setRecommendedRecoveryStrategy(null);
 
         const response = await editorApi.getTranscript(selectedProjectId) as ProjectTranscriptResponse;
@@ -271,16 +298,30 @@ function useTranscriptLoader({
           await fetchJobs();
         }
       } else if (mode === 'clip' && selectedClip) {
+        if (!selectedClip.project || selectedClip.project === 'legacy') {
+          setError('Bu klip icin proje baglami bulunamadi.');
+          setLoading(false);
+          return;
+        }
+
         const response = await clipsApi.getTranscript(selectedClip.name, selectedClip.project);
         const nextTranscript = normalizeTranscript(response);
         const nextStatus = resolveClipTranscriptStatus(response, nextTranscript);
+        const renderMetadata = response.render_metadata;
 
         setClipTranscriptCapabilities(normalizeCapabilities(response.capabilities));
         setClipTranscriptStatus(nextStatus);
+        setClipRenderMetadata(renderMetadata ?? null);
         setProjectTranscriptStatus('ready');
         setRecommendedRecoveryStrategy(response.recommended_strategy ?? null);
         setCurrentJobId(response.active_job_id ?? null);
         setTranscript(nextTranscript);
+        if (renderMetadata?.style_name && isStyleName(renderMetadata.style_name)) {
+          setStyle(renderMetadata.style_name);
+        }
+        if (renderMetadata?.animation_type && isSubtitleAnimationType(renderMetadata.animation_type)) {
+          setAnimationType(renderMetadata.animation_type);
+        }
         setError(nextStatus === 'failed' ? response.last_error ?? null : null);
 
         if (response.active_job_id) {
@@ -289,6 +330,7 @@ function useTranscriptLoader({
       } else {
         setClipTranscriptCapabilities(EMPTY_CLIP_TRANSCRIPT_CAPABILITIES);
         setClipTranscriptStatus('needs_recovery');
+        setClipRenderMetadata(null);
         setCurrentJobId(null);
         setProjectTranscriptStatus('ready');
         setRecommendedRecoveryStrategy(null);
@@ -298,6 +340,7 @@ function useTranscriptLoader({
       setError(error instanceof Error ? error.message : 'Transkript yüklenemedi.');
       setClipTranscriptCapabilities(EMPTY_CLIP_TRANSCRIPT_CAPABILITIES);
       setClipTranscriptStatus('failed');
+      setClipRenderMetadata(null);
       setCurrentJobId(null);
       setProjectTranscriptStatus('failed');
       setRecommendedRecoveryStrategy(null);
@@ -306,21 +349,29 @@ function useTranscriptLoader({
       setLoading(false);
     }
   }, [
+    canUseProtectedRequests,
     fetchJobs,
     mode,
     selectedClip,
     selectedProjectId,
+    setAnimationType,
     setClipTranscriptCapabilities,
     setClipTranscriptStatus,
+    setClipRenderMetadata,
     setCurrentJobId,
     setError,
     setLoading,
     setProjectTranscriptStatus,
     setRecommendedRecoveryStrategy,
+    setStyle,
     setTranscript,
   ]);
 
   useEffect(() => {
+    if (!canUseProtectedRequests) {
+      return;
+    }
+
     if (hasSubtitleSelection(mode, selectedProjectId, selectedClip)) {
       void loadTranscript();
       setStartTime(0);
@@ -331,17 +382,20 @@ function useTranscriptLoader({
 
     setClipTranscriptCapabilities(EMPTY_CLIP_TRANSCRIPT_CAPABILITIES);
     setClipTranscriptStatus('needs_recovery');
+    setClipRenderMetadata(null);
     setCurrentJobId(null);
     setProjectTranscriptStatus('ready');
     setRecommendedRecoveryStrategy(null);
     setTranscript([]);
   }, [
+    canUseProtectedRequests,
     loadTranscript,
     mode,
     selectedClip,
     selectedProjectId,
     setClipTranscriptCapabilities,
     setClipTranscriptStatus,
+    setClipRenderMetadata,
     setCurrentJobId,
     setDuration,
     setEndTime,
@@ -541,6 +595,7 @@ function useSubtitleSelectionActions(
 }
 
 function useSubtitleEditorActions({
+  animationType,
   clipTranscriptCapabilities,
   clipTranscriptStatus,
   endTime,
@@ -548,6 +603,7 @@ function useSubtitleEditorActions({
   mode,
   selectedClip,
   selectedProjectId,
+  setAnimationTypeState,
   setCurrentJobId,
   setError,
   setSaving,
@@ -558,6 +614,7 @@ function useSubtitleEditorActions({
   style,
   transcript,
 }: {
+  animationType: SubtitleAnimationType;
   clipTranscriptCapabilities: ClipTranscriptCapabilities;
   clipTranscriptStatus: ClipTranscriptStatus;
   endTime: number;
@@ -565,6 +622,7 @@ function useSubtitleEditorActions({
   mode: SubtitleEditorMode;
   selectedClip: Clip | null;
   selectedProjectId: string | null;
+  setAnimationTypeState: Dispatch<SetStateAction<SubtitleAnimationType>>;
   setCurrentJobId: Dispatch<SetStateAction<string | null>>;
   setError: Dispatch<SetStateAction<string | null>>;
   setSaving: Dispatch<SetStateAction<boolean>>;
@@ -580,6 +638,7 @@ function useSubtitleEditorActions({
   }, [setTranscript]);
 
   const handleSave = useSubtitleSaveAction({
+    animationType,
     clipTranscriptCapabilities,
     fetchJobs,
     mode,
@@ -601,6 +660,7 @@ function useSubtitleEditorActions({
     setSuccessMessage,
   });
   const handleRenderClip = useSubtitleRenderAction({
+    animationType,
     endTime,
     fetchJobs,
     selectedProjectId,
@@ -625,18 +685,23 @@ function useSubtitleEditorActions({
   const setStyle = useCallback((value: string) => {
     setStyleState(isStyleName(value) ? value : 'HORMOZI');
   }, [setStyleState]);
+  const setAnimationType = useCallback((value: string) => {
+    setAnimationTypeState(isSubtitleAnimationType(value) ? value : 'default');
+  }, [setAnimationTypeState]);
 
   return {
     handleRecoverProjectTranscript,
     handleRecoverTranscript,
     handleRenderClip,
     handleSave,
+    setAnimationType,
     setStyle,
     updateSubtitleText,
   };
 }
 
 function useSubtitleSaveAction({
+  animationType,
   clipTranscriptCapabilities,
   fetchJobs,
   mode,
@@ -649,6 +714,7 @@ function useSubtitleSaveAction({
   style,
   transcript,
 }: {
+  animationType: SubtitleAnimationType;
   clipTranscriptCapabilities: ClipTranscriptCapabilities;
   fetchJobs: () => Promise<void>;
   mode: SubtitleEditorMode;
@@ -674,6 +740,12 @@ function useSubtitleSaveAction({
       }
 
       if (mode === 'clip' && selectedClip) {
+        if (!selectedClip.project || selectedClip.project === 'legacy') {
+          setError('Bu klip icin proje baglami bulunamadi.');
+          setSaving(false);
+          return;
+        }
+
         if (
           !clipTranscriptCapabilities.has_raw_backup
           && typeof window !== 'undefined'
@@ -683,8 +755,9 @@ function useSubtitleSaveAction({
           return;
         }
         const response = await editorApi.reburn({
+          animation_type: animationType,
           clip_name: selectedClip.name,
-          project_id: selectedClip.project ?? undefined,
+          project_id: selectedClip.project,
           style_name: style,
           transcript,
         });
@@ -699,6 +772,7 @@ function useSubtitleSaveAction({
       setSaving(false);
     }
   }, [
+    animationType,
     clipTranscriptCapabilities.has_raw_backup,
     fetchJobs,
     mode,
@@ -798,10 +872,15 @@ function useSubtitleRecoveryAction({
     setSaving(true);
 
     try {
+      const projectId = clipTranscriptCapabilities.resolved_project_id
+        ?? (selectedClip.project && selectedClip.project !== 'legacy' ? selectedClip.project : undefined);
+      if (!projectId) {
+        throw new Error('Bu klip icin proje baglami bulunamadi.');
+      }
+
       const response = await editorApi.recoverClipTranscript({
         clip_name: selectedClip.name,
-        project_id: clipTranscriptCapabilities.resolved_project_id
-          ?? (selectedClip.project && selectedClip.project !== 'legacy' ? selectedClip.project : undefined),
+        project_id: projectId,
         strategy,
       });
       setCurrentJobId(response.job_id ?? null);
@@ -829,6 +908,7 @@ function useSubtitleRecoveryAction({
 }
 
 function useSubtitleRenderAction({
+  animationType,
   endTime,
   fetchJobs,
   selectedProjectId,
@@ -840,6 +920,7 @@ function useSubtitleRenderAction({
   style,
   transcript,
 }: {
+  animationType: SubtitleAnimationType;
   endTime: number;
   fetchJobs: () => Promise<void>;
   selectedProjectId: string | null;
@@ -861,6 +942,7 @@ function useSubtitleRenderAction({
     setSaving(true);
     try {
       const response = await editorApi.processManual({
+        animation_type: animationType,
         end_time: endTime,
         project_id: selectedProjectId,
         start_time: startTime,
@@ -874,6 +956,7 @@ function useSubtitleRenderAction({
       setSaving(false);
     }
   }, [
+    animationType,
     endTime,
     fetchJobs,
     selectedProjectId,
@@ -987,8 +1070,10 @@ function buildSubtitleEditorController({
   workspace: ReturnType<typeof useSubtitleWorkspaceState>;
 }) {
   return {
+    animationType: workspace.animationType,
     clipTranscriptCapabilities: workspace.clipTranscriptCapabilities,
     clipTranscriptStatus: workspace.clipTranscriptStatus,
+    clipRenderMetadata: workspace.clipRenderMetadata,
     clips: selection.clips,
     currentJob,
     currentTime,
@@ -1023,6 +1108,7 @@ function buildSubtitleEditorController({
     setIsPlaying: workspace.setIsPlaying,
     setSelectedProjectId: selectionActions.setSelectedProjectId,
     setStartTime: workspace.setStartTime,
+    setAnimationType: editorActions.setAnimationType,
     setStyle: editorActions.setStyle,
     startTime: workspace.startTime,
     style: workspace.style,
@@ -1037,12 +1123,14 @@ function buildSubtitleEditorController({
 }
 
 function useSubtitleControllerServices({
+  canUseProtectedRequests,
   fetchJobs,
   jobs,
   lockedToClip,
   selection,
   workspace,
 }: {
+  canUseProtectedRequests: boolean;
   fetchJobs: () => Promise<void>;
   jobs: Job[];
   lockedToClip: boolean;
@@ -1055,12 +1143,15 @@ function useSubtitleControllerServices({
   );
   const hasSelection = hasSubtitleSelection(selection.mode, selection.selectedProjectId, selection.selectedClip);
   const loadTranscript = useTranscriptLoader({
+    canUseProtectedRequests,
     fetchJobs,
     mode: selection.mode,
     selectedClip: selection.selectedClip,
     selectedProjectId: selection.selectedProjectId,
+    setAnimationType: workspace.setAnimationType,
     setClipTranscriptCapabilities: workspace.setClipTranscriptCapabilities,
     setClipTranscriptStatus: workspace.setClipTranscriptStatus,
+    setClipRenderMetadata: workspace.setClipRenderMetadata,
     setCurrentJobId: workspace.setCurrentJobId,
     setDuration: workspace.setDuration,
     setEndTime: workspace.setEndTime,
@@ -1069,6 +1160,7 @@ function useSubtitleControllerServices({
     setProjectTranscriptStatus: workspace.setProjectTranscriptStatus,
     setRecommendedRecoveryStrategy: workspace.setRecommendedRecoveryStrategy,
     setStartTime: workspace.setStartTime,
+    setStyle: workspace.setStyle,
     setTranscript: workspace.setTranscript,
   });
   const playback = useSubtitlePlayback({
@@ -1079,6 +1171,7 @@ function useSubtitleControllerServices({
   });
   const selectionActions = useSubtitleSelectionActions(lockedToClip, selection);
   const editorActions = useSubtitleEditorActions({
+    animationType: workspace.animationType,
     clipTranscriptCapabilities: workspace.clipTranscriptCapabilities,
     clipTranscriptStatus: workspace.clipTranscriptStatus,
     endTime: workspace.endTime,
@@ -1086,6 +1179,7 @@ function useSubtitleControllerServices({
     mode: selection.mode,
     selectedClip: selection.selectedClip,
     selectedProjectId: selection.selectedProjectId,
+    setAnimationTypeState: workspace.setAnimationType,
     setCurrentJobId: workspace.setCurrentJobId,
     setError: workspace.setError,
     setSaving: workspace.setSaving,
@@ -1128,10 +1222,12 @@ export function useSubtitleEditorController({
   lockedToClip = false,
   targetClip = null,
 }: UseSubtitleEditorControllerProps = {}) {
+  const canUseProtectedRequests = useAuthRuntimeStore((state) => state.canUseProtectedRequests);
   const { fetchJobs, jobs } = useJobStore();
   const selection = useSubtitleSelectionState();
   const workspace = useSubtitleWorkspaceState();
   const services = useSubtitleControllerServices({
+    canUseProtectedRequests,
     fetchJobs,
     jobs,
     lockedToClip,
@@ -1140,6 +1236,7 @@ export function useSubtitleEditorController({
   });
 
   useSubtitleSourcesEffect({
+    canUseProtectedRequests,
     fetchJobs,
     setClips: selection.setClips,
     setProjects: selection.setProjects,

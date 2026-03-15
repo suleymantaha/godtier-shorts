@@ -471,6 +471,23 @@ class SocialStore:
             conn.commit()
             return True
 
+    def purge_subject_data(self, subject: str) -> int:
+        with self._lock, self._connect() as conn:
+            credential_rows = conn.execute(
+                "DELETE FROM social_credentials WHERE subject = ?",
+                (subject,),
+            ).rowcount or 0
+            draft_rows = conn.execute(
+                "DELETE FROM social_drafts WHERE subject = ?",
+                (subject,),
+            ).rowcount or 0
+            publish_job_rows = conn.execute(
+                "DELETE FROM social_publish_jobs WHERE subject = ?",
+                (subject,),
+            ).rowcount or 0
+            conn.commit()
+        return int(credential_rows + draft_rows + publish_job_rows)
+
 
 _store_instance: SocialStore | None = None
 

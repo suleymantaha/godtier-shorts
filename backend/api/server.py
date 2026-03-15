@@ -17,7 +17,7 @@ from backend.config import (
     CORS_ORIGINS, OUTPUTS_DIR, LOGS_DIR, MASTER_VIDEO, REQUEST_BODY_HARD_LIMIT_BYTES,
 )
 from backend.api.websocket import manager, set_main_loop
-from backend.api.routes import jobs, clips, editor, social
+from backend.api.routes import account, jobs, clips, editor, social
 from backend.api.error_handlers import register_exception_handlers
 from backend.api.security import authenticate_websocket_token, validate_auth_configuration
 from backend.runtime_validation import validate_runtime_configuration
@@ -129,6 +129,7 @@ def create_app() -> FastAPI:
     app.include_router(clips.router)
     app.include_router(editor.router)
     app.include_router(social.router)
+    app.include_router(account.router)
 
     # --- WebSocket endpoint ---
     @app.websocket("/ws/progress")
@@ -146,11 +147,11 @@ def create_app() -> FastAPI:
         if token is None:
             token = websocket.query_params.get("token")
         try:
-            authenticate_websocket_token(token)
+            auth = authenticate_websocket_token(token)
         except Exception:
             await websocket.close(code=1008)
             return
-        await manager.connect(websocket, subprotocol=selected_subprotocol)
+        await manager.connect(websocket, subject=auth.subject, subprotocol=selected_subprotocol)
         try:
             while True:
                 await websocket.receive_text()  # Bağlantıyı açık tut

@@ -1,8 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useJobStore } from '../store/useJobStore';
 import { Terminal, ShieldCheck } from 'lucide-react';
 
-export const HoloTerminal: React.FC = () => {
+export const HoloTerminal: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
     const { logs, jobs } = useJobStore();
     
     // Most recent log/job determines progress and status
@@ -12,39 +12,49 @@ export const HoloTerminal: React.FC = () => {
     const progress = activeJob ? activeJob.progress : (lastLog ? lastLog.progress : 0);
     const status = activeJob ? activeJob.last_message : (lastLog ? lastLog.message : 'READY');
     const scrollRef = useRef<HTMLDivElement>(null);
+    const visibleLogs = useMemo(() => (compact ? logs.slice(-3) : logs), [compact, logs]);
 
     useEffect(() => {
         if (scrollRef.current) {
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
         }
-    }, [logs]);
+    }, [visibleLogs]);
 
     return (
-        <div className="flex flex-col h-full min-h-[250px] overflow-hidden">
-            <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
-                <div className="flex items-center gap-2">
-                    <Terminal className="w-4 h-4 text-primary" />
-                    <span className="text-xs font-mono font-bold uppercase tracking-[0.2em] holo-text text-primary">God-Tier Core Logs</span>
+        <div className={`flex h-full w-full max-w-full min-w-0 flex-col overflow-hidden ${compact ? 'min-h-[160px]' : 'min-h-[250px]'}`}>
+            <div className={`border-b border-white/5 flex min-w-0 items-center justify-between gap-3 bg-white/[0.02] ${compact ? 'px-3.5 py-2' : 'px-4 py-3'}`}>
+                <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+                    <Terminal className="h-4 w-4 shrink-0 text-primary" />
+                    <span className="truncate text-xs font-mono font-bold uppercase tracking-[0.2em] holo-text text-primary">
+                        {compact ? 'Core Logs' : 'God-Tier Core Logs'}
+                    </span>
                 </div>
-                <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full animate-pulse ${progress === 100 ? 'bg-green-500' : progress === -1 ? 'bg-red-500' : 'bg-primary'}`} />
-                    <span className="text-[11px] font-mono text-muted-foreground">{status}</span>
+                <div className="flex min-w-0 flex-1 items-center justify-end gap-2 overflow-hidden">
+                    <div className={`h-2 w-2 shrink-0 rounded-full animate-pulse ${progress === 100 ? 'bg-green-500' : progress === -1 ? 'bg-red-500' : 'bg-primary'}`} />
+                    <span
+                        className="min-w-0 max-w-full truncate text-[11px] font-mono text-muted-foreground"
+                        title={status}
+                    >
+                        {status}
+                    </span>
                 </div>
             </div>
 
             <div
                 ref={scrollRef}
-                className="flex-1 p-4 font-mono text-[11px] overflow-y-auto space-y-2 scrollbar-hide selection:bg-primary/20"
+                className={`flex-1 min-w-0 overflow-x-hidden overflow-y-auto font-mono text-[11px] space-y-2 scrollbar-hide selection:bg-primary/20 ${compact ? 'p-2.5' : 'p-4'}`}
             >
-                {logs.map((log, i) => (
-                    <div key={i} className="flex gap-4 animate-in fade-in slide-in-from-left-2 duration-500">
-                        <span className="text-muted-foreground whitespace-nowrap">[{log.timestamp}]</span>
-                        <span className={log.progress === -1 ? 'text-red-400' : 'text-primary/80'}>
+                {visibleLogs.map((log, i) => (
+                    <div key={i} className="flex min-w-0 max-w-full items-start gap-3 overflow-hidden animate-in fade-in slide-in-from-left-2 duration-500">
+                        <span className="shrink-0 text-muted-foreground whitespace-nowrap">[{log.timestamp}]</span>
+                        <span
+                            className={`min-w-0 flex-1 overflow-hidden break-words whitespace-pre-wrap leading-relaxed ${log.progress === -1 ? 'text-red-400' : 'text-primary/80'}`}
+                        >
                             {log.progress === -1 ? '!!!' : '>>>'} {log.message}
                         </span>
                     </div>
                 ))}
-                {logs.length === 0 && (
+                {visibleLogs.length === 0 && (
                     <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-20 select-none">
                         <ShieldCheck className="w-12 h-12 mb-2" />
                         <p>Waiting for system handshake...</p>
@@ -52,8 +62,8 @@ export const HoloTerminal: React.FC = () => {
                 )}
             </div>
 
-            <div className="p-4 border-t border-white/5 bg-black/40">
-                <div className="flex justify-between text-[11px] font-mono mb-2">
+            <div className={`border-t border-white/5 bg-black/40 ${compact ? 'p-2.5' : 'p-4'}`}>
+                <div className={`flex justify-between font-mono ${compact ? 'mb-1.5 text-[10px]' : 'mb-2 text-[11px]'}`}>
                     <span className="text-muted-foreground">SYSTEM PROGRESS</span>
                     <span className="text-primary" aria-live="polite">{Math.max(0, progress)}%</span>
                 </div>

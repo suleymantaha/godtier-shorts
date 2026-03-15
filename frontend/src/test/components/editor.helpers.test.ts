@@ -38,6 +38,7 @@ describe('editor helpers', () => {
 
   it('resolves clip session values from stored state', () => {
     expect(resolveStoredEditorState('clip', clip, 'proj_1', {
+      animationType: 'fade',
       centerX: 0.7,
       currentJobId: 'job_1',
       endTime: 45,
@@ -47,6 +48,7 @@ describe('editor helpers', () => {
       style: 'TIKTOK',
       transcript,
     })).toEqual(expect.objectContaining({
+      animationType: 'fade',
       centerX: 0.7,
       currentJobId: 'job_1',
       endTime: 45,
@@ -65,6 +67,7 @@ describe('editor helpers', () => {
       endTime: 45,
       style: 'TIKTOK',
     })).toEqual(expect.objectContaining({
+      animationType: 'default',
       centerX: 0.5,
       currentJobId: null,
       endTime: 60,

@@ -38,6 +38,21 @@ Keep backend schemas, frontend types, and API client behavior aligned.
 - `timezone`
 - `cut_points`
 - `cut_as_short`
+- `render_metadata`
+- `render_quality_score`
+
+## Render Metadata Notes
+
+- `Clip` ve `/api/clips` listesi kalite alanı taşımaz.
+- `ClipTranscriptResponse.render_metadata` additive kalite alanları taşıyabilir:
+  - `tracking_quality`
+  - `transcript_quality`
+  - `audio_validation`
+  - `subtitle_layout_quality`
+  - `debug_timing`
+  - `debug_artifacts`
+  - `render_quality_score`
+- Yeni alanlarda `null` yerine alanın hiç yazılmaması tercih edilir.
 
 ## Useful Checks
 

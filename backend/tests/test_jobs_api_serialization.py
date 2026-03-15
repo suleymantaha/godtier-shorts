@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from backend.api.error_handlers import register_exception_handlers
 from backend.api.routes import jobs as jobs_routes
 from backend.api.websocket import manager
+from backend.api.security import authenticate_websocket_token
 
 
 def _build_app() -> FastAPI:
@@ -16,6 +17,7 @@ def _build_app() -> FastAPI:
 def test_jobs_endpoint_omits_runtime_task_objects(monkeypatch) -> None:
     monkeypatch.setenv("API_BEARER_TOKENS", "token123:viewer")
     manager.jobs.clear()
+    auth = authenticate_websocket_token("token123")
     manager.jobs["job-1"] = {
         "job_id": "job-1",
         "url": "https://example.com",
@@ -24,6 +26,7 @@ def test_jobs_endpoint_omits_runtime_task_objects(monkeypatch) -> None:
         "progress": 50,
         "last_message": "running",
         "created_at": 123.0,
+        "subject": auth.subject,
         "task": object(),
     }
 

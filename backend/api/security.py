@@ -8,14 +8,19 @@ from __future__ import annotations
 import os
 import hashlib
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any, Callable
 
 import jwt
-from jwt import PyJWKClient
+from jwt import ExpiredSignatureError, InvalidTokenError, PyJWKClient
+from jwt.exceptions import PyJWKClientConnectionError, PyJWKClientError
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
+
+from backend.core.log_sanitizer import sanitize_subject
+from backend.services.ownership import resolve_project_access
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -51,9 +56,19 @@ POLICY_ROLES: dict[str, set[str]] = {
     "social_publish": {"admin", "producer", "editor"},
     "social_approve": {"admin", "producer"},
     "social_view_jobs": {"admin", "producer", "editor", "viewer"},
+    "manage_support_grants": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
+    "delete_account_data": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
 }
 
 WEAK_STATIC_TOKENS = {"test-token", "changeme", "change-me", "default-token", "example-token"}
+
+
+class ClerkTokenExpiredError(ValueError):
+    pass
+
+
+class ClerkProviderUnavailableError(ValueError):
+    pass
 
 
 def _security_log_ws(event: str, reason: str, subject: str = "anonymous", roles: set[str] | None = None) -> None:
@@ -61,7 +76,7 @@ def _security_log_ws(event: str, reason: str, subject: str = "anonymous", roles:
         "🔐 Security event={} reason='{}' method=WS path=/ws/progress subject={} roles={}",
         event,
         reason,
-        subject,
+        sanitize_subject(subject),
         sorted(roles or []),
     )
 
@@ -110,9 +125,37 @@ def _extract_roles(payload: dict[str, Any]) -> set[str]:
     return set()
 
 
+def _read_positive_int_env(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} sayisal bir deger olmali") from exc
+
+    if value <= 0:
+        raise RuntimeError(f"{name} sifirdan buyuk olmali")
+
+    return value
+
+
+@lru_cache(maxsize=8)
+def _get_jwks_client(issuer: str, cache_ttl_seconds: int, timeout_seconds: int) -> PyJWKClient:
+    return PyJWKClient(
+        f"{issuer}/.well-known/jwks.json",
+        cache_jwk_set=True,
+        cache_keys=True,
+        lifespan=cache_ttl_seconds,
+        timeout=timeout_seconds,
+    )
+
+
 def _decode_jwt(token: str, issuer: str, audience: str) -> AuthContext:
-    # Clerk uses RS256, we need to fetch their public key (JWKS)
-    jwks_client = PyJWKClient(f"{issuer}/.well-known/jwks.json")
+    cache_ttl_seconds = _read_positive_int_env("CLERK_JWKS_CACHE_TTL_SECONDS", 3600)
+    timeout_seconds = _read_positive_int_env("CLERK_JWKS_TIMEOUT_SECONDS", 5)
+    jwks_client = _get_jwks_client(issuer, cache_ttl_seconds, timeout_seconds)
     try:
         signing_key = jwks_client.get_signing_key_from_jwt(token)
         payload = jwt.decode(
@@ -123,6 +166,12 @@ def _decode_jwt(token: str, issuer: str, audience: str) -> AuthContext:
             audience=audience,
             options={"verify_aud": True},
         )
+    except ExpiredSignatureError as exc:
+        raise ClerkTokenExpiredError("JWT token expired") from exc
+    except PyJWKClientConnectionError as exc:
+        raise ClerkProviderUnavailableError("Clerk JWKS endpoint ulasilamiyor") from exc
+    except (PyJWKClientError, InvalidTokenError) as exc:
+        raise ValueError(f"JWT verification failed: {exc}") from exc
     except Exception as exc:
         raise ValueError(f"JWT verification failed: {exc}") from exc
 
@@ -162,6 +211,18 @@ def _authenticate_token(token: str) -> AuthContext:
             )
         try:
             return _decode_jwt(token, clerk_issuer, clerk_audience)
+        except ClerkTokenExpiredError as exc:
+            raise _auth_exception(
+                status.HTTP_401_UNAUTHORIZED,
+                "token_expired",
+                "Oturum suresi doldu. Lutfen yeniden giris yapin.",
+            ) from exc
+        except ClerkProviderUnavailableError as exc:
+            raise _auth_exception(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "auth_provider_unavailable",
+                "Kimlik dogrulama servisine su anda ulasilamiyor",
+            ) from exc
         except ValueError as exc:
             raise _auth_exception(status.HTTP_401_UNAUTHORIZED, "unauthorized", "Geçersiz kimlik doğrulama bilgisi") from exc
 
@@ -179,8 +240,30 @@ def _security_log(request: Request, event: str, reason: str, subject: str = "ano
         reason,
         request.method,
         request.url.path,
-        subject,
+        sanitize_subject(subject),
         sorted(roles or []),
+    )
+
+
+def _security_log_ownership_denied(
+    request: Request,
+    auth: AuthContext,
+    *,
+    project_id: str,
+    clip_name: str | None = None,
+    job_id: str | None = None,
+    reason: str,
+) -> None:
+    logger.warning(
+        "🔐 Security event=ownership_denied reason='{}' method={} path={} subject={} roles={} project_id={} clip_name={} job_id={}",
+        reason,
+        request.method,
+        request.url.path,
+        sanitize_subject(auth.subject),
+        sorted(auth.roles),
+        project_id,
+        clip_name or "-",
+        job_id or "-",
     )
 
 
@@ -232,6 +315,59 @@ def validate_auth_configuration() -> None:
         raise RuntimeError("Auth config eksik: CLERK_AUDIENCE zorunlu")
     # Also fail-fast on invalid static tokens.
     _get_static_token_mapping()
+    if issuer:
+        _read_positive_int_env("CLERK_JWKS_CACHE_TTL_SECONDS", 3600)
+        _read_positive_int_env("CLERK_JWKS_TIMEOUT_SECONDS", 5)
+
+
+def ensure_project_access(
+    request: Request,
+    auth: AuthContext,
+    project_id: str,
+    *,
+    clip_name: str | None = None,
+    job_id: str | None = None,
+) -> None:
+    allowed, reason, _manifest = resolve_project_access(project_id, auth.subject)
+    if allowed:
+        if reason == "support_grant":
+            logger.info(
+                "🔐 Security event=support_grant_used method={} path={} subject={} roles={} project_id={} clip_name={} job_id={}",
+                request.method,
+                request.url.path,
+                sanitize_subject(auth.subject),
+                sorted(auth.roles),
+                project_id,
+                clip_name or "-",
+                job_id or "-",
+            )
+        return
+    _security_log_ownership_denied(
+        request,
+        auth,
+        project_id=project_id,
+        clip_name=clip_name,
+        job_id=job_id,
+        reason=reason,
+    )
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kaynak bulunamadı")
+
+
+def ensure_project_owner(
+    request: Request,
+    auth: AuthContext,
+    project_id: str,
+) -> None:
+    allowed, reason, _manifest = resolve_project_access(project_id, auth.subject)
+    if allowed and reason == "owner_match":
+        return
+    _security_log_ownership_denied(
+        request,
+        auth,
+        project_id=project_id,
+        reason=reason,
+    )
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kaynak bulunamadı")
 
 
 def require_policy(policy_name: str) -> Callable[[Request, AuthContext], AuthContext]:

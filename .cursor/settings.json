@@ -2,6 +2,9 @@
   "plugins": {
     "huggingface-skills": {
       "enabled": true
+    },
+    "clerk": {
+      "enabled": true
     }
   },
   "python.defaultInterpreterPath": "/home/arch/godtier-shorts/.conda/bin/python"

@@ -38,7 +38,14 @@ Prefer existing route, orchestrator, and workspace conventions over inventing ne
   - master video path resolved from `ProjectPaths`
   - `shorts/*.mp4`
   - `shorts/*.json`
+  - `debug/<clip_stem>/` (opsiyonel debug bundle)
 - Existing scripts and routes assume this layout. Change it only with a coordinated migration.
+
+## v2.1 Workflow Notes
+
+- Pipeline, manual, batch ve reburn akışları clip metadata içine kalite alanları yazar.
+- Batch workflow `output_paths` sonucunu `render_quality_score` azalan sırada döndürür.
+- Clip-level kalite özeti yalnız clip transcript/detail yüzeyinde kullanılır; `/api/clips` listesi değişmez.
 
 ## Useful Docs
 

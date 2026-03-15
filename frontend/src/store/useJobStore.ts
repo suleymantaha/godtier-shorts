@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useAuthRuntimeStore } from '../auth/runtime';
 import type { Job, LogEntry, WsStatus } from '../types';
 import { jobsApi } from '../api/client';
 
@@ -28,6 +29,10 @@ export const useJobStore = create<JobState>((set) => ({
     refreshClipsTrigger: 0,
 
     fetchJobs: async () => {
+        if (!useAuthRuntimeStore.getState().canUseProtectedRequests) {
+            return;
+        }
+
         try {
             const data = await jobsApi.list();
             set({ jobs: data.jobs, lastError: null });

@@ -1,4 +1,4 @@
-import { SignedIn, SignedOut, SignIn, UserButton } from '@clerk/clerk-react';
+import { SignIn, UserButton } from '@clerk/clerk-react';
 import {
   ChevronLeft,
   Github,
@@ -18,11 +18,14 @@ import { HoloTerminal } from '../components/HoloTerminal';
 import { JobForm } from '../components/JobForm';
 import { JobQueue } from '../components/JobQueue';
 import { SubtitlePreview } from '../components/SubtitlePreview';
+import { AccountDeletionCard } from '../components/AccountDeletionCard';
 import { ConnectionChip } from '../components/ui/ConnectionChip';
 import { IconButton } from '../components/ui/IconButton';
+import type { SubtitleAnimationType } from '../config/subtitleStyles';
 import type { Clip, WsStatus } from '../types';
 import { AutoCutEditor, Editor, SubtitleEditor, ThreeCanvas } from './lazyComponents';
 import type { AppViewMode } from './helpers';
+import type { ResilientAuthState, ResilientAuthStatus } from '../auth/useResilientAuth';
 
 const SIGN_IN_APPEARANCE = {
   elements: {
@@ -53,21 +56,28 @@ const NAV_ITEMS: Array<{
 ];
 
 interface SignedInShellProps {
+  backendAuthStatus: ResilientAuthState['backendAuthStatus'];
+  authStatus: ResilientAuthStatus;
   closeEditor: () => void;
+  currentAnimationType: SubtitleAnimationType;
   currentStyle: string;
   editingClip: Clip | null;
+  handleAnimationChange: (animationType: SubtitleAnimationType) => void;
   handleSkipSubtitlesChange: (disabled: boolean) => void;
   handleStyleChange: (styleName: string) => void;
   openClipSubtitleEditor: (clip: Clip) => void;
   openConfig: () => void;
   openManual: () => void;
   openSubtitle: () => void;
+  pauseReason: ResilientAuthState['pauseReason'];
+  showUserMenu: boolean;
   subtitleTargetClip: Clip | null;
   subtitlesDisabled: boolean;
   theme: string;
   toggleTheme: () => void;
   viewMode: AppViewMode;
   wsStatus: WsStatus;
+  isOnline: boolean;
 }
 
 export function AppBackground() {
@@ -80,45 +90,54 @@ export function AppBackground() {
 
 export function SignedOutScreen() {
   return (
-    <SignedOut>
-      <div className="flex w-full h-[80vh] items-center justify-center animate-in fade-in duration-1000">
-        <SignIn appearance={SIGN_IN_APPEARANCE} />
-      </div>
-    </SignedOut>
+    <div className="flex w-full h-[80vh] items-center justify-center animate-in fade-in duration-1000">
+      <SignIn appearance={SIGN_IN_APPEARANCE} />
+    </div>
   );
 }
 
 export function SignedInShell({
+  backendAuthStatus,
+  authStatus,
   closeEditor,
+  currentAnimationType,
   currentStyle,
   editingClip,
+  handleAnimationChange,
   handleSkipSubtitlesChange,
   handleStyleChange,
   openClipSubtitleEditor,
   openConfig,
   openManual,
   openSubtitle,
+  pauseReason,
+  showUserMenu,
   subtitleTargetClip,
   subtitlesDisabled,
   theme,
   toggleTheme,
   viewMode,
   wsStatus,
+  isOnline,
 }: SignedInShellProps) {
   return (
-    <SignedIn>
+    <>
       <AppHeader
+        authStatus={authStatus}
         openConfig={openConfig}
         openManual={openManual}
         openSubtitle={openSubtitle}
+        showUserMenu={showUserMenu}
         theme={theme}
         toggleTheme={toggleTheme}
         viewMode={viewMode}
       />
       <MainContent
         closeEditor={closeEditor}
+        currentAnimationType={currentAnimationType}
         currentStyle={currentStyle}
         editingClip={editingClip}
+        handleAnimationChange={handleAnimationChange}
         handleSkipSubtitlesChange={handleSkipSubtitlesChange}
         handleStyleChange={handleStyleChange}
         openClipSubtitleEditor={openClipSubtitleEditor}
@@ -126,22 +145,31 @@ export function SignedInShell({
         subtitlesDisabled={subtitlesDisabled}
         viewMode={viewMode}
       />
-      <AppFooter wsStatus={wsStatus} />
-    </SignedIn>
+      <AppFooter
+        backendAuthStatus={backendAuthStatus}
+        isOnline={isOnline}
+        pauseReason={pauseReason}
+        wsStatus={wsStatus}
+      />
+    </>
   );
 }
 
 function AppHeader({
+  authStatus,
   openConfig,
   openManual,
   openSubtitle,
+  showUserMenu,
   theme,
   toggleTheme,
   viewMode,
 }: {
+  authStatus: ResilientAuthStatus;
   openConfig: () => void;
   openManual: () => void;
   openSubtitle: () => void;
+  showUserMenu: boolean;
   theme: string;
   toggleTheme: () => void;
   viewMode: AppViewMode;
@@ -156,7 +184,7 @@ function AppHeader({
           openSubtitle={openSubtitle}
           viewMode={viewMode}
         />
-        <HeaderActions theme={theme} toggleTheme={toggleTheme} />
+        <HeaderActions authStatus={authStatus} showUserMenu={showUserMenu} theme={theme} toggleTheme={toggleTheme} />
       </div>
     </header>
   );
@@ -218,9 +246,13 @@ function ViewNavigation({
 }
 
 function HeaderActions({
+  authStatus,
+  showUserMenu,
   theme,
   toggleTheme,
 }: {
+  authStatus: ResilientAuthStatus;
+  showUserMenu: boolean;
   theme: string;
   toggleTheme: () => void;
 }) {
@@ -234,17 +266,25 @@ function HeaderActions({
       />
       <IconButton label="GitHub" icon={<Github className="w-4 h-4" />} href="https://github.com" variant="ghost" />
       <IconButton label="Twitter" icon={<Twitter className="w-4 h-4" />} href="https://twitter.com" variant="ghost" />
-      <div className="pl-2 flex items-center justify-center">
-        <UserButton appearance={{ elements: { userButtonAvatarBox: 'w-8 h-8 ring-2 ring-primary/50 hover:ring-primary transition-all duration-300' } }} />
-      </div>
+      {showUserMenu ? (
+        <div className="pl-2 flex items-center justify-center">
+          <UserButton appearance={{ elements: { userButtonAvatarBox: 'w-8 h-8 ring-2 ring-primary/50 hover:ring-primary transition-all duration-300' } }} />
+        </div>
+      ) : (
+        <div className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-[10px] font-mono uppercase tracking-[0.22em] text-amber-100">
+          {authStatus === 'offline_authenticated' ? 'OFFLINE_SESSION' : 'AUTH_FALLBACK'}
+        </div>
+      )}
     </div>
   );
 }
 
 function MainContent({
   closeEditor,
+  currentAnimationType,
   currentStyle,
   editingClip,
+  handleAnimationChange,
   handleSkipSubtitlesChange,
   handleStyleChange,
   openClipSubtitleEditor,
@@ -253,8 +293,10 @@ function MainContent({
   viewMode,
 }: {
   closeEditor: () => void;
+  currentAnimationType: SubtitleAnimationType;
   currentStyle: string;
   editingClip: Clip | null;
+  handleAnimationChange: (animationType: SubtitleAnimationType) => void;
   handleSkipSubtitlesChange: (disabled: boolean) => void;
   handleStyleChange: (styleName: string) => void;
   openClipSubtitleEditor: (clip: Clip) => void;
@@ -280,7 +322,9 @@ function MainContent({
 
   return (
     <ConfigWorkspace
+      currentAnimationType={currentAnimationType}
       currentStyle={currentStyle}
+      handleAnimationChange={handleAnimationChange}
       handleSkipSubtitlesChange={handleSkipSubtitlesChange}
       handleStyleChange={handleStyleChange}
       openClipSubtitleEditor={openClipSubtitleEditor}
@@ -337,47 +381,81 @@ function FullWidthWorkspace({
 }
 
 function ConfigWorkspace({
+  currentAnimationType,
   currentStyle,
+  handleAnimationChange,
   handleSkipSubtitlesChange,
   handleStyleChange,
   openClipSubtitleEditor,
   subtitlesDisabled,
 }: {
+  currentAnimationType: SubtitleAnimationType;
   currentStyle: string;
+  handleAnimationChange: (animationType: SubtitleAnimationType) => void;
   handleSkipSubtitlesChange: (disabled: boolean) => void;
   handleStyleChange: (styleName: string) => void;
   openClipSubtitleEditor: (clip: Clip) => void;
   subtitlesDisabled: boolean;
 }) {
   return (
-    <main className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-      <div className="lg:col-span-12 grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
-        <div className="lg:col-span-5 flex flex-col gap-6">
-          <section className="glass-card p-8 border-accent/20 shadow-lg shadow-accent/5 ring-1 ring-accent/10">
-            <h2 className="text-xs font-mono uppercase tracking-[0.2em] mb-6 text-accent">Deployment Hub</h2>
-            <JobForm onStyleChange={handleStyleChange} onSkipSubtitlesChange={handleSkipSubtitlesChange} />
-          </section>
-          <SubtitlePreview styleName={currentStyle} disabled={subtitlesDisabled} />
+    <main className="grid grid-cols-1 gap-8 items-start">
+      <div className="grid grid-cols-1 gap-6 items-stretch lg:grid-cols-[minmax(0,0.96fr)_minmax(300px,0.82fr)]">
+        <section className="glass-card h-full min-w-0 self-start p-5 sm:p-6 border-accent/20 shadow-lg shadow-accent/5 ring-1 ring-accent/10 lg:col-start-1 lg:row-start-1">
+          <h2 className="mb-4 text-xs font-mono uppercase tracking-[0.2em] text-accent">Deployment Hub</h2>
+          <JobForm
+            onAnimationChange={handleAnimationChange}
+            onStyleChange={handleStyleChange}
+            onSkipSubtitlesChange={handleSkipSubtitlesChange}
+          />
+        </section>
+        <div className="flex h-full min-w-0 items-center justify-center px-2 py-3 sm:px-4 sm:py-4 lg:col-start-2 lg:row-start-1 lg:min-h-0 lg:px-0 lg:py-0">
+          <SubtitlePreview
+            animationType={currentAnimationType}
+            cutAsShort={true}
+            disabled={subtitlesDisabled}
+            showLegend={false}
+            size="tall"
+            styleName={currentStyle}
+            variant="device"
+          />
         </div>
-        <div className="lg:col-span-7 flex flex-col gap-6">
-          <section className="glass-card overflow-hidden opacity-80 hover:opacity-100 transition-opacity duration-300 flex-1 flex flex-col">
-            <HoloTerminal />
-          </section>
-          <JobQueue />
-        </div>
+        <section className="glass-card h-full min-w-0 w-full max-w-full min-h-[192px] overflow-hidden border-white/10 shadow-lg shadow-black/20 lg:col-span-2 lg:row-start-2">
+          <HoloTerminal compact />
+        </section>
       </div>
-      <div className="lg:col-span-12">
+      <div className="min-w-0">
+        <JobQueue />
+      </div>
+      <div className="min-w-0">
         <ClipGallery onEditClip={openClipSubtitleEditor} />
+      </div>
+      <div className="min-w-0">
+        <AccountDeletionCard />
       </div>
     </main>
   );
 }
 
-function AppFooter({ wsStatus }: { wsStatus: WsStatus }) {
+function AppFooter({
+  backendAuthStatus,
+  isOnline,
+  pauseReason,
+  wsStatus,
+}: {
+  backendAuthStatus: ResilientAuthState['backendAuthStatus'];
+  isOnline: boolean;
+  pauseReason: ResilientAuthState['pauseReason'];
+  wsStatus: WsStatus;
+}) {
   return (
     <footer className="mt-20 pt-8 border-t border-border flex flex-col md:flex-row items-center justify-between gap-4 text-muted-foreground">
       <p className="text-[11px] font-mono uppercase tracking-widest">&copy; 2026 GOD-TIER SHORTS. AI_ARCHITECT_ENABLED</p>
-      <ConnectionChip status={wsStatus} />
+      <ConnectionChip
+        backendAuthStatus={backendAuthStatus}
+        isOnline={isOnline}
+        pauseReason={pauseReason}
+        status={wsStatus}
+      />
     </footer>
   );
 }

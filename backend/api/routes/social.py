@@ -7,11 +7,13 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import FileResponse
+from loguru import logger
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from backend.api.security import AuthContext, require_policy
-from backend.config import sanitize_clip_name, sanitize_project_name
+from backend.api.security import AuthContext, ensure_project_access, require_policy
+from backend.config import get_project_path, sanitize_clip_name, sanitize_project_name
 from backend.core.exceptions import InvalidInputError
 from backend.services.social.constants import SOCIAL_PROVIDER_POSTIZ, SUPPORTED_SOCIAL_PLATFORMS
 from backend.services.social.crypto import SocialCrypto
@@ -25,6 +27,7 @@ from backend.services.social.service import (
     has_postiz_credential_configured,
     _is_future_scheduled_job,
     normalize_postiz_accounts,
+    resolve_signed_social_export_token,
     validate_postiz_credential,
 )
 from backend.services.social.store import get_social_store
@@ -215,6 +218,7 @@ async def list_connected_accounts(
 
 @router.get("/prefill")
 async def get_social_prefill(
+    request: Request,
     project_id: str,
     clip_name: str,
     auth: AuthContext = Depends(require_policy("social_publish")),
@@ -225,12 +229,14 @@ async def get_social_prefill(
     except ValueError as exc:
         raise InvalidInputError(str(exc)) from exc
 
+    ensure_project_access(request, auth, safe_project, clip_name=safe_clip)
     payload = build_clip_prefill(subject=auth.subject, project_id=safe_project, clip_name=safe_clip)
     return payload
 
 
 @router.put("/drafts")
 async def save_social_drafts(
+    request: Request,
     payload: SocialDraftRequest,
     auth: AuthContext = Depends(require_policy("social_publish")),
 ) -> dict:
@@ -238,6 +244,7 @@ async def save_social_drafts(
         if platform not in SUPPORTED_SOCIAL_PLATFORMS:
             raise InvalidInputError(f"Desteklenmeyen platform: {platform}")
 
+    ensure_project_access(request, auth, payload.project_id, clip_name=payload.clip_name)
     store = get_social_store()
     store.upsert_drafts(
         auth.subject,
@@ -250,6 +257,7 @@ async def save_social_drafts(
 
 @router.delete("/drafts")
 async def delete_social_drafts(
+    request: Request,
     project_id: str,
     clip_name: str,
     auth: AuthContext = Depends(require_policy("social_publish")),
@@ -260,6 +268,7 @@ async def delete_social_drafts(
     except ValueError as exc:
         raise InvalidInputError(str(exc)) from exc
 
+    ensure_project_access(request, auth, safe_project, clip_name=safe_clip)
     store = get_social_store()
     deleted = store.delete_drafts(auth.subject, safe_project, safe_clip)
     return {
@@ -270,6 +279,7 @@ async def delete_social_drafts(
 
 @router.post("/publish")
 async def create_publish_jobs(
+    request: Request,
     payload: SocialPublishRequest,
     auth: AuthContext = Depends(require_policy("social_publish")),
 ) -> dict:
@@ -277,6 +287,7 @@ async def create_publish_jobs(
     if not has_postiz_credential_configured(auth.subject, store=store):
         raise HTTPException(status_code=400, detail="Önce Postiz hesabını bağlamalısın")
 
+    ensure_project_access(request, auth, payload.project_id, clip_name=payload.clip_name)
     scheduled_utc = _parse_scheduled_at_utc(payload.scheduled_at, payload.timezone)
     if payload.mode == "scheduled" and scheduled_utc is None:
         raise InvalidInputError("scheduled_at zorunlu")
@@ -335,6 +346,7 @@ async def create_publish_jobs(
 
 @router.post("/publish/dry-run")
 async def dry_run_publish(
+    request: Request,
     payload: SocialPublishDryRunRequest,
     auth: AuthContext = Depends(require_policy("social_publish")),
 ) -> dict:
@@ -342,6 +354,7 @@ async def dry_run_publish(
     if not has_postiz_credential_configured(auth.subject, store=store):
         raise HTTPException(status_code=400, detail="Önce Postiz hesabını bağlamalısın")
 
+    ensure_project_access(request, auth, payload.project_id, clip_name=payload.clip_name)
     scheduled_utc = _parse_scheduled_at_utc(payload.scheduled_at, payload.timezone)
     if payload.mode == "scheduled" and scheduled_utc is None:
         raise InvalidInputError("scheduled_at zorunlu")
@@ -368,6 +381,28 @@ async def dry_run_publish(
         "status": "ok",
         "dry_run": preview,
     }
+
+
+@router.get("/export")
+async def export_social_media(token: str = Query(..., min_length=8)) -> FileResponse:
+    try:
+        payload = resolve_signed_social_export_token(token)
+        project_id = sanitize_project_name(str(payload["project_id"]))
+        clip_name = sanitize_clip_name(str(payload["clip_name"]))
+    except ValueError as exc:
+        logger.warning("🔐 Security event=social_export_denied reason='{}' path=/api/social/export", str(exc))
+        raise HTTPException(status_code=404, detail="Kaynak bulunamadı") from exc
+
+    clip_path = get_project_path(project_id, "shorts", clip_name)
+    if not clip_path.exists():
+        logger.warning(
+            "🔐 Security event=social_export_denied reason='clip_missing' path=/api/social/export project_id={} clip_name={}",
+            project_id,
+            clip_name,
+        )
+        raise HTTPException(status_code=404, detail="Kaynak bulunamadı")
+
+    return FileResponse(path=str(clip_path), media_type="video/mp4", filename=clip_name)
 
 
 @router.get("/publish-jobs")

@@ -21,18 +21,30 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Query
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from loguru import logger
+from pydantic import BaseModel, Field
 
+import backend.config as config
 from backend.config import (
     OUTPUTS_DIR, PROJECTS_DIR, ProjectPaths,
     get_project_path, sanitize_clip_name, sanitize_project_name,
 )
 from backend.api.websocket import manager, thread_safe_broadcast
-from backend.api.security import AuthContext, require_policy
+from backend.api.security import AuthContext, ensure_project_access, ensure_project_owner, require_policy
 from backend.api.upload_validation import stream_upload_to_path, validate_upload
 from backend.services.transcription import run_transcription
+from backend.services.ownership import (
+    build_owner_scoped_project_id,
+    build_subject_hash,
+    ensure_project_manifest,
+    grant_support_access,
+    is_support_subject_allowed,
+    list_accessible_project_ids,
+    read_project_manifest,
+    revoke_support_access,
+)
 from backend.core.exceptions import (
     FileOperationError,
     InvalidInputError,
@@ -76,13 +88,18 @@ ACTIVE_JOB_STATUSES = {"queued", "processing"}
 FAILED_JOB_STATUSES = {"error", "cancelled"}
 
 
+class SupportGrantRequest(BaseModel):
+    support_subject: str = Field(..., min_length=3)
+    ttl_seconds: int = Field(default=24 * 60 * 60, ge=60, le=7 * 24 * 60 * 60)
+
+
 @dataclass
 class ClipsCacheState:
     """`/api/clips` için process-level in-memory cache state."""
     index: list[dict] | None = None
     index_version: int = 0
     built_at: float = 0.0
-    page_cache: dict[tuple[int, int, int], dict] = field(default_factory=dict)
+    page_cache: dict[tuple[str, int, int, int], dict] = field(default_factory=dict)
 
 
 _clips_cache_state = ClipsCacheState()
@@ -162,7 +179,7 @@ def _resolve_project_shorts_dir(project_id: str) -> tuple[Path, str]:
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    shorts_dir = (PROJECTS_DIR / safe_project / "shorts").resolve()
+    shorts_dir = get_project_path(safe_project, "shorts").resolve()
     return shorts_dir, safe_project
 
 
@@ -274,8 +291,11 @@ def _validate_video_with_ffprobe(video_path: str) -> None:
         )
 
 
-def prepare_uploaded_project(file: UploadFile) -> tuple[ProjectPaths, str, bool]:
+def prepare_uploaded_project(file: UploadFile, owner_subject: str | None = None) -> tuple[ProjectPaths, str, bool]:
     """Yüklenen videodan proje oluşturur veya mevcut projeyi reuse eder."""
+    if not owner_subject:
+        raise InvalidInputError("Upload işlemi için owner subject gerekli")
+
     try:
         validate_upload(file)
     except HTTPException as exc:
@@ -299,9 +319,10 @@ def prepare_uploaded_project(file: UploadFile) -> tuple[ProjectPaths, str, bool]
 
         _validate_video_with_ffprobe(temp_path)
 
-        project_id = f"up_{file_hash[:16]}"
+        project_id = build_owner_scoped_project_id("up", owner_subject, file_hash[:12])
         project = ProjectPaths(project_id)
         is_cached = project.master_video.exists() and project.transcript.exists()
+        ensure_project_manifest(project_id, owner_subject=owner_subject, source="upload")
 
         if is_cached:
             logger.info(f"♻️ Proje zaten mevcut (Cache Hit): {project_id}")
@@ -422,32 +443,18 @@ def normalize_clip_payload(payload: object, clip_name: str, project_id: str | No
 
 
 def resolve_clip_asset_paths(clip_name: str, project_id: str | None = None) -> tuple[Path, Path, str | None]:
-    """Resolve clip video/metadata paths for either project or legacy storage."""
-    resolved_project_id = project_id if project_id and project_id != "legacy" else None
+    """Resolve clip video/metadata paths for project storage only."""
+    resolved_project_id = project_id
     metadata_name = clip_name.replace(".mp4", ".json")
 
-    if resolved_project_id:
-        return (
-            get_project_path(resolved_project_id, "shorts", clip_name),
-            get_project_path(resolved_project_id, "shorts", metadata_name),
-            resolved_project_id,
-        )
+    if not resolved_project_id:
+        raise InvalidInputError("project_id zorunlu")
 
-    legacy_video = OUTPUTS_DIR / clip_name
-    legacy_metadata = OUTPUTS_DIR / metadata_name
-    if legacy_video.exists() or legacy_metadata.exists():
-        return legacy_video, legacy_metadata, None
-
-    if PROJECTS_DIR.exists():
-        for project_dir in PROJECTS_DIR.iterdir():
-            if not project_dir.is_dir():
-                continue
-            candidate_video = project_dir / "shorts" / clip_name
-            candidate_metadata = project_dir / "shorts" / metadata_name
-            if candidate_video.exists() or candidate_metadata.exists():
-                return candidate_video, candidate_metadata, project_dir.name
-
-    return legacy_video, legacy_metadata, None
+    return (
+        get_project_path(resolved_project_id, "shorts", clip_name),
+        get_project_path(resolved_project_id, "shorts", metadata_name),
+        resolved_project_id,
+    )
 
 
 def load_clip_payload(clip_name: str, project_id: str | None = None) -> tuple[dict, Path, Path, str | None]:
@@ -466,9 +473,7 @@ def load_clip_payload(clip_name: str, project_id: str | None = None) -> tuple[di
 
 
 def _normalize_project_match(project_id: str | None) -> str | None:
-    if project_id and project_id != "legacy":
-        return project_id
-    return None
+    return project_id or None
 
 
 def _job_matches_project(job: dict, project_id: str | None) -> bool:
@@ -726,11 +731,12 @@ def _is_internal_short_asset(filename: str) -> bool:
 def _scan_clips_index() -> list[dict]:
     """Projeleri tarayıp normalize klip indeksini oluşturur."""
     clips: list[dict] = []
-    if not PROJECTS_DIR.exists():
+    if not config.PROJECTS_DIR.exists():
         return clips
 
-    for project_dir in PROJECTS_DIR.iterdir():
-        if not project_dir.is_dir():
+    for project_dir in config.iter_project_dirs():
+        manifest = read_project_manifest(project_dir.name)
+        if manifest is None or manifest.status != "active":
             continue
 
         shorts_dir = project_dir / "shorts"
@@ -782,35 +788,108 @@ def _get_clip_index() -> tuple[list[dict], int]:
 
 @router.get("/projects")
 async def list_projects(
-    _: AuthContext = Depends(require_policy("view_projects")),
+    auth: AuthContext = Depends(require_policy("view_projects")),
 ) -> dict:
     """Proje klasörlerini listeler. master.mp4 ve transcript.json varlığını döner."""
     projects = []
-    if PROJECTS_DIR.exists():
-        for project_dir in PROJECTS_DIR.iterdir():
-            if not project_dir.is_dir():
+    accessible_ids = list_accessible_project_ids(auth.subject)
+    if config.PROJECTS_DIR.exists():
+        for project_id in accessible_ids:
+            project = ProjectPaths(project_id)
+            if not project.root.is_dir():
                 continue
             projects.append({
-                **resolve_project_transcript_state(project_dir.name),
-                "id": project_dir.name,
-                "has_master": (project_dir / "master.mp4").exists(),
-                "has_transcript": (project_dir / "transcript.json").exists(),
+                **resolve_project_transcript_state(project_id),
+                "id": project_id,
+                "has_master": project.master_video.exists(),
+                "has_transcript": project.transcript.exists(),
             })
     return {"projects": sorted(projects, key=lambda p: p["id"])}
 
 
+@router.post("/projects/{project_id}/support-grants")
+async def create_project_support_grant(
+    request: Request,
+    project_id: str,
+    payload: SupportGrantRequest,
+    auth: AuthContext = Depends(require_policy("manage_support_grants")),
+) -> dict:
+    try:
+        safe_project_id = sanitize_project_name(project_id)
+    except ValueError as e:
+        raise InvalidInputError(str(e)) from e
+
+    ensure_project_owner(request, auth, safe_project_id)
+    support_subject = payload.support_subject.strip()
+    if not is_support_subject_allowed(support_subject):
+        raise InvalidInputError("Support subject allowlist disinda")
+
+    manifest = grant_support_access(
+        safe_project_id,
+        owner_subject=auth.subject,
+        support_subject=support_subject,
+        ttl_seconds=payload.ttl_seconds,
+    )
+    logger.info(
+        "🔐 Security event=support_grant_created subject={} project_id={} support_subject_hash={}",
+        auth.subject,
+        safe_project_id,
+        build_subject_hash(support_subject),
+    )
+    return {
+        "status": "granted",
+        "project_id": safe_project_id,
+        "support_subject_hash": build_subject_hash(support_subject),
+        "grant_count": len(manifest.support_grants),
+    }
+
+
+@router.delete("/projects/{project_id}/support-grants")
+async def delete_project_support_grant(
+    request: Request,
+    project_id: str,
+    support_subject: str = Query(..., min_length=3),
+    auth: AuthContext = Depends(require_policy("manage_support_grants")),
+) -> dict:
+    try:
+        safe_project_id = sanitize_project_name(project_id)
+    except ValueError as e:
+        raise InvalidInputError(str(e)) from e
+
+    ensure_project_owner(request, auth, safe_project_id)
+    normalized_support_subject = support_subject.strip()
+    manifest = revoke_support_access(
+        safe_project_id,
+        owner_subject=auth.subject,
+        support_subject=normalized_support_subject,
+    )
+    logger.info(
+        "🔐 Security event=support_grant_revoked subject={} project_id={} support_subject_hash={}",
+        auth.subject,
+        safe_project_id,
+        build_subject_hash(normalized_support_subject),
+    )
+    return {
+        "status": "revoked",
+        "project_id": safe_project_id,
+        "grant_count": len(manifest.support_grants),
+    }
+
+
 @router.get("/projects/{project_id}/master")
 async def get_project_master_video(
+    request: Request,
     project_id: str,
-    _: AuthContext = Depends(require_policy("view_project_media")),
+    auth: AuthContext = Depends(require_policy("view_project_media")),
 ) -> FileResponse:
     """Proje master videosunu kontrollü olarak servis eder."""
     try:
         safe_project = sanitize_project_name(project_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    ensure_project_access(request, auth, safe_project)
 
-    path = (PROJECTS_DIR / safe_project / "master.mp4").resolve()
+    path = ProjectPaths(safe_project).master_video.resolve()
     if not path.exists() or not path.is_file():
         raise HTTPException(status_code=404, detail="Master video bulunamadı")
 
@@ -819,11 +898,13 @@ async def get_project_master_video(
 
 @router.get("/projects/{project_id}/shorts/{clip_name}")
 async def get_project_short_asset(
+    request: Request,
     project_id: str,
     clip_name: str,
-    _: AuthContext = Depends(require_policy("view_project_media")),
+    auth: AuthContext = Depends(require_policy("view_project_media")),
 ) -> FileResponse:
     """Sadece proje shorts klasöründeki .mp4/.json dosyalarını kontrollü olarak servis eder."""
+    ensure_project_access(request, auth, project_id, clip_name=clip_name)
     asset_path, _safe_project, safe_clip = _resolve_project_short_asset_path(
         project_id,
         clip_name,
@@ -839,11 +920,13 @@ async def get_project_short_asset(
 
 @router.delete("/projects/{project_id}/shorts/{clip_name}")
 async def delete_project_short(
+    request: Request,
     project_id: str,
     clip_name: str,
-    _: AuthContext = Depends(require_policy("delete_clip")),
+    auth: AuthContext = Depends(require_policy("delete_clip")),
 ) -> dict:
     """Belirli bir klibin kullanıcıya açık shorts varlıklarını siler."""
+    ensure_project_access(request, auth, project_id, clip_name=clip_name)
     shorts_dir, safe_project = _resolve_project_shorts_dir(project_id)
 
     try:
@@ -889,20 +972,28 @@ async def delete_project_short(
 async def list_clips(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    _: AuthContext = Depends(require_policy("view_clips")),
+    auth: AuthContext = Depends(require_policy("view_clips")),
 ) -> dict:
     """Proje klasörlerindeki tüm videoları listeler."""
     clips_sorted, index_version = _get_clip_index()
-    cache_key = (page, page_size, index_version)
+    accessible_ids = set(list_accessible_project_ids(auth.subject))
+    subject_cache_key = build_subject_hash(auth.subject)
+    cache_key = (subject_cache_key, page, page_size, index_version)
     with _clips_cache_lock:
         cached_response = _clips_cache_state.page_cache.get(cache_key)
     if cached_response is not None:
         return cached_response
 
+    visible_clips = [
+        clip
+        for clip in clips_sorted
+        if str(clip.get("project") or "") in accessible_ids
+    ]
+
     start = (page - 1) * page_size
     end = start + page_size
-    paginated = clips_sorted[start:end]
-    total = len(clips_sorted)
+    paginated = visible_clips[start:end]
+    total = len(visible_clips)
 
     response = {
         "clips": paginated,
@@ -918,32 +1009,37 @@ async def list_clips(
 
 @router.get("/clip-transcript/{clip_name}")
 async def get_clip_transcript(
+    request: Request,
     clip_name: str,
     project_id: str | None = None,
-    _: AuthContext = Depends(require_policy("view_clip_transcript")),
+    auth: AuthContext = Depends(require_policy("view_clip_transcript")),
 ) -> dict:
     """Belirli bir klibin transkriptini getirir."""
+    if not project_id:
+        raise InvalidInputError("project_id zorunlu")
     try:
         clip_name = sanitize_clip_name(clip_name)
     except ValueError as e:
         raise InvalidInputError(str(e)) from e
-    if project_id and project_id != "legacy":
-        try:
-            sanitize_project_name(project_id)
-        except ValueError as e:
-            raise InvalidInputError(str(e)) from e
+    try:
+        safe_project_id = sanitize_project_name(project_id)
+    except ValueError as e:
+        raise InvalidInputError(str(e)) from e
+    ensure_project_access(request, auth, safe_project_id, clip_name=clip_name)
 
-    return build_clip_transcript_response(clip_name, project_id)
+    return build_clip_transcript_response(clip_name, safe_project_id)
 
 
 @router.get("/projects/{project_id}/files/{file_kind}")
 async def get_project_file(
+    request: Request,
     project_id: str,
     file_kind: str,
     clip_name: str | None = None,
-    _: AuthContext = Depends(require_policy("view_project_media")),
+    auth: AuthContext = Depends(require_policy("view_project_media")),
 ):
     """Yalnızca whitelist edilen proje dosyalarını döndürür."""
+    ensure_project_access(request, auth, project_id, clip_name=clip_name)
     path = _safe_project_file_path(project_id, file_kind, clip_name)
     media_type = "video/mp4" if path.suffix.lower() == ".mp4" else "application/json"
     return FileResponse(path=str(path), media_type=media_type, filename=path.name)
@@ -951,12 +1047,14 @@ async def get_project_file(
 
 @router.get("/projects/{project_id}/files/{file_kind}/{clip_name}")
 async def get_project_file_with_clip_name(
+    request: Request,
     project_id: str,
     file_kind: str,
     clip_name: str,
-    _: AuthContext = Depends(require_policy("view_project_media")),
+    auth: AuthContext = Depends(require_policy("view_project_media")),
 ):
     """Klip bazlı dosyaları query string olmadan döndürür."""
+    ensure_project_access(request, auth, project_id, clip_name=clip_name)
     path = _safe_project_file_path(project_id, file_kind, clip_name)
     media_type = "video/mp4" if path.suffix.lower() == ".mp4" else "application/json"
     return FileResponse(path=str(path), media_type=media_type, filename=path.name)
@@ -965,10 +1063,10 @@ async def get_project_file_with_clip_name(
 @router.post("/upload")
 async def upload_local_video(
     file: UploadFile = File(...),
-    _: AuthContext = Depends(require_policy("upload")),
+    auth: AuthContext = Depends(require_policy("upload")),
 ) -> dict:
     """Arayüzden yüklenen videoyu kaydeder, bir proje oluşturur ve transkripsiyon başlatır."""
-    project, project_id, is_cached = prepare_uploaded_project(file)
+    project, project_id, is_cached = prepare_uploaded_project(file, owner_subject=auth.subject)
 
     if is_cached:
         return {
@@ -977,6 +1075,8 @@ async def upload_local_video(
             "message": "Video zaten analiz edilmiş, kütüphaneden getiriliyor.",
             "project_id": project_id,
         }
+
+    manager.assert_subject_can_enqueue(auth.subject)
 
     # 4. Transkripsiyon başlat
     job_id = f"upload_{int(time.time())}_{uuid.uuid4().hex[:6]}"
@@ -989,6 +1089,7 @@ async def upload_local_video(
         "last_message": "Video yüklendi, transkripsiyon bekliyor...",
         "created_at": time.time(),
         "project_id": project_id,
+        "subject": auth.subject,
     }
 
     async def _run() -> None:

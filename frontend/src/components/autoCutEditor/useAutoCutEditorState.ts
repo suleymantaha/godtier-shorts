@@ -1,12 +1,14 @@
 import { useRef, useState } from 'react';
 
-import type { StyleName } from '../../config/subtitleStyles';
+import type { StyleName, SubtitleAnimationType } from '../../config/subtitleStyles';
 
 export interface StoredAutoCutSession {
+  animationType?: SubtitleAnimationType;
   currentJobId?: string | null;
   endTime?: number;
   projectId?: string;
   startTime?: number;
+  style?: StyleName;
 }
 
 export function useAutoCutEditorState(initialSession: StoredAutoCutSession | null) {
@@ -21,7 +23,8 @@ export function useAutoCutEditorState(initialSession: StoredAutoCutSession | nul
   const [endTime, setEndTime] = useState(initialSession?.endTime ?? 60);
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [style, setStyle] = useState<StyleName>('TIKTOK');
+  const [style, setStyle] = useState<StyleName>(initialSession?.style ?? 'TIKTOK');
+  const [animationType, setAnimationType] = useState<SubtitleAnimationType>(initialSession?.animationType ?? 'default');
   const [skipSubtitles, setSkipSubtitles] = useState(false);
   const [cutAsShort, setCutAsShort] = useState(true);
   const [numClips, setNumClips] = useState(3);
@@ -31,6 +34,7 @@ export function useAutoCutEditorState(initialSession: StoredAutoCutSession | nul
   const videoRef = useRef<HTMLVideoElement>(null);
 
   return {
+    animationType,
     currentJobId,
     cutAsShort,
     duration,
@@ -46,6 +50,7 @@ export function useAutoCutEditorState(initialSession: StoredAutoCutSession | nul
     projectId,
     requestError,
     selectedFile,
+    setAnimationType,
     setCurrentJobId,
     setCutAsShort,
     setDuration,

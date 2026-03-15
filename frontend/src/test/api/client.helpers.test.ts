@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { extractApiErrorMessage, mergeApiHeaders } from '../../api/client.helpers';
+import { extractApiErrorMessage, extractApiErrorPayload, mergeApiHeaders } from '../../api/client.helpers';
 
 describe('client helpers', () => {
   it('merges bearer auth into plain header objects', () => {
@@ -12,6 +12,15 @@ describe('client helpers', () => {
 
   it('extracts string and nested object API errors', () => {
     expect(extractApiErrorMessage(JSON.stringify({ detail: 'Forbidden' }), 403)).toBe('Forbidden');
+    expect(
+      extractApiErrorPayload(
+        JSON.stringify({ detail: { error: { code: 'auth_provider_unavailable', message: 'Provider unavailable' } } }),
+        503,
+      ),
+    ).toEqual({
+      code: 'auth_provider_unavailable',
+      message: 'Provider unavailable',
+    });
     expect(
       extractApiErrorMessage(
         JSON.stringify({ detail: { error: { message: 'Provider unavailable' } } }),

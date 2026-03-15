@@ -7,7 +7,7 @@ import {
   type SyntheticEvent,
 } from 'react';
 
-import type { StyleName } from '../../config/subtitleStyles';
+import type { StyleName, SubtitleAnimationType } from '../../config/subtitleStyles';
 import { editorApi } from '../../api/client';
 import {
   buildAutoCutUploadPayload,
@@ -16,6 +16,7 @@ import {
 } from './helpers';
 
 interface AutoCutEditorActionParams {
+  animationType: SubtitleAnimationType;
   cutAsShort: boolean;
   duration: number;
   endTime: number;
@@ -55,7 +56,7 @@ type AutoCutFileSelectionParams = Pick<
 
 type AutoCutRenderSubmissionParams = Pick<
   AutoCutEditorActionParams,
-  'cutAsShort' | 'duration' | 'endTime' | 'fetchJobs' | 'markers' | 'numClips' | 'selectedFile' | 'setCurrentJobId' | 'setIsSubmitting' | 'setPendingOutputUrl' | 'setProjectId' | 'setRequestError' | 'skipSubtitles' | 'startTime' | 'style'
+  'animationType' | 'cutAsShort' | 'duration' | 'endTime' | 'fetchJobs' | 'markers' | 'numClips' | 'selectedFile' | 'setCurrentJobId' | 'setIsSubmitting' | 'setPendingOutputUrl' | 'setProjectId' | 'setRequestError' | 'skipSubtitles' | 'startTime' | 'style'
 >;
 
 function toggleVideoPlayback(video: HTMLVideoElement | null) {
@@ -123,6 +124,7 @@ function applyMarkerAtCurrentTime(
 }
 
 async function submitAutoCutRender({
+  animationType,
   cutAsShort,
   duration,
   endTime,
@@ -138,8 +140,10 @@ async function submitAutoCutRender({
   style,
 }: Pick<
   AutoCutEditorActionParams,
+  | 'animationType'
   | 'cutAsShort'
   | 'duration'
+  | 'endTime'
   | 'fetchJobs'
   | 'markers'
   | 'numClips'
@@ -150,13 +154,13 @@ async function submitAutoCutRender({
   | 'skipSubtitles'
   | 'startTime'
   | 'style'
-  | 'endTime'
 >) {
   if (!selectedFile) {
     throw new Error('Once bir video sec.');
   }
 
   const response = await editorApi.manualCutUpload(selectedFile, buildAutoCutUploadPayload({
+    animationType,
     cutAsShort,
     duration,
     endTime,
@@ -273,6 +277,7 @@ function useAutoCutFileSelection({
 }
 
 function useAutoCutRenderSubmission({
+  animationType,
   cutAsShort,
   duration,
   endTime,
@@ -306,6 +311,7 @@ function useAutoCutRenderSubmission({
 
     try {
       await submitAutoCutRender({
+        animationType,
         cutAsShort,
         duration,
         endTime,
@@ -326,7 +332,7 @@ function useAutoCutRenderSubmission({
     } finally {
       setIsSubmitting(false);
     }
-  }, [cutAsShort, duration, endTime, fetchJobs, markers, numClips, selectedFile, setCurrentJobId, setIsSubmitting, setPendingOutputUrl, setProjectId, setRequestError, skipSubtitles, startTime, style]);
+  }, [animationType, cutAsShort, duration, endTime, fetchJobs, markers, numClips, selectedFile, setCurrentJobId, setIsSubmitting, setPendingOutputUrl, setProjectId, setRequestError, skipSubtitles, startTime, style]);
 
   return { handleRender };
 }

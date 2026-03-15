@@ -8,34 +8,25 @@ from typing import Callable, Optional
 from loguru import logger
 from backend.config import LOGS_DIR, OUTPUTS_DIR, VIDEO_METADATA, YOLO_MODEL_PATH, ProjectPaths
 from backend.core.command_runner import CommandRunner
-from backend.core.media_ops import (
-    cut_and_burn_clip,
-    download_full_video_async as download_video_assets_async,
-    shift_timestamps,
-)
-from backend.core.workflows import (
-    BatchClipWorkflow,
-    CutPointsWorkflow,
-    ManualClipWorkflow,
-    PipelineWorkflow,
-    ReburnWorkflow,
-)
+from backend.core.media_ops import cut_and_burn_clip, download_full_video_async as download_video_assets_async, shift_timestamps
+from backend.core.workflows import BatchClipWorkflow, CutPointsWorkflow, ManualClipWorkflow, PipelineWorkflow, ReburnWorkflow
 from backend.services.subtitle_renderer import SubtitleRenderer
 from backend.services.transcription import release_whisper_models, run_transcription
 from backend.services.video_processor import VideoProcessor
 from backend.services.viral_analyzer import ViralAnalyzer
-logger.add(
-    str(LOGS_DIR / "orchestrator_{time:YYYY-MM-DD}.log"),
-    rotation="50 MB",
-    retention="10 days",
-    level="DEBUG",
-)
+logger.add(str(LOGS_DIR / "orchestrator_{time:YYYY-MM-DD}.log"), rotation="50 MB", retention="10 days", level="DEBUG")
 StatusCallback = Callable[[dict], None]
 class GodTierShortsCreator:
-    def __init__(self, ui_callback: Optional[StatusCallback] = None, cancel_event: Optional[threading.Event] = None):
+    def __init__(
+        self,
+        ui_callback: Optional[StatusCallback] = None,
+        cancel_event: Optional[threading.Event] = None,
+        subject: Optional[str] = None,
+    ):
         logger.info("👑 GOD-TIER SHORTS ORKESTRATÖRÜ BAŞLATILDI 👑")
         self.ui_callback = ui_callback
         self.cancel_event = cancel_event or threading.Event()
+        self.subject = subject
         self.project: Optional[ProjectPaths] = None
         self.command_runner = CommandRunner(cancel_event=self.cancel_event)
         self.analyzer = ViralAnalyzer(engine="local")
@@ -49,7 +40,6 @@ class GodTierShortsCreator:
             self.video_processor.cleanup_gpu()
         except Exception:
             pass
-
     def _check_cancelled(self) -> None:
         if self.cancel_event.is_set():
             raise RuntimeError("Job cancelled by user")
@@ -63,7 +53,6 @@ class GodTierShortsCreator:
         )
         if not youtube_regex.match(url):
             raise ValueError(f"Geçersiz veya güvensiz YouTube URL formatı: {url}")
-
     async def _run_command_with_cancel_async(
         self,
         cmd: list[str],
@@ -72,7 +61,6 @@ class GodTierShortsCreator:
         error_message: str,
     ) -> tuple[int, str, str]:
         return await self.command_runner.run_async(cmd, timeout=timeout, error_message=error_message)
-
     def _run_command_with_cancel(
         self,
         cmd: list[str],
@@ -82,7 +70,6 @@ class GodTierShortsCreator:
     ):
         """DEPRECATED: retained for backward compatibility."""
         return self.command_runner.run_sync(cmd, timeout=timeout, error_message=error_message)
-
     @staticmethod
     def _normalize_transcript_payload(transcript_data: list) -> list[dict]:
         normalized: list[dict] = []
@@ -94,7 +81,6 @@ class GodTierShortsCreator:
             else:
                 normalized.append(dict(segment))
         return normalized
-
     @staticmethod
     def _build_clip_metadata(
         transcript_data: list[dict],
@@ -160,8 +146,9 @@ class GodTierShortsCreator:
         layout: str = "single",
         center_x: Optional[float] = None,
         cut_as_short: bool = True,
-    ) -> None:
-        cut_and_burn_clip(
+        require_audio: bool = False,
+    ) -> dict:
+        return cut_and_burn_clip(
             video_processor=self.video_processor,
             cancel_event=self.cancel_event,
             master_video=master_video,
@@ -174,12 +161,14 @@ class GodTierShortsCreator:
             layout=layout,
             center_x=center_x,
             cut_as_short=cut_as_short,
+            require_audio=require_audio,
         )
 
     async def run_pipeline_async(
         self,
         youtube_url: str,
         style_name: str = "HORMOZI",
+        animation_type: str = "default",
         layout: str = "single",
         skip_subtitles: bool = False,
         num_clips: int = 8,
@@ -190,6 +179,7 @@ class GodTierShortsCreator:
         await PipelineWorkflow(self).run(
             youtube_url=youtube_url,
             style_name=style_name,
+            animation_type=animation_type,
             layout=layout,
             skip_subtitles=skip_subtitles,
             num_clips=num_clips,
@@ -202,6 +192,7 @@ class GodTierShortsCreator:
         self,
         youtube_url: str,
         style_name: str = "HORMOZI",
+        animation_type: str = "default",
         layout: str = "single",
         skip_subtitles: bool = False,
         num_clips: int = 8,
@@ -213,6 +204,7 @@ class GodTierShortsCreator:
             self.run_pipeline_async(
                 youtube_url,
                 style_name,
+                animation_type,
                 layout,
                 skip_subtitles,
                 num_clips,
@@ -228,6 +220,7 @@ class GodTierShortsCreator:
         end_t: float,
         transcript_data: Optional[list],
         style_name: str = "HORMOZI",
+        animation_type: str = "default",
         project_id: Optional[str] = None,
         center_x: Optional[float] = None,
         layout: str = "single",
@@ -240,6 +233,7 @@ class GodTierShortsCreator:
             end_t=end_t,
             transcript_data=transcript_data,
             style_name=style_name,
+            animation_type=animation_type,
             project_id=project_id,
             center_x=center_x,
             layout=layout,
@@ -256,6 +250,7 @@ class GodTierShortsCreator:
         cut_points: list[float],
         transcript_data: list,
         style_name: str = "HORMOZI",
+        animation_type: str = "default",
         project_id: Optional[str] = None,
         layout: str = "single",
         skip_subtitles: bool = False,
@@ -265,6 +260,7 @@ class GodTierShortsCreator:
             cut_points=cut_points,
             transcript_data=transcript_data,
             style_name=style_name,
+            animation_type=animation_type,
             project_id=project_id,
             layout=layout,
             skip_subtitles=skip_subtitles,
@@ -283,6 +279,7 @@ class GodTierShortsCreator:
         duration_min: float = 120.0,
         duration_max: float = 180.0,
         style_name: str = "HORMOZI",
+        animation_type: str = "default",
         project_id: Optional[str] = None,
         layout: str = "single",
         skip_subtitles: bool = False,
@@ -296,6 +293,7 @@ class GodTierShortsCreator:
             duration_min=duration_min,
             duration_max=duration_max,
             style_name=style_name,
+            animation_type=animation_type,
             project_id=project_id,
             layout=layout,
             skip_subtitles=skip_subtitles,
@@ -311,12 +309,14 @@ class GodTierShortsCreator:
         transcript: list,
         project_id: Optional[str] = None,
         style_name: str = "HORMOZI",
+        animation_type: str = "default",
     ) -> str:
         return await ReburnWorkflow(self).run(
             clip_name=clip_name,
             transcript=transcript,
             project_id=project_id,
             style_name=style_name,
+            animation_type=animation_type,
         )
 
     def reburn_subtitles(self, *args, **kwargs) -> str:

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildCropGuideStyle, clampCrop, findCurrentSubtitle, getCropFromClientX, getNextCropValue } from '../../components/videoOverlay/helpers';
+import {
+  buildCropGuideStyle,
+  clampCrop,
+  findCurrentSubtitle,
+  findCurrentSubtitleState,
+  getCropFromClientX,
+  getNextCropValue,
+} from '../../components/videoOverlay/helpers';
 
 const transcript = [
   { end: 2, start: 1, text: 'Hello', words: [] },
@@ -16,6 +23,14 @@ describe('videoOverlay helpers', () => {
 
   it('finds the active subtitle and keyboard crop step', () => {
     expect(findCurrentSubtitle(transcript, 1.5)?.text).toBe('Hello');
+    expect(findCurrentSubtitleState(
+      [{ end: 2, start: 1, text: 'Hello there', words: [{ word: 'Hello', start: 1, end: 1.4 }, { word: 'there', start: 1.4, end: 1.8 }] }],
+      1.45,
+    )?.activeWordIndex).toBe(1);
+    expect(findCurrentSubtitleState(
+      [{ end: 2, start: 1, text: 'Hello there', words: [{ word: 'Hello', start: 1, end: 1.4 }, { word: 'there', start: 1.4, end: 1.8 }] }],
+      1.95,
+    )?.activeWordIndex).toBeNull();
     expect(getNextCropValue(0.5, 'ArrowRight')).toBeGreaterThan(0.5);
     expect(getNextCropValue(0.5, 'Escape')).toBeNull();
   });

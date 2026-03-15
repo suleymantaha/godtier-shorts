@@ -13,7 +13,7 @@ import time
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 
 from backend.models.schemas import JobRequest
@@ -54,7 +54,11 @@ async def run_gpu_job(job_id: str, request: JobRequest) -> None:
 
             callback = lambda s: thread_safe_broadcast(s, job_id)
             cancel_event = manager.jobs.get(job_id, {}).get("cancel_event")
-            orchestrator = GodTierShortsCreator(ui_callback=callback, cancel_event=cancel_event)
+            orchestrator = GodTierShortsCreator(
+                ui_callback=callback,
+                cancel_event=cancel_event,
+                subject=manager.jobs.get(job_id, {}).get("subject"),
+            )
             orchestrator.analyzer.engine = request.ai_engine
 
             duration_min = 120.0
@@ -67,6 +71,7 @@ async def run_gpu_job(job_id: str, request: JobRequest) -> None:
                 await orchestrator.run_pipeline_async(
                     request.youtube_url,
                     request.style_name,
+                    request.animation_type,
                     request.layout,
                     request.skip_subtitles,
                     request.num_clips,
@@ -105,16 +110,20 @@ async def get_available_styles(
     _: AuthContext = Depends(require_policy("view_styles")),
 ) -> dict:
     """Arayüzdeki Dropdown için mevcut stilleri döner."""
-    return {"styles": StyleManager.list_presets() + ["CUSTOM"]}
+    return {
+        "styles": StyleManager.list_presets(),
+        "animations": StyleManager.list_animation_options(),
+    }
 
 
 @router.post("/start-job")
-@logger.catch
+@logger.catch(reraise=True)
 async def start_processing_job(
     request: JobRequest,
-    _: AuthContext = Depends(require_policy("start_job")),
+    auth: AuthContext = Depends(require_policy("start_job")),
 ) -> dict[str, Any]:
     """UI'dan 'VİDEOYU ÜRET' butonuna basıldığında tetiklenir."""
+    manager.assert_subject_can_enqueue(auth.subject)
     job_id = str(uuid.uuid4())[:8]
     logger.info(f"🚀 Yeni görev: {job_id} | {request.youtube_url}")
 
@@ -123,10 +132,12 @@ async def start_processing_job(
         "job_id":       job_id,
         "url":          request.youtube_url,
         "style":        request.style_name,
+        "animation_type": request.animation_type,
         "status":       "queued",
         "progress":     0,
         "last_message": "Sıraya alındı...",
         "created_at":   time.time(),
+        "subject":      auth.subject,
         "cancel_event": cancel_event,
     }
     task = asyncio.create_task(run_gpu_job(job_id, request))
@@ -143,7 +154,7 @@ async def start_processing_job(
 
 @router.get("/jobs")
 async def list_jobs(
-    _: AuthContext = Depends(require_policy("view_jobs")),
+    auth: AuthContext = Depends(require_policy("view_jobs")),
 ) -> dict:
     """Tüm aktif ve bekleyen işleri listeler."""
     runtime_only_keys = {"task", "task_handle", "cancel_event"}
@@ -151,6 +162,7 @@ async def list_jobs(
         "jobs": [
             {k: v for k, v in job.items() if k not in runtime_only_keys}
             for job in manager.jobs.values()
+            if str(job.get("subject") or "") == auth.subject
         ]
     }
 
@@ -158,13 +170,15 @@ async def list_jobs(
 @router.post("/cancel-job/{job_id}")
 async def cancel_job(
     job_id: str,
-    _: AuthContext = Depends(require_policy("cancel_job")),
+    auth: AuthContext = Depends(require_policy("cancel_job")),
 ) -> dict:
     """Belirli bir işi iptal eder."""
     if job_id not in manager.jobs:
         raise NotFoundError("İş bulunamadı.")
 
     job = manager.jobs[job_id]
+    if str(job.get("subject") or "") != auth.subject:
+        raise HTTPException(status_code=404, detail="İş bulunamadı.")
     if job["status"] in ("completed", "error", "cancelled"):
         return {"status": "ignored", "message": f"İş zaten {job['status']} durumunda."}
 

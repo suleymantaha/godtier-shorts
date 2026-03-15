@@ -47,3 +47,10 @@ Use the smallest command set that proves the change.
   - Generates or burns subtitle outputs against a real project transcript.
 - `python scripts/reburn_clip.py --project ID --clip NAME [--layout split] [--style HORMOZI]`
   - Fast CLI path for reburn checks.
+- `python scripts/benchmark_render_stability.py --project ID --clip NAME [--runs 3 --samples 5]`
+  - Determinism ve throughput benchmark'ı üretir; raporu `workspace/logs/render_benchmarks/` altına yazar.
+
+## Debug Artifacts
+
+- `DEBUG_RENDER_ARTIFACTS=1`
+  - Render sırasında proje içine `debug/<clip_stem>/` bundle'ı yazar ve clip metadata altında `render_metadata.debug_artifacts` alanını doldurur.

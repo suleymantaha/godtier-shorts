@@ -5,7 +5,7 @@ YouTube URL ile tam otomatik short üretim akışı. CONFIGURE sayfasındaki Job
 ## Akış
 
 ```
-yt-dlp indirme → Ses ayrıştırma → faster-whisper transkripsiyon → LLM viral analiz → Klip üretimi (YOLO + ASS + burn-in)
+yt-dlp indirme → Ses ayrıştırma → faster-whisper transkripsiyon → LLM viral analiz → boundary snap → tracking/crop → ASS → burn-in → kalite metadata
 ```
 
 ## Adımlar
@@ -15,11 +15,7 @@ yt-dlp indirme → Ses ayrıştırma → faster-whisper transkripsiyon → LLM v
 3. **Ses Ayrıştırma**: FFmpeg ile 16kHz mono WAV çıkarılır
 4. **Transkripsiyon**: faster-whisper (large-v3) ile kelime düzeyinde zaman damgaları
 5. **Viral Analiz**: LLM (OpenRouter/Claude veya local) ile viral segmentler seçilir
-6. **Klip Üretimi**: Her segment için:
-   - Timestamp kaydırma (`_shift_timestamps`)
-   - ASS altyazı üretimi
-   - YOLO + SteadyCam crop (9:16)
-   - Burn-in (FFmpeg CUDA)
+6. **Klip Üretimi**: Her segment için kaliteye bağlı boundary snap, tracking/crop, ASS burn-in ve `render_quality_score`
 
 ## Tetikleyici
 
@@ -42,7 +38,7 @@ yt-dlp indirme → Ses ayrıştırma → faster-whisper transkripsiyon → LLM v
 ## Çıktı
 
 - `workspace/projects/yt_{video_id}/shorts/short_{n}_{hook_slug}.mp4`
-- Her klip için `.json` metadata (transcript, viral_metadata, render_metadata)
+- Her klip için `.json` metadata ve clip bazlı kalite alanları
 
 ## İlgili
 

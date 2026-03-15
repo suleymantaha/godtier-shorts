@@ -42,3 +42,10 @@ Ana proje: [README.md](../README.md)
 | [Subtitle Styles](./architecture/subtitle-styles.md)     | ASS preset stilleri                    |
 | [Subtitle Renderer](./architecture/subtitle-renderer.md) | Burn-in                                |
 
+## Kalite ve Tanı
+
+- Render kalite alanları clip metadata içindeki `render_metadata` altında tutulur.
+- Debug bundle desteği için `DEBUG_RENDER_ARTIFACTS=1` kullanılır.
+- Determinism ve throughput raporu için `scripts/benchmark_render_stability.py` kullanılır.
+- v2.1 kapanış özeti ve doğrulama sonuçları:
+  [report/V2_1_STABILIZASYON_SONUC_RAPORU_2026-03-15.md](../report/V2_1_STABILIZASYON_SONUC_RAPORU_2026-03-15.md)

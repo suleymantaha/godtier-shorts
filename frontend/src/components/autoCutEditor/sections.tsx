@@ -10,10 +10,18 @@ import {
   Scissors,
   Sparkles,
   Subtitles,
+  Waves,
   X,
 } from 'lucide-react';
 
-import { STYLE_OPTIONS, isStyleName, type StyleName } from '../../config/subtitleStyles';
+import {
+  ANIMATION_SELECT_OPTIONS,
+  STYLE_OPTIONS,
+  isStyleName,
+  isSubtitleAnimationType,
+  type StyleName,
+  type SubtitleAnimationType,
+} from '../../config/subtitleStyles';
 import { toTimeStr } from '../../utils/time';
 import { RangeSlider } from '../RangeSlider';
 import { TimeRangeHeader } from '../TimeRangeHeader';
@@ -284,9 +292,11 @@ function AutoCutOptionsCard({ controller }: AutoCutEditorLayoutProps) {
         <Sparkles className="w-4 h-4" />
         Altyazi Stili & Uretim
       </div>
-      <div className={`grid gap-4 ${controller.skipSubtitles ? 'md:grid-cols-2' : 'md:grid-cols-3'}`}>
+      <div className="grid gap-4 md:grid-cols-3">
         <AutoCutSubtitleOptions
+          animationType={controller.animationType}
           cutAsShort={controller.cutAsShort}
+          setAnimationType={controller.setAnimationType}
           setCutAsShort={controller.setCutAsShort}
           setSkipSubtitles={controller.setSkipSubtitles}
           setStyle={controller.setStyle}
@@ -298,25 +308,34 @@ function AutoCutOptionsCard({ controller }: AutoCutEditorLayoutProps) {
           numClips={controller.numClips}
           onChangeClipCount={controller.updateSelectedClipCount}
         />
-        {!controller.skipSubtitles && (
-          <div className="rounded-xl border border-white/10 bg-foreground/5 p-3 h-full flex items-start justify-center">
-            <SubtitlePreview styleName={controller.style} disabled={false} />
-          </div>
-        )}
+        <div className="rounded-xl border border-white/10 bg-foreground/5 p-3 h-full flex items-start justify-center">
+          <SubtitlePreview
+            animationType={controller.animationType}
+            cutAsShort={controller.cutAsShort}
+            disabled={controller.skipSubtitles}
+            layout="single"
+            styleName={controller.style}
+            videoSrc={controller.videoSrc}
+          />
+        </div>
       </div>
     </div>
   );
 }
 
 function AutoCutSubtitleOptions({
+  animationType,
   cutAsShort,
+  setAnimationType,
   setCutAsShort,
   setSkipSubtitles,
   setStyle,
   skipSubtitles,
   style,
 }: {
+  animationType: SubtitleAnimationType;
   cutAsShort: boolean;
+  setAnimationType: React.Dispatch<React.SetStateAction<SubtitleAnimationType>>;
   setCutAsShort: React.Dispatch<React.SetStateAction<boolean>>;
   setSkipSubtitles: React.Dispatch<React.SetStateAction<boolean>>;
   setStyle: React.Dispatch<React.SetStateAction<StyleName>>;
@@ -364,10 +383,21 @@ function AutoCutSubtitleOptions({
       <Select
         value={style}
         onChange={(value) => setStyle(isStyleName(value) ? value : 'HORMOZI')}
-        options={STYLE_OPTIONS.filter((style) => style !== 'CUSTOM').map((style) => ({ label: style, value: style }))}
+        options={STYLE_OPTIONS.map((style) => ({ label: style, value: style }))}
         disabled={skipSubtitles}
         className={skipSubtitles ? 'opacity-40' : ''}
       />
+      <div className="space-y-1">
+        <label className="text-[11px] text-muted-foreground uppercase block">Motion</label>
+        <Select
+          value={animationType}
+          onChange={(value) => setAnimationType(isSubtitleAnimationType(value) ? value : 'default')}
+          options={ANIMATION_SELECT_OPTIONS}
+          disabled={skipSubtitles}
+          className={skipSubtitles ? 'opacity-40' : ''}
+          icon={<Waves className="w-4 h-4 text-secondary/50" />}
+        />
+      </div>
       {skipSubtitles && (
         <div className="flex items-center gap-1.5 text-[11px] font-mono text-red-400/80">
           <Subtitles className="w-3 h-3" />

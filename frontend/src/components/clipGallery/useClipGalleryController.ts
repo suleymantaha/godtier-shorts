@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 
 import { clipsApi } from '../../api/client';
+import { useAuthRuntimeStore } from '../../auth/runtime';
 import { useJobStore } from '../../store/useJobStore';
 import type { Clip } from '../../types';
 
@@ -17,6 +18,7 @@ function isSameClip(left: Clip, right: Clip) {
 }
 
 export function useClipGalleryController() {
+  const canUseProtectedRequests = useAuthRuntimeStore((state) => state.canUseProtectedRequests);
   const [clips, setClips] = useState<Clip[]>([]);
   const [shareClip, setShareClip] = useState<Clip | null>(null);
   const [deleteClip, setDeleteClip] = useState<Clip | null>(null);
@@ -55,6 +57,10 @@ export function useClipGalleryController() {
   }, []);
 
   const fetchClips = useCallback(async () => {
+    if (!canUseProtectedRequests) {
+      return;
+    }
+
     try {
       const data = await clipsApi.list(1, CLIPS_PAGE_SIZE);
       if (cancelledRef.current) {
@@ -81,10 +87,10 @@ export function useClipGalleryController() {
         scheduleRetry();
       }
     }
-  }, [clearRetryTimer, scheduleRetry]);
+  }, [canUseProtectedRequests, clearRetryTimer, scheduleRetry]);
 
-  useClipGalleryPolling(cancelledRef, clearRetryTimer, fetchClips, retryTick);
-  useClipGalleryRefresh(fetchClips, refreshClipsTrigger);
+  useClipGalleryPolling(cancelledRef, canUseProtectedRequests, clearRetryTimer, fetchClips, retryTick);
+  useClipGalleryRefresh(canUseProtectedRequests, fetchClips, refreshClipsTrigger);
 
   useEffect(() => {
     if (projectFilter === ALL_PROJECTS_FILTER) {
@@ -182,12 +188,21 @@ export function useClipGalleryController() {
 
 function useClipGalleryPolling(
   cancelledRef: RefObject<boolean>,
+  canUseProtectedRequests: boolean,
   clearRetryTimer: () => void,
   fetchClips: () => Promise<void>,
   retryTick: number,
 ) {
   useEffect(() => {
     cancelledRef.current = false;
+
+    if (!canUseProtectedRequests) {
+      return () => {
+        cancelledRef.current = true;
+        clearRetryTimer();
+      };
+    }
+
     const initialFetchTimer = window.setTimeout(() => {
       void fetchClips();
     }, 0);
@@ -199,15 +214,16 @@ function useClipGalleryPolling(
       clearInterval(interval);
       clearRetryTimer();
     };
-  }, [cancelledRef, clearRetryTimer, fetchClips, retryTick]);
+  }, [cancelledRef, canUseProtectedRequests, clearRetryTimer, fetchClips, retryTick]);
 }
 
 function useClipGalleryRefresh(
+  canUseProtectedRequests: boolean,
   fetchClips: () => Promise<void>,
   refreshClipsTrigger: number,
 ) {
   useEffect(() => {
-    if (refreshClipsTrigger <= 0) {
+    if (!canUseProtectedRequests || refreshClipsTrigger <= 0) {
       return;
     }
 
@@ -216,5 +232,5 @@ function useClipGalleryRefresh(
     }, 0);
 
     return () => clearTimeout(refreshTimer);
-  }, [fetchClips, refreshClipsTrigger]);
+  }, [canUseProtectedRequests, fetchClips, refreshClipsTrigger]);
 }

@@ -1,5 +1,14 @@
-import { describe, it, expect } from 'vitest';
-import { SUBTITLE_STYLES, SUBTITLE_INLINE_STYLES, STYLE_OPTIONS, type StyleName } from '../../config/subtitleStyles';
+import { describe, expect, it } from 'vitest';
+
+import {
+  STYLE_LABELS,
+  STYLE_OPTIONS,
+  SUBTITLE_INLINE_STYLES,
+  SUBTITLE_STYLES,
+  getSubtitleBoxStyle,
+  resolveSubtitleStyle,
+  type StyleName,
+} from '../../config/subtitleStyles';
 
 describe('subtitleStyles', () => {
   it('has a style entry for every STYLE_OPTIONS member', () => {
@@ -22,7 +31,7 @@ describe('subtitleStyles', () => {
     }
   });
 
-  it('correctly converts ASS colors to CSS hex', () => {
+  it('correctly converts ASS colors to CSS hex via registry output', () => {
     const lower = (s: string) => s.toLowerCase();
     expect(lower(SUBTITLE_INLINE_STYLES.HORMOZI.primaryColor)).toBe('#ffffff');
     expect(lower(SUBTITLE_INLINE_STYLES.HORMOZI.highlightColor)).toBe('#ffff00');
@@ -30,14 +39,42 @@ describe('subtitleStyles', () => {
     expect(lower(SUBTITLE_INLINE_STYLES.MRBEAST.highlightColor)).toBe('#00ff00');
   });
 
-  it('exports STYLE_OPTIONS as a readonly array', () => {
+  it('exports STYLE_OPTIONS without CUSTOM and keeps StyleName aligned', () => {
     expect(STYLE_OPTIONS.length).toBeGreaterThan(0);
     expect(STYLE_OPTIONS).toContain('HORMOZI');
     expect(STYLE_OPTIONS).toContain('MINIMALIST');
-  });
+    expect(STYLE_OPTIONS).not.toContain('CUSTOM');
 
-  it('StyleName type matches STYLE_OPTIONS values', () => {
     const names: StyleName[] = [...STYLE_OPTIONS];
     expect(names.length).toBe(STYLE_OPTIONS.length);
+  });
+
+  it('derives labels and safe area metrics from one source of truth', () => {
+    expect(STYLE_LABELS.HIGHCARE).toBe('Yüksek Kontrast');
+    expect(resolveSubtitleStyle('unknown').resolvedStyle).toBe('HORMOZI');
+    expect(getSubtitleBoxStyle('single').bottom).toBe('14%');
+    expect(getSubtitleBoxStyle('split').top).toBe('45%');
+    expect(getSubtitleBoxStyle('single', 'preview').bottom).toBe('6.5%');
+    expect(getSubtitleBoxStyle('single', 'preview').minHeight).toBe('11%');
+    expect(getSubtitleBoxStyle('split', 'preview').minHeight).toBe('9%');
+  });
+
+  it('exposes preview motion metadata for every selectable style', () => {
+    for (const name of STYLE_OPTIONS) {
+      const resolved = resolveSubtitleStyle(name);
+      expect(resolved.preview.motion.animationDurationMs).toBeGreaterThan(0);
+      expect(resolved.preview.motion.emphasisScale).toBeGreaterThanOrEqual(1);
+      expect(resolved.preview.motion.animationType).toBeTruthy();
+      expect(resolved.preview.screenTheme).toBeTruthy();
+      expect(resolved.preview.bandVariant).toBeTruthy();
+    }
+  });
+
+  it('keeps special preview variants for background-based styles', () => {
+    expect(resolveSubtitleStyle('YOUTUBE_SHORT').preview.motion.animationType).toBe('pop');
+    expect(resolveSubtitleStyle('YOUTUBE_SHORT').preview.bandVariant).toBe('bold_plate');
+    expect(resolveSubtitleStyle('PODCAST').preview.bandVariant).toBe('soft_plate');
+    expect(resolveSubtitleStyle('GLASS_MORPH').preview.bandVariant).toBe('glass_plate');
+    expect(resolveSubtitleStyle('HACKER_TERMINAL').preview.bandVariant).toBe('terminal_plate');
   });
 });

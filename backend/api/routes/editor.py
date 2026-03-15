@@ -16,7 +16,7 @@ import time
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from loguru import logger
 from pydantic import ValidationError
 
@@ -25,7 +25,7 @@ from backend.config import (
     get_project_path, sanitize_project_name,
 )
 from backend.api.websocket import manager, thread_safe_broadcast
-from backend.api.security import AuthContext, require_policy
+from backend.api.security import AuthContext, ensure_project_access, require_policy
 from backend.api.routes.clips import (
     ACTIVE_JOB_STATUSES,
     build_secure_clip_url,
@@ -51,6 +51,7 @@ from backend.models.schemas import (
     ReburnRequest,
     TranscriptSegment,
 )
+from backend.services.subtitle_styles import StyleManager
 from backend.services.transcription import run_transcription
 
 router = APIRouter(prefix="/api", tags=["editor"])
@@ -273,26 +274,31 @@ async def _run_auto_clip_transcript_recovery(
 
 @router.post("/process-batch")
 async def process_batch_clips(
+    http_request: Request,
     request: BatchJobRequest,
-    _: AuthContext = Depends(require_policy("process_batch")),
+    auth: AuthContext = Depends(require_policy("process_batch")),
 ) -> dict:
     """Seçilen aralıkta AI ile toplu klip üretir."""
     if request.project_id:
         try:
-            sanitize_project_name(request.project_id)
+            request.project_id = sanitize_project_name(request.project_id)
         except ValueError as e:
             raise InvalidInputError(str(e)) from e
+        ensure_project_access(http_request, auth, request.project_id)
 
+    manager.assert_subject_can_enqueue(auth.subject)
     job_id = f"batch_{int(time.time())}_{uuid.uuid4().hex[:6]}"
     manager.jobs[job_id] = {
         "job_id": job_id,
         "url": request.project_id or "",
         "style": request.style_name,
+        "animation_type": request.animation_type,
         "status": "queued",
         "progress": 0,
         "last_message": "Toplu üretim kuyruğa alındı...",
         "created_at": time.time(),
         "project_id": request.project_id,
+        "subject": auth.subject,
     }
 
     async def _run() -> None:
@@ -302,7 +308,7 @@ async def process_batch_clips(
             manager.jobs[job_id]["last_message"] = "Toplu üretim başladı..."
             thread_safe_broadcast({"message": "Toplu üretim başladı...", "progress": 1, "status": "processing"}, job_id)
             cb = lambda s: thread_safe_broadcast(s, job_id)
-            orchestrator = GodTierShortsCreator(ui_callback=cb)
+            orchestrator = GodTierShortsCreator(ui_callback=cb, subject=auth.subject)
             try:
                 path = get_project_path(request.project_id, "transcript.json") if request.project_id else VIDEO_METADATA
                 if path.exists():
@@ -320,6 +326,7 @@ async def process_batch_clips(
                     duration_min=120.0,
                     duration_max=180.0,
                     style_name=request.style_name,
+                    animation_type=request.animation_type,
                     project_id=request.project_id,
                     layout=request.layout,
                 )
@@ -353,28 +360,39 @@ def _parse_cut_points(raw: str | None) -> list[float] | None:
 
 @router.post("/manual-cut-upload")
 async def manual_cut_upload(
+    http_request: Request,
     file: UploadFile = File(...),
     start_time: float = Form(...),
     end_time: float = Form(...),
     style_name: str = Form("HORMOZI"),
+    animation_type: str = Form("default"),
     skip_subtitles: bool = Form(False),
     num_clips: int = Form(1),
     cut_points: str | None = Form(None),
     cut_as_short: bool = Form(True),
-    _: AuthContext = Depends(require_policy("manual_cut_upload")),
+    auth: AuthContext = Depends(require_policy("manual_cut_upload")),
 ) -> dict:
     """Video + zaman aralığı ile otomatik manual cut üretir. cut_points veya num_clips>1 ile çoklu klip."""
     try:
         request = ManualAutoCutRequest(start_time=start_time, end_time=end_time)
     except ValidationError as exc:
         raise InvalidInputError("İstek doğrulaması başarısız", details=json.loads(exc.json())) from exc
+    try:
+        style_name = StyleManager.ensure_valid_preset_name(style_name)
+    except ValueError as exc:
+        raise InvalidInputError(str(exc)) from exc
+    try:
+        animation_type = StyleManager.ensure_valid_animation_type(animation_type)
+    except ValueError as exc:
+        raise InvalidInputError(str(exc)) from exc
 
     pts = _parse_cut_points(cut_points)
     use_cut_points = pts is not None and len(pts) >= 2
     num_clips = max(1, min(20, num_clips))
     is_batch = not use_cut_points and num_clips > 1
 
-    project, project_id, _is_cached = prepare_uploaded_project(file)
+    project, project_id, _is_cached = prepare_uploaded_project(file, owner_subject=auth.subject)
+    manager.assert_subject_can_enqueue(auth.subject)
     job_id = f"manualcut_{int(time.time())}_{uuid.uuid4().hex[:6]}"
     clip_name = f"manual_{job_id}.mp4" if not is_batch else None
     output_url = build_secure_clip_url(project_id, clip_name) if clip_name else None
@@ -383,6 +401,7 @@ async def manual_cut_upload(
         "job_id": job_id,
         "url": str(project.master_video),
         "style": style_name,
+        "animation_type": animation_type,
         "status": "queued",
         "progress": 0,
         "last_message": "Video alındı, otomatik kesim kuyruğa alındı...",
@@ -391,6 +410,7 @@ async def manual_cut_upload(
         "clip_name": clip_name,
         "output_url": output_url,
         "num_clips": num_clips,
+        "subject": auth.subject,
     }
 
     async def _run() -> None:
@@ -411,7 +431,7 @@ async def manual_cut_upload(
                     transcript_data = json.load(f)
 
                 cb = lambda s: thread_safe_broadcast(s, job_id)
-                orchestrator = GodTierShortsCreator(ui_callback=cb)
+                orchestrator = GodTierShortsCreator(ui_callback=cb, subject=auth.subject)
                 try:
                     if use_cut_points:
                         assert pts is not None  # use_cut_points implies pts is not None
@@ -419,6 +439,7 @@ async def manual_cut_upload(
                             cut_points=pts,
                             transcript_data=transcript_data,
                             style_name=style_name,
+                            animation_type=animation_type,
                             project_id=project_id,
                             layout=DEFAULT_MANUAL_CUT_LAYOUT,
                             skip_subtitles=skip_subtitles,
@@ -448,6 +469,7 @@ async def manual_cut_upload(
                             duration_min=120.0,
                             duration_max=180.0,
                             style_name=style_name,
+                            animation_type=animation_type,
                             project_id=project_id,
                             layout=DEFAULT_MANUAL_CUT_LAYOUT,
                             skip_subtitles=skip_subtitles,
@@ -474,6 +496,7 @@ async def manual_cut_upload(
                             end_t=request.end_time,
                             transcript_data=None,
                             style_name=style_name,
+                            animation_type=animation_type,
                             project_id=project_id,
                             center_x=None,
                             layout=DEFAULT_MANUAL_CUT_LAYOUT,
@@ -515,8 +538,9 @@ async def manual_cut_upload(
 
 @router.get("/transcript")
 async def get_transcript(
+    request: Request,
     project_id: str | None = None,
-    _: AuthContext = Depends(require_policy("view_transcript")),
+    auth: AuthContext = Depends(require_policy("view_transcript")),
 ) -> dict:
     """Belirli bir projenin transkriptini arayüze gönderir."""
     if not project_id:
@@ -527,9 +551,10 @@ async def get_transcript(
             "last_error": None,
         }
     try:
-        sanitize_project_name(project_id)
+        project_id = sanitize_project_name(project_id)
     except ValueError as e:
         raise InvalidInputError(str(e)) from e
+    ensure_project_access(request, auth, project_id)
 
     path = get_project_path(project_id, "transcript.json")
     state = resolve_project_transcript_state(project_id)
@@ -542,16 +567,18 @@ async def get_transcript(
 
 @router.post("/transcript")
 async def save_transcript(
+    request: Request,
     data: list[TranscriptSegment],
     project_id: str | None = None,
-    _: AuthContext = Depends(require_policy("save_transcript")),
+    auth: AuthContext = Depends(require_policy("save_transcript")),
 ) -> dict:
     """Arayüzden gelen düzenlenmiş transkripti projeye veya varsayılana kaydeder."""
     if project_id:
         try:
-            sanitize_project_name(project_id)
+            project_id = sanitize_project_name(project_id)
         except ValueError as e:
             raise InvalidInputError(str(e)) from e
+        ensure_project_access(request, auth, project_id)
         path = get_project_path(project_id, "transcript.json")
     else:
         path = VIDEO_METADATA
@@ -563,13 +590,15 @@ async def save_transcript(
 
 @router.post("/transcript/recover")
 async def recover_project_transcript(
+    http_request: Request,
     request: ProjectTranscriptRecoveryRequest,
-    _: AuthContext = Depends(require_policy("recover_project_transcript")),
+    auth: AuthContext = Depends(require_policy("recover_project_transcript")),
 ) -> dict:
     try:
-        sanitize_project_name(request.project_id)
+        request.project_id = sanitize_project_name(request.project_id)
     except ValueError as e:
         raise InvalidInputError(str(e)) from e
+    ensure_project_access(http_request, auth, request.project_id)
 
     existing_job = find_project_transcript_job(request.project_id, ACTIVE_JOB_STATUSES)
     if existing_job:
@@ -579,6 +608,7 @@ async def recover_project_transcript(
     if not project.master_video.exists():
         raise InvalidInputError("Proje master videosu bulunamadı.")
 
+    manager.assert_subject_can_enqueue(auth.subject)
     job_id = f"projecttranscript_{int(time.time())}_{uuid.uuid4().hex[:6]}"
     manager.jobs[job_id] = {
         "job_id": job_id,
@@ -589,6 +619,7 @@ async def recover_project_transcript(
         "last_message": "Proje transkript kurtarma kuyruğa alındı...",
         "created_at": time.time(),
         "project_id": request.project_id,
+        "subject": auth.subject,
     }
 
     async def _run() -> None:
@@ -619,15 +650,17 @@ async def recover_project_transcript(
 
 @router.post("/clip-transcript/recover")
 async def recover_clip_transcript(
+    http_request: Request,
     request: ClipTranscriptRecoveryRequest,
-    _: AuthContext = Depends(require_policy("recover_clip_transcript")),
+    auth: AuthContext = Depends(require_policy("recover_clip_transcript")),
 ) -> dict:
     """Recover a clip transcript from project timing metadata or source transcription."""
     if request.project_id:
         try:
-            sanitize_project_name(request.project_id)
+            request.project_id = sanitize_project_name(request.project_id)
         except ValueError as e:
             raise InvalidInputError(str(e)) from e
+        ensure_project_access(http_request, auth, request.project_id, clip_name=request.clip_name)
 
     response = build_clip_transcript_response(request.clip_name, request.project_id)
     effective_project_id = _resolve_effective_recovery_project_id(response, request.project_id)
@@ -645,6 +678,7 @@ async def recover_clip_transcript(
     if selected_strategy is None:
         raise InvalidInputError("Bu klip için kullanılabilir transcript kurtarma stratejisi bulunamadı.")
 
+    manager.assert_subject_can_enqueue(auth.subject)
     job_id = f"{CLIP_RECOVERY_JOB_PREFIX}_{int(time.time())}_{uuid.uuid4().hex[:6]}"
     manager.jobs[job_id] = {
         "job_id": job_id,
@@ -657,6 +691,7 @@ async def recover_clip_transcript(
         "project_id": effective_project_id,
         "clip_name": request.clip_name,
         "recovery_strategy": selected_strategy,
+        "subject": auth.subject,
     }
 
     async def _run() -> None:
@@ -706,26 +741,31 @@ async def recover_clip_transcript(
 
 @router.post("/process-manual")
 async def process_manual_clip(
+    http_request: Request,
     request: ManualJobRequest,
-    _: AuthContext = Depends(require_policy("process_manual")),
+    auth: AuthContext = Depends(require_policy("process_manual")),
 ) -> dict:
     """Kullanıcının elle seçtiği aralığı işler."""
     if request.project_id:
         try:
-            sanitize_project_name(request.project_id)
+            request.project_id = sanitize_project_name(request.project_id)
         except ValueError as e:
             raise InvalidInputError(str(e)) from e
+        ensure_project_access(http_request, auth, request.project_id)
 
+    manager.assert_subject_can_enqueue(auth.subject)
     job_id = f"manual_{int(time.time())}_{uuid.uuid4().hex[:6]}"
     manager.jobs[job_id] = {
         "job_id": job_id,
         "url": request.project_id or "",
         "style": request.style_name,
+        "animation_type": request.animation_type,
         "status": "queued",
         "progress": 0,
         "last_message": "Manuel render kuyruğa alındı...",
         "created_at": time.time(),
         "project_id": request.project_id,
+        "subject": auth.subject,
     }
 
     async def _run() -> None:
@@ -735,13 +775,14 @@ async def process_manual_clip(
             manager.jobs[job_id]["last_message"] = "Manuel render başladı..."
             thread_safe_broadcast({"message": "Manuel render başladı...", "progress": 1, "status": "processing"}, job_id)
             cb = lambda s: thread_safe_broadcast(s, job_id)
-            orchestrator = GodTierShortsCreator(ui_callback=cb)
+            orchestrator = GodTierShortsCreator(ui_callback=cb, subject=auth.subject)
             try:
                 await orchestrator.run_manual_clip_async(
                     start_t=request.start_time,
                     end_t=request.end_time,
                     transcript_data=request.transcript,
                     style_name=request.style_name,
+                    animation_type=request.animation_type,
                     project_id=request.project_id,
                     center_x=request.center_x,
                     layout=request.layout,
@@ -761,26 +802,31 @@ async def process_manual_clip(
 
 @router.post("/reburn")
 async def reburn_clip(
+    http_request: Request,
     request: ReburnRequest,
-    _: AuthContext = Depends(require_policy("reburn")),
+    auth: AuthContext = Depends(require_policy("reburn")),
 ) -> dict:
     """Klibin altyazılarını yeniden basar."""
     if request.project_id:
         try:
-            sanitize_project_name(request.project_id)
+            request.project_id = sanitize_project_name(request.project_id)
         except ValueError as e:
             raise InvalidInputError(str(e)) from e
+        ensure_project_access(http_request, auth, request.project_id, clip_name=request.clip_name)
 
+    manager.assert_subject_can_enqueue(auth.subject)
     job_id = f"reburn_{int(time.time())}_{uuid.uuid4().hex[:6]}"
     manager.jobs[job_id] = {
         "job_id": job_id,
         "url": request.clip_name,
         "style": request.style_name,
+        "animation_type": request.animation_type,
         "status": "queued",
         "progress": 0,
         "last_message": "Altyazı yeniden basım kuyruğa alındı...",
         "created_at": time.time(),
         "project_id": request.project_id,
+        "subject": auth.subject,
     }
 
     async def _run() -> None:
@@ -790,13 +836,14 @@ async def reburn_clip(
             manager.jobs[job_id]["last_message"] = "Altyazı yeniden basım başladı..."
             thread_safe_broadcast({"message": "Altyazı yeniden basım başladı...", "progress": 1, "status": "processing"}, job_id)
             cb = lambda s: thread_safe_broadcast(s, job_id)
-            orchestrator = GodTierShortsCreator(ui_callback=cb)
+            orchestrator = GodTierShortsCreator(ui_callback=cb, subject=auth.subject)
             try:
                 await orchestrator.reburn_subtitles_async(
                     clip_name=request.clip_name,
                     transcript=request.transcript,
                     project_id=request.project_id,
                     style_name=request.style_name,
+                    animation_type=request.animation_type,
                 )
                 finalize_job_success(job_id, "Altyazı yeniden basımı tamamlandı.")
             except (RuntimeError, ValueError, OSError) as exc:

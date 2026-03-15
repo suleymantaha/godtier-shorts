@@ -5,7 +5,7 @@ YouTube URL ile tam otomatik short üretim akışı. CONFIGURE sayfasındaki Job
 ## Akış
 
 ```
-yt-dlp indirme → Ses ayrıştırma → faster-whisper transkripsiyon → LLM viral analiz → Klip üretimi (YOLO + ASS + burn-in)
+yt-dlp indirme → Ses ayrıştırma → faster-whisper transkripsiyon → LLM viral analiz → boundary snap → tracking/crop → ASS → burn-in → kalite metadata
 ```
 
 ## Adımlar
@@ -16,10 +16,11 @@ yt-dlp indirme → Ses ayrıştırma → faster-whisper transkripsiyon → LLM v
 4. **Transkripsiyon**: faster-whisper (large-v3) ile kelime düzeyinde zaman damgaları
 5. **Viral Analiz**: LLM (OpenRouter/Claude veya local) ile viral segmentler seçilir
 6. **Klip Üretimi**: Her segment için:
-   - Timestamp kaydırma (`_shift_timestamps`)
+   - Transcript kalite metrikleri ve `word_coverage_ratio`
+   - Boundary snapping (kaliteye göre açık / dar / kapalı)
    - ASS altyazı üretimi
-   - YOLO + SteadyCam crop (9:16)
-   - Burn-in (FFmpeg CUDA)
+   - YOLO tracking + crop + A/V doğrulama
+   - Burn-in ve `render_quality_score`
 
 ## Tetikleyici
 
@@ -43,7 +44,16 @@ yt-dlp indirme → Ses ayrıştırma → faster-whisper transkripsiyon → LLM v
 
 - `workspace/projects/yt_{video_id}/shorts/short_{n}_{hook_slug}.mp4`
 - Public erişim: `/api/projects/{project_id}/shorts/{clip_name}`
-- Her klip için `.json` metadata (transcript, viral_metadata, render_metadata)
+- Her klip için `.json` metadata:
+  - `transcript`
+  - `viral_metadata`
+  - `render_metadata.tracking_quality`
+  - `render_metadata.transcript_quality`
+  - `render_metadata.audio_validation`
+  - `render_metadata.subtitle_layout_quality`
+  - `render_metadata.debug_timing`
+  - `render_metadata.render_quality_score`
+  - `render_metadata.debug_artifacts` (`DEBUG_RENDER_ARTIFACTS=1` ise)
 
 ## İlgili
 

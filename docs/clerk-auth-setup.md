@@ -62,6 +62,8 @@ Backend policy map’i `backend/api/security.py` içindedir. Özet:
 CLERK_ISSUER_URL=https://YOUR-INSTANCE.clerk.accounts.dev
 CLERK_AUDIENCE=godtier-shorts-api
 VITE_CLERK_JWT_TEMPLATE=godtier-backend
+CLERK_JWKS_CACHE_TTL_SECONDS=3600
+CLERK_JWKS_TIMEOUT_SECONDS=5
 ```
 
 Opsiyonel static fallback (automation/test için):
@@ -75,6 +77,30 @@ API_BEARER_TOKENS=<VERY_STRONG_RANDOM_TOKEN>:admin,editor
 - Placeholder bırakma (`YOUR_...` gibi).
 - Aynı key’i birden fazla kez yazma (son yazılan geçerli olur, debug zorlaşır).
 - Gerçek secret/token’ları asla public paylaşma; sızdıysa hemen rotate et.
+
+Offline ve degraded auth davranışı için opsiyonel frontend ayarları:
+
+```dotenv
+# local development icin raw JWT cache acik olabilir
+VITE_ENABLE_OFFLINE_TOKEN_CACHE=true
+
+# production icin false kalmasi daha guvenlidir
+# VITE_ENABLE_OFFLINE_TOKEN_CACHE=false
+
+VITE_AUTH_BOOTSTRAP_TIMEOUT_MS=6000
+VITE_API_REQUEST_TIMEOUT_MS=15000
+VITE_API_RETRY_COUNT=1
+VITE_AUTH_TOKEN_EXPIRY_SKEW_MS=60000
+VITE_OFFLINE_AUTH_SNAPSHOT_TTL_MS=43200000
+```
+
+Not:
+
+- `VITE_ENABLE_OFFLINE_TOKEN_CACHE` local development icin pratik bir fallback'tir.
+- Production'da varsayilan yaklasim token'i localStorage'a yazmamak ve sadece son dogrulanmis auth snapshot'i ile shell fallback acmaktir.
+- Gercek offline API erisimi icin token'in suresi dolmamis olmali ve backend JWKS cache'i onceden dolmus olmalidir.
+- Frontend korumali istekleri token `exp - 60s` penceresine girdiginde sessizce yenilemeyi dener.
+- Sessiz yenileme basarisiz olursa shell acik kalir, ancak korumali HTTP/WebSocket trafigi pause edilir.
 
 ## 5) Uygulamayı Başlatma
 
@@ -128,7 +154,14 @@ Token yoksa/yanlışsa `/ws/progress` reject olur (beklenen davranış).
 
 ## 7.1 API çağrıları
 
-Frontend `client.ts` her istekten önce güncel Clerk token alır ve `Authorization: Bearer ...` ekler.
+Frontend `client.ts` her istekten once gecerli backend JWT'yi hazirlar ve sonra `Authorization: Bearer ...` header'ini uretir.
+
+Normal akış:
+
+1. Gecerli token varsa ayni token kullanilir.
+2. Token bitmeye 60 saniye veya daha az kaldiysa Clerk'ten sessiz refresh yapilir.
+3. API `401 token_expired` dondururse token bir kez zorla yenilenir ve istek bir kez replay edilir.
+4. Refresh/replay toparlanamazsa kullanici signed out yapılmaz; korumali trafik pause edilir ve banner gosterilir.
 
 ## 7.2 Video kaynakları (kritik nokta)
 
@@ -176,6 +209,28 @@ Sebep:
 
 - Browser’dan token payload kontrol et (`aud`, `roles`).
 
+## Hata: `401 token_expired`
+
+Sebep:
+
+- Onbellekteki ya da aktif Clerk token'inin suresi doldu.
+
+Çözüm:
+
+- Kullanıcıyı yeniden giris akısına yonlendir.
+- JWT template lifetime ayarini ihtiyaca gore gozden gecir.
+
+## Hata: `503 auth_provider_unavailable`
+
+Sebep:
+
+- Clerk JWKS endpoint'i erişilemiyor ve backend tarafinda kullanilabilir cache yok.
+
+Çözüm:
+
+- Internet baglantisini ve Clerk durumunu kontrol et.
+- `CLERK_JWKS_CACHE_TTL_SECONDS` ile cache penceresini local/prod ihtiyacina gore ayarla.
+
 ## Hata: `Uncaught NotSupportedError: no supported sources`
 
 Sebep:
@@ -193,6 +248,7 @@ Sebep:
 - `.env` dosyası repo’ya commit edilmiyor.
 - `CLERK_AUDIENCE` ve template claim `aud` birebir eşleşiyor.
 - `roles` claim’i tüm tokenlarda mevcut.
+- Offline fallback kullaniliyorsa frontend timeout/retry env'leri dogrulandi.
 - CI test/lint/build yeşil.
 
 ## 10) Hızlı Özet
@@ -203,4 +259,3 @@ Sebep:
 4. Uygulamayı restart et
 5. `curl` + browser console ile doğrula
 6. Korumalı video için blob akışını kullan
-

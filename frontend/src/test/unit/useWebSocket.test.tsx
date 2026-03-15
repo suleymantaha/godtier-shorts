@@ -3,6 +3,11 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { useWebSocket } from '../../hooks/useWebSocket';
 
+const authRuntimeState = {
+  backendAuthStatus: 'fresh',
+  canUseProtectedRequests: true,
+};
+
 const storeMock = {
   updateJobProgress: vi.fn(),
   fetchJobs: vi.fn(),
@@ -13,6 +18,13 @@ const getFreshTokenMock = vi.fn().mockResolvedValue(null);
 
 vi.mock('../../store/useJobStore', () => ({
   useJobStore: () => storeMock,
+}));
+
+vi.mock('../../auth/runtime', () => ({
+  useAuthRuntimeStore: Object.assign(
+    (selector: (state: typeof authRuntimeState) => unknown) => selector(authRuntimeState),
+    { getState: () => authRuntimeState },
+  ),
 }));
 
 vi.mock('../../api/client', () => ({
@@ -42,6 +54,8 @@ describe('useWebSocket', () => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     FakeWebSocket.instances = [];
+    authRuntimeState.backendAuthStatus = 'fresh';
+    authRuntimeState.canUseProtectedRequests = true;
     getFreshTokenMock.mockResolvedValue(null);
     vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
   });
@@ -102,5 +116,33 @@ describe('useWebSocket', () => {
 
     expect(storeMock.setWsStatus).toHaveBeenCalledWith('disconnected');
     expect(FakeWebSocket.instances).toHaveLength(0);
+  });
+
+  it('does not connect while protected requests are paused', async () => {
+    authRuntimeState.backendAuthStatus = 'paused';
+    authRuntimeState.canUseProtectedRequests = false;
+
+    render(<TestComponent />);
+    await act(async () => {});
+
+    expect(storeMock.setWsStatus).toHaveBeenCalledWith('disconnected');
+    expect(getFreshTokenMock).not.toHaveBeenCalled();
+    expect(FakeWebSocket.instances).toHaveLength(0);
+  });
+
+  it('cancels pending reconnects when auth becomes paused', async () => {
+    const view = render(<TestComponent />);
+    await act(async () => {});
+    const ws = FakeWebSocket.instances[0];
+
+    act(() => ws.onclose?.());
+
+    authRuntimeState.backendAuthStatus = 'paused';
+    authRuntimeState.canUseProtectedRequests = false;
+    view.rerender(<TestComponent />);
+
+    act(() => vi.advanceTimersByTime(3000));
+
+    expect(FakeWebSocket.instances).toHaveLength(1);
   });
 });

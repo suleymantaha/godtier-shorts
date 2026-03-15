@@ -1,4 +1,5 @@
 import type { FC } from 'react';
+import type { AppErrorCode } from '../../api/errors';
 import type { WsStatus } from '../../types';
 
 const STATUS_CONFIG: Record<WsStatus, { dot: string; label: string }> = {
@@ -9,11 +10,48 @@ const STATUS_CONFIG: Record<WsStatus, { dot: string; label: string }> = {
 };
 
 interface ConnectionChipProps {
+  backendAuthStatus?: 'fresh' | 'paused' | 'refreshing';
+  isOnline?: boolean;
+  pauseReason?: AppErrorCode | null;
   status: WsStatus;
 }
 
-export const ConnectionChip: FC<ConnectionChipProps> = ({ status }) => {
-  const { dot, label } = STATUS_CONFIG[status];
+function resolveStatusDisplay({
+  backendAuthStatus = 'fresh',
+  isOnline = true,
+  pauseReason = null,
+  status,
+}: ConnectionChipProps) {
+  if (!isOnline) {
+    return {
+      dot: 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]',
+      label: 'NETWORK:OFFLINE',
+    };
+  }
+
+  if (backendAuthStatus === 'refreshing') {
+    return {
+      dot: 'bg-yellow-500 animate-pulse shadow-[0_0_8px_rgba(234,179,8,0.4)]',
+      label: 'AUTH:REFRESHING',
+    };
+  }
+
+  if (backendAuthStatus === 'paused') {
+    const label = pauseReason === 'token_expired'
+      ? 'AUTH:EXPIRED'
+      : 'AUTH:PAUSED';
+
+    return {
+      dot: 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]',
+      label,
+    };
+  }
+
+  return STATUS_CONFIG[status];
+}
+
+export const ConnectionChip: FC<ConnectionChipProps> = (props) => {
+  const { dot, label } = resolveStatusDisplay(props);
 
   return (
     <div

@@ -1,9 +1,10 @@
-import { AlertCircle, Cpu, Play, Settings, Sparkles, Subtitles, Zap } from 'lucide-react';
-import type { Dispatch, SetStateAction } from 'react';
+import { AlertCircle, Cpu, Play, Settings, Sparkles, Subtitles, Waves, Zap } from 'lucide-react';
+import type { Dispatch, ReactNode, SetStateAction } from 'react';
 
-import { isStyleName, type StyleName } from '../../config/subtitleStyles';
+import { isStyleName, isSubtitleAnimationType, type StyleName, type SubtitleAnimationType } from '../../config/subtitleStyles';
 import {
   ENGINE_SELECT_OPTIONS,
+  MOTION_SELECT_OPTIONS,
   RESOLUTION_OPTIONS,
   STYLE_SELECT_OPTIONS,
   clampClipCount,
@@ -21,23 +22,22 @@ interface SourceSectionProps {
   urlId: string;
 }
 
-interface StyleAndEngineSectionProps {
+interface ControlGridSectionProps {
+  animationId: string;
+  animationType: SubtitleAnimationType;
   engine: string;
   engineId: string;
   isSubmitting: boolean;
+  numClips: number;
+  numClipsId: string;
+  onAnimationChange: Dispatch<SetStateAction<SubtitleAnimationType>>;
   onEngineChange: Dispatch<SetStateAction<string>>;
+  onNumClipsChange: Dispatch<SetStateAction<number>>;
   onSkipSubtitlesChange: Dispatch<SetStateAction<boolean>>;
   onStyleChange: Dispatch<SetStateAction<StyleName>>;
   skipSubtitles: boolean;
   style: StyleName;
   styleId: string;
-}
-
-interface ClipCountFieldProps {
-  isSubmitting: boolean;
-  numClips: number;
-  numClipsId: string;
-  onNumClipsChange: Dispatch<SetStateAction<number>>;
 }
 
 interface AutoPilotSectionProps {
@@ -62,7 +62,7 @@ export function JobFormSourceSection({
   urlId,
 }: SourceSectionProps) {
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
       <div className="space-y-2 md:col-span-3">
         <label htmlFor={urlId} className="text-sm font-medium text-primary uppercase tracking-widest ml-1 holo-text">
           SOURCE FEED URL
@@ -98,93 +98,146 @@ export function JobFormSourceSection({
   );
 }
 
-export function JobFormStyleAndEngineSection({
+export function JobFormControlGridSection({
+  animationId,
+  animationType,
   engine,
   engineId,
   isSubmitting,
+  numClips,
+  numClipsId,
+  onAnimationChange,
   onEngineChange,
+  onNumClipsChange,
   onSkipSubtitlesChange,
   onStyleChange,
   skipSubtitles,
   style,
   styleId,
-}: StyleAndEngineSectionProps) {
+}: ControlGridSectionProps) {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-      <div className="space-y-2">
-        <div className="flex min-h-6 items-center justify-between">
-          <label htmlFor={styleId} className="text-sm font-medium text-secondary uppercase tracking-widest ml-1 holo-text">
-            VISUAL STYLE
-          </label>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={skipSubtitles}
-            aria-label="Altyazi islemeyi atla"
-            onClick={() => onSkipSubtitlesChange((previous) => !previous)}
-            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${skipSubtitles ? 'bg-red-500/30 border-red-500/50' : 'bg-primary/20 border-primary/40'}`}
-          >
-            <span
-              className={`pointer-events-none inline-block h-4 w-4 rounded-full shadow-sm transition-transform ${skipSubtitles ? 'translate-x-5 bg-red-400' : 'translate-x-0.5 bg-primary'}`}
-            />
-          </button>
-        </div>
-        <Select
-          id={styleId}
-          value={style}
-          onChange={(value) => onStyleChange(isStyleName(value) ? value : 'TIKTOK')}
-          options={STYLE_SELECT_OPTIONS}
-          disabled={isSubmitting || skipSubtitles}
-          icon={<Sparkles className="w-4 h-4 text-secondary/50" />}
-          className={skipSubtitles ? 'opacity-40' : ''}
-        />
-        {skipSubtitles && (
+    <div
+      data-testid="job-form-control-grid"
+      className="grid grid-cols-1 gap-3 lg:grid-cols-2"
+    >
+      <JobFormControlCard
+        accentClassName="border-secondary/20"
+        header={(
+          <>
+            <label htmlFor={styleId} className="ml-1 block text-sm font-medium leading-tight text-secondary uppercase tracking-widest holo-text">
+              VISUAL STYLE
+            </label>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={skipSubtitles}
+              aria-label="Altyazi islemeyi atla"
+              onClick={() => onSkipSubtitlesChange((previous) => !previous)}
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${skipSubtitles ? 'bg-red-500/30 border-red-500/50' : 'bg-primary/20 border-primary/40'}`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-4 w-4 rounded-full shadow-sm transition-transform ${skipSubtitles ? 'translate-x-5 bg-red-400' : 'translate-x-0.5 bg-primary'}`}
+              />
+            </button>
+          </>
+        )}
+        control={(
+          <Select
+            id={styleId}
+            value={style}
+            onChange={(value) => onStyleChange(isStyleName(value) ? value : 'TIKTOK')}
+            options={STYLE_SELECT_OPTIONS}
+            disabled={isSubmitting || skipSubtitles}
+            icon={<Sparkles className="w-4 h-4 text-secondary/50" />}
+            className={skipSubtitles ? 'opacity-40' : ''}
+          />
+        )}
+        footer={skipSubtitles ? (
           <div className="flex items-center gap-1.5 text-[11px] font-mono text-red-400/80">
             <Subtitles className="w-3 h-3" aria-hidden="true" />
             Altyazi devre disi
           </div>
+        ) : null}
+      />
+      <JobFormControlCard
+        accentClassName="border-secondary/20"
+        header={(
+          <label htmlFor={animationId} className="ml-1 block text-sm font-medium leading-tight text-secondary uppercase tracking-widest holo-text">
+            MOTION STYLE
+          </label>
         )}
-      </div>
-      <div className="space-y-2">
-        <div className="flex min-h-6 items-center">
-          <label htmlFor={engineId} className="text-sm font-medium text-accent uppercase tracking-widest ml-1 holo-text">
+        control={(
+          <Select
+            id={animationId}
+            value={animationType}
+            onChange={(value) => onAnimationChange(isSubtitleAnimationType(value) ? value : 'default')}
+            options={MOTION_SELECT_OPTIONS}
+            disabled={isSubmitting || skipSubtitles}
+            icon={<Waves className="w-4 h-4 text-secondary/50" />}
+            className={skipSubtitles ? 'opacity-40' : ''}
+          />
+        )}
+      />
+      <JobFormControlCard
+        accentClassName="border-accent/20"
+        header={(
+          <label htmlFor={engineId} className="ml-1 block max-w-full text-sm font-medium leading-tight text-accent uppercase tracking-[0.18em] holo-text">
             AI CORE ENGINE
           </label>
-        </div>
-        <Select
-          id={engineId}
-          value={engine}
-          onChange={onEngineChange}
-          options={ENGINE_SELECT_OPTIONS}
-          disabled={isSubmitting}
-          icon={<Cpu className="w-4 h-4 text-accent/50" />}
-        />
-      </div>
+        )}
+        control={(
+          <Select
+            id={engineId}
+            value={engine}
+            onChange={onEngineChange}
+            options={ENGINE_SELECT_OPTIONS}
+            disabled={isSubmitting}
+            icon={<Cpu className="w-4 h-4 text-accent/50" />}
+          />
+        )}
+      />
+      <JobFormControlCard
+        accentClassName="border-accent/20"
+        header={(
+          <label htmlFor={numClipsId} className="ml-1 block max-w-full text-sm font-medium leading-tight text-accent uppercase tracking-[0.16em]">
+            TARGET CLONE COUNT
+          </label>
+        )}
+        control={(
+          <input
+            id={numClipsId}
+            type="number"
+            min={1}
+            max={20}
+            value={numClips}
+            onChange={(event) => onNumClipsChange(clampClipCount(Number(event.target.value) || 1))}
+            className="input-field w-full"
+            disabled={isSubmitting}
+          />
+        )}
+      />
     </div>
   );
 }
 
-export function JobFormClipCountField({
-  isSubmitting,
-  numClips,
-  numClipsId,
-  onNumClipsChange,
-}: ClipCountFieldProps) {
+function JobFormControlCard({
+  accentClassName,
+  control,
+  footer,
+  header,
+}: {
+  accentClassName: string;
+  control: ReactNode;
+  footer?: ReactNode;
+  header: ReactNode;
+}) {
   return (
-    <div className="space-y-2">
-      <label htmlFor={numClipsId} className="text-sm font-medium text-accent uppercase tracking-[0.2em] ml-1">
-        TARGET CLONE COUNT
-      </label>
-      <input
-        id={numClipsId}
-        type="number"
-        min={1}
-        max={20}
-        value={numClips}
-        onChange={(event) => onNumClipsChange(clampClipCount(Number(event.target.value) || 1))}
-        className="input-field w-full"
-        disabled={isSubmitting}
-      />
+    <div className={`rounded-2xl border bg-foreground/5 p-3 h-full ${accentClassName}`}>
+      <div className="grid h-full grid-rows-[minmax(1.75rem,auto)_3.25rem_1rem] gap-2.5">
+        <div className="flex min-h-8 items-start justify-between gap-3">{header}</div>
+        <div className="min-w-0">{control}</div>
+        <div className="flex items-center">{footer ? footer : <span aria-hidden="true" className="invisible text-[11px]">placeholder</span>}</div>
+      </div>
     </div>
   );
 }
@@ -201,7 +254,7 @@ export function JobFormAutoPilotSection({
   onDurationMinChange,
 }: AutoPilotSectionProps) {
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       <div className="flex items-center justify-between">
         <label className="text-sm font-medium text-accent/80 uppercase tracking-widest ml-1">
           AUTO PILOT (120-180s)
