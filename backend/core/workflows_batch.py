@@ -37,7 +37,7 @@ class BatchClipWorkflow:
         style_name: str = "HORMOZI",
         animation_type: str = "default",
         project_id: Optional[str] = None,
-        layout: str = "single",
+        layout: str = "auto",
         skip_subtitles: bool = False,
         cut_as_short: bool = True,
     ) -> list[str]:
@@ -76,6 +76,10 @@ class BatchClipWorkflow:
             return []
 
         segments = viral_results["segments"]
+        if not segments:
+            logger.error("❌ AI bu aralıkta süre kontratına uygun segment bulamadı!")
+            self.ctx._update_status("HATA: İstenen süre aralığında uygun segment bulunamadı.", -1)
+            return []
         total = len(segments)
         self.ctx._update_status(f"AI {total} adet viral an buldu, kurgu başlıyor...", 30)
         results = await render_batch_segments(
@@ -88,6 +92,8 @@ class BatchClipWorkflow:
             layout=layout,
             skip_subtitles=skip_subtitles,
             cut_as_short=cut_as_short,
+            duration_min=duration_min,
+            duration_max=duration_max,
         )
 
         self.ctx._update_status("TÜM TOPLU ÜRETİM TAMAMLANDI!", 100)

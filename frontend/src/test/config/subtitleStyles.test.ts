@@ -53,10 +53,13 @@ describe('subtitleStyles', () => {
     expect(STYLE_LABELS.HIGHCARE).toBe('Yüksek Kontrast');
     expect(resolveSubtitleStyle('unknown').resolvedStyle).toBe('HORMOZI');
     expect(getSubtitleBoxStyle('single').bottom).toBe('14%');
+    expect(getSubtitleBoxStyle('single', 'overlay', 'lower_third_safe').bottom).toBe('22%');
     expect(getSubtitleBoxStyle('split').top).toBe('45%');
+    expect(getSubtitleBoxStyle('split').minHeight).toBe('10.5%');
     expect(getSubtitleBoxStyle('single', 'preview').bottom).toBe('6.5%');
+    expect(getSubtitleBoxStyle('single', 'preview', 'lower_third_safe').bottom).toBe('10.5%');
     expect(getSubtitleBoxStyle('single', 'preview').minHeight).toBe('11%');
-    expect(getSubtitleBoxStyle('split', 'preview').minHeight).toBe('9%');
+    expect(getSubtitleBoxStyle('split', 'preview').minHeight).toBe('9.5%');
   });
 
   it('exposes preview motion metadata for every selectable style', () => {

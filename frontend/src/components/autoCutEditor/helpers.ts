@@ -1,4 +1,4 @@
-import type { StyleName, SubtitleAnimationType } from '../../config/subtitleStyles';
+import type { RequestedSubtitleLayout, StyleName, SubtitleAnimationType } from '../../config/subtitleStyles';
 import type { Job } from '../../types';
 
 const TERMINAL_JOB_STATUSES = new Set<Job['status']>(['completed', 'cancelled', 'error']);
@@ -23,6 +23,7 @@ export interface BuildAutoCutPayloadInput {
   cutAsShort: boolean;
   duration: number;
   endTime: number;
+  layout: RequestedSubtitleLayout;
   markers: number[];
   numClips: number;
   skipSubtitles: boolean;
@@ -68,6 +69,7 @@ export function buildAutoCutUploadPayload({
   cutAsShort,
   duration,
   endTime,
+  layout,
   markers,
   numClips,
   skipSubtitles,
@@ -83,6 +85,7 @@ export function buildAutoCutUploadPayload({
     cut_as_short: cutAsShort,
     cut_points: cutPoints,
     end_time: useFullVideoForAi ? duration : endTime,
+    layout,
     num_clips: cutPoints ? cutPoints.length - 1 : numClips,
     skip_subtitles: skipSubtitles,
     start_time: useFullVideoForAi ? 0 : startTime,

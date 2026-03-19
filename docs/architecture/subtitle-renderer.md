@@ -43,15 +43,18 @@ Frontend preview parity için aynı zamanlama mantığı `frontend/src/utils/sub
 ## Burn-in
 
 - FFmpeg `-vf "ass=..."` filter
-- CUDA desteği (varsa hwupload_cuda, scale_cuda)
-- Girdi video üzerine ASS overlay
+- Libass overlay CPU tarafında çalışır; mevcut yol tam GPU decode/render pipeline değildir
+- Video encode için önce `h264_nvenc` denenir, başarısızsa `libx264` CPU fallback kullanılır
+- `REQUIRE_NVENC_FOR_BURN=1` ise NVENC zorunlu hale gelir ve fallback yerine hata üretilir
+- NVENC fallback durumunda `last_render_report` içine encoder, stderr tail ve input stream forensic alanları yazılır
 
 ## Overflow ve Güvenlik
 
-- Render sırasında satır genişliği ve safe-area ihlali ölçülür.
+- Render sırasında satır genişliği, safe-area ihlali ve lower-third güvenli alan sinyali ölçülür.
 - Gerekirse önce daha konservatif chunking denenir.
+- Single layout için opening probe alt bant/lower-third grafiği algılarsa `lower_third_safe` profili seçilir ve altyazı yukarı taşınır.
 - v2.1'de otomatik style swap yapılmaz; çözülemeyen taşmalar `partial` degrade olarak raporlanır.
-- Son rapor `last_render_report` içinde `subtitle_overflow_detected`, `max_rendered_line_width_ratio`, `safe_area_violation_count`, `chunk_dump` gibi alanlar üretir.
+- Son rapor `last_render_report` içinde `subtitle_overflow_detected`, `max_rendered_line_width_ratio`, `safe_area_violation_count`, `resolved_safe_area_profile`, `lower_third_collision_detected`, `chunk_dump` gibi alanlar üretir.
 
 ## Kullanım Yerleri
 

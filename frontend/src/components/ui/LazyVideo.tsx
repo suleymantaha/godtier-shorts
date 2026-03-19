@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect, useCallback, type FC, type RefObject } from 'react';
 
-import { useResolvedMediaSource } from './protectedMedia';
+import type { AppError } from '../../api/errors';
+import { useResolvedMediaState } from './protectedMedia';
 
 interface LazyVideoProps {
   src: string;
@@ -14,15 +15,16 @@ export const LazyVideo: FC<LazyVideoProps> = ({ src, poster, className, muted = 
   const wrapperRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const visible = useLazyVideoVisibility(wrapperRef);
-  const resolvedSrc = useResolvedMediaSource(visible ? src : undefined) ?? null;
+  const { error, resolvedSrc } = useResolvedMediaState(visible ? src : undefined);
+  const videoSrc = resolvedSrc ?? null;
 
   const handleMouseEnter = useCallback(() => {
-    if (!videoRef.current || !resolvedSrc) return;
+    if (!videoRef.current || !videoSrc) return;
     const playPromise = videoRef.current.play();
     if (playPromise instanceof Promise) {
       void playPromise.catch(() => undefined);
     }
-  }, [resolvedSrc]);
+  }, [videoSrc]);
 
   const handleMouseLeave = useCallback(() => {
     if (videoRef.current) {
@@ -34,18 +36,21 @@ export const LazyVideo: FC<LazyVideoProps> = ({ src, poster, className, muted = 
   return (
     <div ref={wrapperRef} className={className}>
       {visible ? (
-        <video
-          ref={videoRef}
-          data-testid="lazy-video"
-          src={resolvedSrc ?? undefined}
-          poster={poster}
-          className="w-full h-full object-cover"
-          preload="metadata"
-          onMouseEnter={handleMouseEnter}
-          onMouseLeave={handleMouseLeave}
-          muted={muted}
-          loop={loop}
-        />
+        <div className="relative h-full w-full">
+          <video
+            ref={videoRef}
+            data-testid="lazy-video"
+            src={videoSrc ?? undefined}
+            poster={poster}
+            className="w-full h-full object-cover"
+            preload="metadata"
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+            muted={muted}
+            loop={loop}
+          />
+          {error ? <VideoLoadError error={error} /> : null}
+        </div>
       ) : (
         <LazyVideoFallback poster={poster} />
       )}
@@ -82,4 +87,31 @@ function LazyVideoFallback({ poster }: { poster?: string }) {
   }
 
   return <div className="w-full h-full bg-black/40" />;
+}
+
+function VideoLoadError({ error }: { error: AppError }) {
+  return (
+    <div
+      role="alert"
+      className="absolute inset-x-0 bottom-0 border-t border-red-500/20 bg-black/85 px-3 py-2 text-[11px] font-mono uppercase tracking-wider text-red-100"
+    >
+      {resolveVideoErrorMessage(error)}
+    </div>
+  );
+}
+
+function resolveVideoErrorMessage(error: AppError): string {
+  if (error.code === 'unauthorized') {
+    return 'preview auth required';
+  }
+
+  if (error.code === 'forbidden') {
+    return 'preview access denied';
+  }
+
+  if (error.status === 404) {
+    return 'preview source missing';
+  }
+
+  return 'preview unavailable';
 }

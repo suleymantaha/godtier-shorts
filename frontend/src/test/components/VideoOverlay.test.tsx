@@ -59,7 +59,34 @@ describe('VideoOverlay', () => {
 
   it('uses split gutter safe area when layout is split', () => {
     render(<VideoOverlay {...baseProps} layout="split" />);
-    const subtitle = screen.getByText('Hello').parentElement?.parentElement;
+    const subtitle = screen.getByText('Hello').parentElement?.parentElement?.parentElement;
     expect(subtitle).toHaveStyle({ top: '45%' });
+  });
+
+  it('renders split subtitles as two lines when the chunk is too wide', () => {
+    render(
+      <VideoOverlay
+        {...baseProps}
+        layout="split"
+        transcript={[{
+          text: 'mekanlarımızda, makamlarımızda',
+          start: 1,
+          end: 3,
+          words: [
+            { word: 'mekanlarımızda,', start: 1, end: 1.9 },
+            { word: 'makamlarımızda', start: 1.95, end: 2.9 },
+          ],
+        }]}
+      />,
+    );
+
+    expect(screen.getByTestId('live-subtitle-line-0')).toBeInTheDocument();
+    expect(screen.getByTestId('live-subtitle-line-1')).toBeInTheDocument();
+  });
+
+  it('uses lower-third safe area when requested', () => {
+    render(<VideoOverlay {...baseProps} safeAreaProfile="lower_third_safe" />);
+    const subtitle = screen.getByText('Hello').parentElement?.parentElement?.parentElement;
+    expect(subtitle).toHaveStyle({ bottom: '22%' });
   });
 });

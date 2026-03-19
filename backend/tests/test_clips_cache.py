@@ -157,6 +157,47 @@ def test_clips_index_hides_internal_raw_and_reburn_assets(monkeypatch, tmp_path:
     assert [clip["name"] for clip in response["clips"]] == ["final.mp4"]
 
 
+def test_clips_index_hides_clips_without_ready_metadata(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("SUBJECT_NAMESPACE_SECRET", "clips-cache-test-secret")
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(clips, "PROJECTS_DIR", tmp_path)
+    project_id = _owned_project_id("token-a", "a")
+    _create_clip(tmp_path, project_id, "ready.mp4", title="Ready")
+    _create_clip(tmp_path, project_id, "missing-meta.mp4")
+
+    shorts_dir = config.get_project_path(project_id, "shorts")
+    (shorts_dir / "broken.mp4").write_bytes(b"fake-mp4")
+    (shorts_dir / "broken.json").write_text("{not-json", encoding="utf-8")
+
+    clips.invalidate_clips_cache("test_setup")
+    response = _list_clips(_static_subject("token-a"))
+
+    assert response["total"] == 1
+    assert [clip["name"] for clip in response["clips"]] == ["ready.mp4"]
+
+
+def test_clips_index_excludes_legacy_flat_project_folders(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("SUBJECT_NAMESPACE_SECRET", "clips-cache-test-secret")
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(clips, "PROJECTS_DIR", tmp_path)
+
+    strict_project = _owned_project_id("token-a", "strict")
+    _create_clip(tmp_path, strict_project, "strict.mp4", title="Strict")
+
+    legacy_flat_project = tmp_path / "legacy_flat_project"
+    legacy_shorts = legacy_flat_project / "shorts"
+    legacy_shorts.mkdir(parents=True, exist_ok=True)
+    (legacy_shorts / "legacy.mp4").write_bytes(b"legacy-mp4")
+    (legacy_shorts / "legacy.json").write_text(json.dumps({"viral_metadata": {"ui_title": "Legacy"}}), encoding="utf-8")
+
+    clips.invalidate_clips_cache("test_setup")
+    response = _list_clips(_static_subject("token-a"))
+
+    assert response["total"] == 1
+    assert [clip["project"] for clip in response["clips"]] == [strict_project]
+    assert [clip["name"] for clip in response["clips"]] == ["strict.mp4"]
+
+
 def test_clips_page_cache_is_partitioned_by_subject(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("SUBJECT_NAMESPACE_SECRET", "clips-cache-test-secret")
     monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path)

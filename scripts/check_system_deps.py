@@ -21,9 +21,17 @@ def main() -> None:
         action="store_true",
         help="GPU kontrollerini zorunlu hale getir",
     )
+    parser.add_argument(
+        "--require-nvenc",
+        action="store_true",
+        help="ffmpeg h264_nvenc smoke testini zorunlu hale getir",
+    )
     args = parser.parse_args()
 
-    results = run_system_dependency_checks(require_gpu=args.require_gpu)
+    results = run_system_dependency_checks(
+        require_gpu=args.require_gpu or args.require_nvenc,
+        require_nvenc=args.require_nvenc,
+    )
     failures = summarize_failures(results)
 
     for result in results:

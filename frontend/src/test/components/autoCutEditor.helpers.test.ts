@@ -66,6 +66,7 @@ describe('autoCutEditor payload helpers', () => {
       cutAsShort: true,
       duration: 180,
       endTime: 42,
+      layout: 'split',
       markers: [30, 12, 70],
       numClips: 3,
       skipSubtitles: false,
@@ -75,6 +76,7 @@ describe('autoCutEditor payload helpers', () => {
 
     expect(payload.cut_points).toEqual([5, 12, 30, 42]);
     expect(payload.animation_type).toBe('default');
+    expect(payload.layout).toBe('split');
     expect(payload.num_clips).toBe(3);
     expect(payload.start_time).toBe(5);
     expect(payload.end_time).toBe(42);
@@ -86,6 +88,7 @@ describe('autoCutEditor payload helpers', () => {
       cutAsShort: true,
       duration: 95,
       endTime: 35,
+      layout: 'auto',
       markers: [],
       numClips: 4,
       skipSubtitles: false,
@@ -95,6 +98,7 @@ describe('autoCutEditor payload helpers', () => {
 
     expect(payload.cut_points).toBeUndefined();
     expect(payload.animation_type).toBe('default');
+    expect(payload.layout).toBe('auto');
     expect(payload.num_clips).toBe(4);
     expect(payload.start_time).toBe(0);
     expect(payload.end_time).toBe(95);

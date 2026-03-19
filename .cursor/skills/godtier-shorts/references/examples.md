@@ -11,18 +11,28 @@
 - Start from `backend/api/routes/editor.py`.
 - Follow the handoff into `backend/core/orchestrator.py` and the relevant workflow module.
 - Use `scripts/reburn_clip.py` when a CLI repro is faster than the UI.
+- If the issue is timing, crop stability, or subtitle mismatch, enable `DEBUG_RENDER_ARTIFACTS=1` and inspect the per-clip debug bundle.
+
+## Debug Determinism or Throughput
+
+- Start from `backend/core/render_benchmark.py` and `scripts/benchmark_render_stability.py`.
+- Compare normalized metadata and frame hashes before suspecting frontend caching.
+- Treat `debug_artifacts` as operational evidence, not as a public API surface.
 
 ## Debug Progress WebSocket or Auth
 
 - Start from `backend/api/server.py`, `backend/api/websocket.py`, and `frontend/src/hooks/useWebSocket.helpers.ts`.
 - Check both bearer subprotocol auth and query-token fallback behavior.
+- If HTTP tests hang under local tooling, inspect `backend/tests/conftest.py` and `backend/tests/compat_testclient.py` before changing app code.
 
 ## Adjust Social Publishing
 
 - Start from `backend/api/routes/social.py` and `backend/services/social/`.
 - Keep `SOCIAL_ENCRYPTION_SECRET` requirements and startup validation intact.
+- Preserve subject isolation for connected accounts, export tokens, and scheduled publish jobs.
 
 ## Refactor Workflow Code
 
 - Preserve thin facade modules and existing public exports.
 - Run guardrail tests before broad refactors.
+- Keep compatibility aliases if tests or external callers still patch workflow module symbols directly.

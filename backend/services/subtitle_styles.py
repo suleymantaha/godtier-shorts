@@ -13,11 +13,23 @@ from typing import Literal
 from loguru import logger
 from pydantic import BaseModel, Field, field_validator
 
+from backend.core.render_contracts import (
+    VALID_RENDER_LAYOUTS,
+    VALID_REQUEST_LAYOUTS,
+    ensure_valid_render_layout,
+    ensure_valid_requested_layout,
+)
+
 LOGICAL_CANVAS_WIDTH = 1080
 LOGICAL_CANVAS_HEIGHT = 1920
 SPLIT_PANEL_HEIGHT = 864
 SPLIT_GUTTER_HEIGHT = 192
-VALID_LAYOUTS = {"single", "split"}
+SPLIT_FONT_SCALE = 0.88
+SPLIT_LINE_HEIGHT = 1.08
+SINGLE_LINE_HEIGHT = 1.18
+VALID_LAYOUTS = set(VALID_RENDER_LAYOUTS)
+VALID_REQUEST_LAYOUTS_SET = set(VALID_REQUEST_LAYOUTS)
+VALID_SAFE_AREA_PROFILES = {"default", "lower_third_safe"}
 GLOW_STYLE_KEYS = {"GLOW_KARAOKE", "GLASS_MORPH", "RETRO_WAVE", "CYBER_PUNK"}
 EXPLICIT_ANIMATION_TYPES = {"pop", "shake", "slide_up", "fade", "typewriter", "none"}
 VALID_ANIMATION_TYPES = {"default", *EXPLICIT_ANIMATION_TYPES}
@@ -100,6 +112,7 @@ class SubtitleCanvasSpec(BaseModel):
 
 
 class SubtitleSafeAreaSpec(BaseModel):
+    profile: Literal["default", "lower_third_safe"] = "default"
     left: int
     top: int
     width: int
@@ -459,10 +472,22 @@ class StyleManager:
         return layout in VALID_LAYOUTS
 
     @classmethod
+    def is_valid_requested_layout(cls, layout: str) -> bool:
+        return layout in VALID_REQUEST_LAYOUTS_SET
+
+    @classmethod
     def ensure_valid_layout(cls, layout: str) -> str:
-        normalized = (layout or "single").strip().lower()
-        if normalized not in VALID_LAYOUTS:
-            raise ValueError(f"unknown layout: {layout}")
+        return ensure_valid_render_layout(layout)
+
+    @classmethod
+    def ensure_valid_requested_layout(cls, layout: str | None) -> str:
+        return ensure_valid_requested_layout(layout)
+
+    @classmethod
+    def ensure_valid_safe_area_profile(cls, profile: str | None) -> str:
+        normalized = (profile or "default").strip().lower()
+        if normalized not in VALID_SAFE_AREA_PROFILES:
+            raise ValueError(f"unknown safe_area_profile: {profile}")
         return normalized
 
     @classmethod
@@ -562,17 +587,19 @@ class StyleManager:
         canvas_width: int = LOGICAL_CANVAS_WIDTH,
         canvas_height: int = LOGICAL_CANVAS_HEIGHT,
         layout: str = "single",
+        safe_area_profile: str = "default",
     ) -> ResolvedSubtitleRenderSpec:
         resolved_layout = cls.ensure_valid_layout(layout)
+        resolved_safe_area_profile = cls.ensure_valid_safe_area_profile(safe_area_profile)
         canvas = SubtitleCanvasSpec(width=canvas_width, height=canvas_height, layout=resolved_layout)
         scale = min(canvas_width / LOGICAL_CANVAS_WIDTH, canvas_height / LOGICAL_CANVAS_HEIGHT)
-        safe_area = cls._resolve_safe_area(canvas)
+        safe_area = cls._resolve_safe_area(canvas, safe_area_profile=resolved_safe_area_profile)
         animation = cls._resolve_animation(style, scale)
-        font_size = cls._resolve_font_size(style, scale)
+        font_size = cls._resolve_font_size(style, scale, layout=resolved_layout)
         outline_width = cls._resolve_outline_width(style, scale)
         shadow_depth = cls._resolve_shadow_depth(style, scale)
         blur = cls._resolve_blur(style, scale)
-        line_height = 1.12 if resolved_layout == "split" else 1.18
+        line_height = SPLIT_LINE_HEIGHT if resolved_layout == "split" else SINGLE_LINE_HEIGHT
 
         return ResolvedSubtitleRenderSpec(
             canvas=canvas,
@@ -587,26 +614,38 @@ class StyleManager:
         )
 
     @staticmethod
-    def _resolve_safe_area(canvas: SubtitleCanvasSpec) -> SubtitleSafeAreaSpec:
+    def _resolve_safe_area(
+        canvas: SubtitleCanvasSpec,
+        *,
+        safe_area_profile: str = "default",
+    ) -> SubtitleSafeAreaSpec:
         side_padding = _snap(canvas.width * 0.08)
-        padding_x = _snap(canvas.width * 0.03)
-        padding_y = _snap(canvas.height * 0.0125)
         area_width = max(240, canvas.width - (side_padding * 2))
+        resolved_safe_area_profile = StyleManager.ensure_valid_safe_area_profile(safe_area_profile)
 
         if canvas.layout == "split":
+            resolved_safe_area_profile = "default"
+            padding_x = _snap(canvas.width * 0.05)
+            padding_y = _snap(canvas.height * 0.01875)
             top = _snap(canvas.height * (SPLIT_PANEL_HEIGHT / LOGICAL_CANVAS_HEIGHT))
             height = _snap(canvas.height * (SPLIT_GUTTER_HEIGHT / LOGICAL_CANVAS_HEIGHT))
             anchor_y = top + padding_y
             alignment = 8
             margin_v = anchor_y
         else:
+            padding_x = _snap(canvas.width * 0.03)
+            padding_y = _snap(canvas.height * 0.0125)
             height = _snap(canvas.height * 0.18)
-            margin_v = _snap(canvas.height * 0.14)
+            if resolved_safe_area_profile == "lower_third_safe":
+                margin_v = _snap(canvas.height * 0.22)
+            else:
+                margin_v = _snap(canvas.height * 0.14)
             top = max(0, canvas.height - margin_v - height)
             anchor_y = canvas.height - margin_v
             alignment = 2
 
         return SubtitleSafeAreaSpec(
+            profile=resolved_safe_area_profile,
             left=side_padding,
             top=top,
             width=area_width,
@@ -646,10 +685,12 @@ class StyleManager:
         )
 
     @staticmethod
-    def _resolve_font_size(style: SubtitleStyle, scale: float) -> int:
+    def _resolve_font_size(style: SubtitleStyle, scale: float, *, layout: str = "single") -> int:
         logical_font_size = max(32, min(int(round(style.font_size * 1.08)), 126))
         if style.high_contrast or style.large_text:
             logical_font_size = min(136, logical_font_size + 10)
+        if layout == "split":
+            logical_font_size = max(28, int(round(logical_font_size * SPLIT_FONT_SCALE)))
         return _snap(logical_font_size * scale)
 
     @staticmethod

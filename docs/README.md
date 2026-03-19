@@ -8,7 +8,6 @@ Ana proje: [README.md](../README.md)
 
 ## Sayfalar (UI)
 
-
 | Sayfa                                       | Açıklama                                      |
 | ------------------------------------------- | --------------------------------------------- |
 | [CONFIGURE](./pages/configure.md)           | YouTube URL, stil, job kuyruğu, klip galerisi |
@@ -16,9 +15,7 @@ Ana proje: [README.md](../README.md)
 | [SUBTITLE EDIT](./pages/subtitle-editor.md) | Proje/klip transkript düzenleme               |
 | [Clip Editor](./pages/clip-editor.md)       | Kadraj, stil, reburn                          |
 
-
 ## İş Akışları
-
 
 | Akış                                                | Açıklama                                                     |
 | --------------------------------------------------- | ------------------------------------------------------------ |
@@ -27,7 +24,6 @@ Ana proje: [README.md](../README.md)
 | [Manual Cut](./flows/manual-cut.md)                 | Zaman aralığı veya cut_points ile kesim                      |
 | [Batch Clips](./flows/batch-clips.md)               | Aralıkta AI ile toplu klip                                   |
 | [Reburn](./flows/reburn.md)                         | Altyazı yeniden basma (transkript kaydetme dahil)            |
-
 
 ## Mimari (Backend Servisleri)
 

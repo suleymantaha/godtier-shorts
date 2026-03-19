@@ -11,6 +11,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from backend.services.viral_analyzer import ViralAnalyzer
+from backend.services.viral_analyzer_core import build_metadata_prompt, normalize_viral_segments
 
 
 class TestBuildFallbackSegments:
@@ -92,7 +93,7 @@ class TestAnalyzeMetadataParams:
     def test_analyze_metadata_uses_lmstudio_client(self):
         """engine=lmstudio iken LLM çağrısı LM Studio client ile yapılır."""
         transcript_data = [
-            {"text": "test segment", "start": 0.0, "end": 12.0},
+            {"text": "test segment", "start": 0.0, "end": 120.0},
         ]
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(transcript_data, f, ensure_ascii=False)
@@ -104,7 +105,7 @@ class TestAnalyzeMetadataParams:
                 "segments": [
                     {
                         "start_time": 0.0,
-                        "end_time": 12.0,
+                        "end_time": 120.0,
                         "hook_text": "TEST HOOK",
                         "ui_title": "Test Baslik",
                         "social_caption": "Test #shorts",
@@ -141,10 +142,63 @@ class TestAnalyzeMetadataParams:
         finally:
             Path(path).unlink(missing_ok=True)
 
-    @pytest.mark.skipif(
-        True,  # Cloud API gerektirir, CI'da atla
-        reason="Cloud API mock gerekli",
-    )
     def test_prompt_contains_duration_range(self):
-        """Cloud modda prompt icinde duration araligi kullanilir."""
-        pass
+        """Prompt, istenen duration kontratini acikca tasir."""
+        prompt = build_metadata_prompt(
+            "[0.0s] (Unknown): test satiri",
+            num_clips=3,
+            duration_min=120.0,
+            duration_max=180.0,
+        )
+
+        assert "120" in prompt
+        assert "180" in prompt
+        assert "saniye araliginda" in prompt.lower()
+        assert "zorunlu" in prompt.lower()
+
+    def test_normalize_viral_segments_rejects_out_of_range_duration(self):
+        transcript_data = [
+            {"text": "a", "start": 0.0, "end": 60.0},
+            {"text": "b", "start": 60.0, "end": 140.0},
+            {"text": "c", "start": 140.0, "end": 220.0},
+        ]
+
+        result = normalize_viral_segments(
+            {
+                "segments": [
+                    {
+                        "start_time": 0.0,
+                        "end_time": 27.0,
+                        "hook_text": "kisa",
+                        "ui_title": "kisa",
+                        "social_caption": "kisa",
+                        "viral_score": 80,
+                    },
+                    {
+                        "start_time": 20.0,
+                        "end_time": 160.0,
+                        "hook_text": "gecerli",
+                        "ui_title": "gecerli",
+                        "social_caption": "gecerli",
+                        "viral_score": 81,
+                    },
+                ]
+            },
+            transcript_data,
+            limit=3,
+            duration_min=120.0,
+            duration_max=180.0,
+        )
+
+        assert result == {
+            "segments": [
+                {
+                    "start_time": 20.0,
+                    "end_time": 160.0,
+                    "hook_text": "gecerli",
+                    "ui_title": "gecerli",
+                    "social_caption": "gecerli",
+                    "viral_score": 81,
+                }
+            ]
+        }

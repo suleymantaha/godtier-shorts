@@ -182,10 +182,13 @@ class ConnectionManager:
         progress: int,
         job_id: Optional[str] = None,
         status: Optional[str] = None,
+        extra: Optional[Dict[str, Any]] = None,
     ) -> None:
         payload: Dict[str, Any] = {"message": message, "progress": progress}
         if status:
             payload["status"] = status
+        if extra:
+            payload.update(extra)
 
         if job_id:
             payload["job_id"] = job_id
@@ -260,7 +263,12 @@ def _log_broadcast_result(future: Future[None], bucket: str) -> None:
         _release_pending(bucket)
 
 
-def thread_safe_broadcast(status: dict, job_id: Optional[str] = None) -> None:
+def thread_safe_broadcast(
+    status: dict,
+    job_id: Optional[str] = None,
+    *,
+    extra: Optional[Dict[str, Any]] = None,
+) -> None:
     """Background thread'inden WebSocket mesajı gönderir."""
     loop = get_main_loop()
     if loop and loop.is_running():
@@ -279,10 +287,11 @@ def thread_safe_broadcast(status: dict, job_id: Optional[str] = None) -> None:
         try:
             future = asyncio.run_coroutine_threadsafe(
                 manager.broadcast_progress(
-                    status["message"], 
-                    status["progress"], 
+                    status["message"],
+                    status["progress"],
                     job_id,
-                    status.get("status")
+                    status.get("status"),
+                    extra,
                 ),
                 loop,
             )

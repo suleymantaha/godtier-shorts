@@ -96,4 +96,25 @@ describe('LazyVideo', () => {
     );
     expect(createObjectURLSpy).toHaveBeenCalled();
   });
+
+  it('shows an inline error when protected preview fetch is rejected', async () => {
+    vi.spyOn(apiClient, 'getFreshToken').mockResolvedValue('token-123');
+    vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: async () => '',
+    } as Response);
+
+    const { container } = render(<LazyVideo src="http://localhost:8000/api/projects/p1/shorts/c1.mp4" />);
+    const wrapper = container.firstElementChild!;
+
+    act(() => {
+      observeCallback(
+        [{ isIntersecting: true, target: wrapper } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/preview source missing/i);
+  });
 });

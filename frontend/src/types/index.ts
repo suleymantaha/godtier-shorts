@@ -13,6 +13,7 @@ export interface LogEntry {
 
 export type JobStatus = 'queued' | 'processing' | 'completed' | 'cancelled' | 'error' | 'empty';
 export type SubtitleAnimationType = 'default' | 'pop' | 'shake' | 'slide_up' | 'fade' | 'typewriter' | 'none';
+export type RequestedSubtitleLayout = 'auto' | 'single' | 'split';
 
 export interface Job {
     job_id: string;
@@ -45,6 +46,14 @@ export interface ClipListResponse {
     page_size?: number;
     total?: number;
     has_more?: boolean;
+}
+
+export interface AuthWhoAmIResponse {
+    auth_mode: 'clerk_jwt' | 'static_token';
+    roles: string[];
+    subject: string;
+    subject_hash: string;
+    token_type: 'jwt' | 'bearer';
 }
 
 export interface DeleteClipResponse {
@@ -88,10 +97,15 @@ export interface RenderMetadata {
     layout?: string;
     resolved_layout?: string;
     layout_fallback_reason?: string | null;
+    layout_validation_status?: string;
+    opening_visibility_delay_ms?: number;
     style_name?: string;
     animation_type?: SubtitleAnimationType;
     resolved_animation_type?: Exclude<SubtitleAnimationType, 'default'>;
     cut_as_short?: boolean;
+    requested_duration_min?: number;
+    requested_duration_max?: number;
+    duration_validation_status?: string;
     tracking_quality?: {
         status?: 'good' | 'degraded' | 'fallback';
         mode?: 'tracked' | 'manual';
@@ -106,6 +120,12 @@ export interface RenderMetadata {
         active_track_id_switches?: number;
         shot_cut_resets?: number;
         max_track_lost_streak?: number;
+        panel_swap_count?: number;
+        primary_p95_center_jump_px?: number;
+        secondary_p95_center_jump_px?: number;
+        startup_settle_ms?: number;
+        predict_fallback_active?: boolean;
+        split_motion_policy?: 'stable';
     };
     transcript_quality?: {
         status?: 'good' | 'partial' | 'degraded';
@@ -121,6 +141,8 @@ export interface RenderMetadata {
         safe_area_violation_count?: number;
         word_coverage_ratio?: number;
         boundary_snaps_applied?: number;
+        simultaneous_event_overlap_count?: number;
+        max_simultaneous_events?: number;
     };
     debug_timing?: {
         source_fps?: number;
@@ -157,10 +179,19 @@ export interface RenderMetadata {
         subtitle_overflow_detected?: boolean;
         max_rendered_line_width_ratio?: number;
         safe_area_violation_count?: number;
+        lower_third_collision_detected?: boolean;
+        lower_third_band_height_ratio?: number;
+        resolved_safe_area_profile?: 'default' | 'lower_third_safe';
+        burn_encoder?: string;
+        nvenc_fallback_used?: boolean;
+        nvenc_failure_reason?: string;
         overflow_strategy?: string;
+        font_clamp_count?: number;
         avg_words_per_chunk?: number;
         max_chunk_duration?: number;
         chunk_count?: number;
+        simultaneous_event_overlap_count?: number;
+        max_simultaneous_events?: number;
     };
 }
 
@@ -216,6 +247,7 @@ export interface StartJobPayload {
     duration_min?: number;
     duration_max?: number;
     resolution?: string;
+    layout?: RequestedSubtitleLayout;
 }
 
 export interface ManualJobPayload {
@@ -226,7 +258,7 @@ export interface ManualJobPayload {
     style_name?: string;
     animation_type?: SubtitleAnimationType;
     center_x?: number;
-    layout?: string;
+    layout?: RequestedSubtitleLayout;
 }
 
 export interface ManualCutUploadResponse {
@@ -272,7 +304,9 @@ export interface BatchJobPayload {
     num_clips: number;
     style_name: string;
     animation_type?: SubtitleAnimationType;
-    layout?: string;
+    layout?: RequestedSubtitleLayout;
+    duration_min?: number;
+    duration_max?: number;
 }
 
 export type SocialPlatform =

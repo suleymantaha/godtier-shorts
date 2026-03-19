@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 
 import type { Segment } from '../../types';
+import type { SubtitleLayout } from '../../config/subtitleStyles';
 import { findActiveSubtitleState, type ActiveSubtitleState } from '../../utils/subtitleTiming';
 
 const CROP_STEP = 0.02;
@@ -13,8 +14,16 @@ export function findCurrentSubtitle(transcript: Segment[], currentTime: number):
   return transcript.find((segment) => currentTime >= segment.start && currentTime <= segment.end);
 }
 
-export function findCurrentSubtitleState(transcript: Segment[], currentTime: number): ActiveSubtitleState | null {
-  return findActiveSubtitleState(transcript, currentTime);
+export function findCurrentSubtitleState(
+  transcript: Segment[],
+  currentTime: number,
+  options: {
+    layout?: SubtitleLayout;
+    fontSizeRem?: number;
+    fontWeight?: number;
+  } = {},
+): ActiveSubtitleState | null {
+  return findActiveSubtitleState(transcript, currentTime, options);
 }
 
 export function getCropFromClientX(clientX: number, rect: Pick<DOMRect, 'left' | 'width'>): number {

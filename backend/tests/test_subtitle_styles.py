@@ -126,6 +126,19 @@ class TestStyleManager:
 
 
 class TestResolvedRenderSpec:
+    def test_public_presets_resolve_for_single_and_split_layouts(self) -> None:
+        for preset_name in StyleManager.list_presets():
+            style = StyleManager.get_preset(preset_name)
+            single = StyleManager.resolve_render_spec(style, layout="single")
+            split = StyleManager.resolve_render_spec(style, layout="split")
+            lower_third = StyleManager.resolve_render_spec(style, layout="single", safe_area_profile="lower_third_safe")
+
+            assert single.safe_area.profile == "default"
+            assert split.safe_area.profile == "default"
+            assert lower_third.safe_area.profile == "lower_third_safe"
+            assert split.font_size <= single.font_size
+            assert split.safe_area.max_text_width < single.safe_area.max_text_width
+
     def test_single_layout_uses_fixed_safe_area(self) -> None:
         style = StyleManager.get_preset("HORMOZI")
         spec = StyleManager.resolve_render_spec(style, canvas_width=1080, canvas_height=1920, layout="single")
@@ -138,16 +151,38 @@ class TestResolvedRenderSpec:
         assert spec.safe_area.margin_v == 269
         assert spec.safe_area.anchor_y == LOGICAL_CANVAS_HEIGHT - 269
         assert spec.font_size >= 100
+        assert spec.safe_area.profile == "default"
+
+    def test_lower_third_profile_moves_single_layout_up(self) -> None:
+        style = StyleManager.get_preset("HORMOZI")
+        spec = StyleManager.resolve_render_spec(
+            style,
+            canvas_width=1080,
+            canvas_height=1920,
+            layout="single",
+            safe_area_profile="lower_third_safe",
+        )
+
+        assert spec.safe_area.profile == "lower_third_safe"
+        assert spec.safe_area.margin_v == 422
+        assert spec.safe_area.anchor_y == LOGICAL_CANVAS_HEIGHT - 422
 
     def test_split_layout_uses_middle_gutter_safe_area(self) -> None:
         style = StyleManager.get_preset("TIKTOK")
+        single = StyleManager.resolve_render_spec(style, canvas_width=1080, canvas_height=1920, layout="single")
         spec = StyleManager.resolve_render_spec(style, canvas_width=1080, canvas_height=1920, layout="split")
 
         assert spec.safe_area.top == SPLIT_PANEL_HEIGHT
         assert spec.safe_area.height == SPLIT_GUTTER_HEIGHT
         assert spec.safe_area.alignment == 8
-        assert spec.safe_area.margin_v == SPLIT_PANEL_HEIGHT + spec.safe_area.padding_y
-        assert spec.safe_area.anchor_y == SPLIT_PANEL_HEIGHT + spec.safe_area.padding_y
+        assert spec.safe_area.padding_x == 54
+        assert spec.safe_area.padding_y == 36
+        assert spec.safe_area.margin_v == 900
+        assert spec.safe_area.anchor_y == 900
+        assert spec.safe_area.max_text_width == 800
+        assert spec.font_size < single.font_size
+        assert spec.line_height == 1.08
+        assert spec.safe_area.profile == "default"
 
     def test_non_glow_styles_limit_blur(self) -> None:
         style = StyleManager.get_preset("HORMOZI")

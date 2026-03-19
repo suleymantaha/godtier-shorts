@@ -32,6 +32,7 @@ function createController(overrides: Partial<Record<string, unknown>> = {}) {
     jumpToEnd: vi.fn(),
     jumpToStart: vi.fn(),
     kesFeedback: null,
+    layout: 'auto',
     markers: [] as number[],
     numClips: 1,
     openFilePicker: vi.fn(),
@@ -43,6 +44,7 @@ function createController(overrides: Partial<Record<string, unknown>> = {}) {
     selectedFile: new File(['video'], 'clip.mp4', { type: 'video/mp4' }),
     setCutAsShort: vi.fn(),
     setIsPlaying: vi.fn(),
+    setLayout: vi.fn(),
     setAnimationType: vi.fn(),
     setSkipSubtitles: vi.fn(),
     setStyle: vi.fn(),
@@ -84,5 +86,15 @@ describe('AutoCutEditor page flow', () => {
 
     expect(screen.getByLabelText('subtitle-preview-stage')).toHaveAttribute('data-shell-type', 'phone');
     expect(screen.getByTestId('subtitle-preview-media')).toHaveAttribute('src', 'blob:auto-cut');
+  });
+
+  it('mirrors split layout selection into the preview safe area', () => {
+    controllerState.value = createController({ layout: 'split' });
+
+    render(<AutoCutEditor />);
+
+    const previewBandWrapper = screen.getByTestId('subtitle-preview-band').parentElement as HTMLElement;
+    expect(previewBandWrapper.style.top).toBe('45%');
+    expect(previewBandWrapper.style.bottom).toBe('');
   });
 });

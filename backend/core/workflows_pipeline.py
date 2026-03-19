@@ -37,7 +37,7 @@ class PipelineWorkflow:
         youtube_url: str,
         style_name: str = "HORMOZI",
         animation_type: str = "default",
-        layout: str = "single",
+        layout: str = "auto",
         skip_subtitles: bool = False,
         num_clips: int = 8,
         duration_min: float = 120.0,
@@ -74,6 +74,8 @@ class PipelineWorkflow:
             animation_type=animation_type,
             layout=layout,
             skip_subtitles=skip_subtitles,
+            duration_min=duration_min,
+            duration_max=duration_max,
         )
 
         elapsed = round(time.time() - global_start, 2)

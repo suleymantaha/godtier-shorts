@@ -15,6 +15,7 @@ interface PersistSessionParams {
   animationType: string;
   currentJobId: string | null;
   endTime: number;
+  layout: string;
   processing: boolean;
   projectId?: string;
   startTime: number;
@@ -54,6 +55,7 @@ export function usePersistAutoCutSession({
   animationType,
   currentJobId,
   endTime,
+  layout,
   processing,
   projectId,
   startTime,
@@ -66,12 +68,12 @@ export function usePersistAutoCutSession({
     }
 
     if (processing && currentJobId) {
-      window.localStorage.setItem(storageKey, JSON.stringify({ animationType, currentJobId, endTime, projectId, startTime, style }));
+      window.localStorage.setItem(storageKey, JSON.stringify({ animationType, currentJobId, endTime, layout, projectId, startTime, style }));
       return;
     }
 
     window.localStorage.removeItem(storageKey);
-  }, [animationType, currentJobId, endTime, processing, projectId, startTime, storageKey, style]);
+  }, [animationType, currentJobId, endTime, layout, processing, projectId, startTime, storageKey, style]);
 }
 
 export function useRevokeLocalVideoUrl(localSrc: string | null) {

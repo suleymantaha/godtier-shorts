@@ -4,6 +4,7 @@ import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { isStyleName, isSubtitleAnimationType, type StyleName, type SubtitleAnimationType } from '../../config/subtitleStyles';
 import {
   ENGINE_SELECT_OPTIONS,
+  LAYOUT_SELECT_OPTIONS,
   MOTION_SELECT_OPTIONS,
   RESOLUTION_OPTIONS,
   STYLE_SELECT_OPTIONS,
@@ -28,10 +29,13 @@ interface ControlGridSectionProps {
   engine: string;
   engineId: string;
   isSubmitting: boolean;
+  layout: string;
+  layoutId: string;
   numClips: number;
   numClipsId: string;
   onAnimationChange: Dispatch<SetStateAction<SubtitleAnimationType>>;
   onEngineChange: Dispatch<SetStateAction<string>>;
+  onLayoutChange: Dispatch<SetStateAction<'auto' | 'single' | 'split'>>;
   onNumClipsChange: Dispatch<SetStateAction<number>>;
   onSkipSubtitlesChange: Dispatch<SetStateAction<boolean>>;
   onStyleChange: Dispatch<SetStateAction<StyleName>>;
@@ -104,10 +108,13 @@ export function JobFormControlGridSection({
   engine,
   engineId,
   isSubmitting,
+  layout,
+  layoutId,
   numClips,
   numClipsId,
   onAnimationChange,
   onEngineChange,
+  onLayoutChange,
   onNumClipsChange,
   onSkipSubtitlesChange,
   onStyleChange,
@@ -213,6 +220,24 @@ export function JobFormControlGridSection({
             onChange={(event) => onNumClipsChange(clampClipCount(Number(event.target.value) || 1))}
             className="input-field w-full"
             disabled={isSubmitting}
+          />
+        )}
+      />
+      <JobFormControlCard
+        accentClassName="border-accent/20"
+        header={(
+          <label htmlFor={layoutId} className="ml-1 block max-w-full text-sm font-medium leading-tight text-accent uppercase tracking-[0.16em]">
+            FRAME LAYOUT
+          </label>
+        )}
+        control={(
+          <Select
+            id={layoutId}
+            value={layout}
+            onChange={(value) => onLayoutChange(value === 'split' ? 'split' : value === 'single' ? 'single' : 'auto')}
+            options={LAYOUT_SELECT_OPTIONS}
+            disabled={isSubmitting}
+            icon={<Zap className="w-4 h-4 text-accent/50" />}
           />
         )}
       />

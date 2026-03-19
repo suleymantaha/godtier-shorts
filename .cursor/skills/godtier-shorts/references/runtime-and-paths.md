@@ -20,6 +20,15 @@ This repo has strict runtime validation and a canonical workspace layout.
 - `transcript.json`
 - `viral.json`
 - `shorts/`
+- `debug/` (opsiyonel, `DEBUG_RENDER_ARTIFACTS=1` ile)
+
+Debug bundle contents typically include:
+
+- `tracking_overlay.mp4`
+- `tracking_timeline.json`
+- `subtitle_chunks.json`
+- `boundary_snap.json`
+- `timing_report.json`
 
 ## Path Safety
 
@@ -45,3 +54,8 @@ This repo has strict runtime validation and a canonical workspace layout.
 - `python scripts/check_runtime_config.py`
 - `pytest backend/tests/test_runtime_validation.py -q`
 - `pytest backend/tests/test_api_security.py -q`
+
+## Additional Paths
+
+- Determinism benchmark reports live under `workspace/logs/render_benchmarks/`.
+- `render_metadata.debug_artifacts` file paths are stored project-relative, not absolute.

@@ -1,13 +1,14 @@
 import { useEffect, useId, useState, type FormEvent } from 'react';
 
 import { jobsApi } from '../../api/client';
-import type { StyleName, SubtitleAnimationType } from '../../config/subtitleStyles';
+import type { RequestedSubtitleLayout, StyleName, SubtitleAnimationType } from '../../config/subtitleStyles';
 import { useJobStore } from '../../store/useJobStore';
 import {
   JOB_FORM_PREFS_STORAGE_KEY,
   buildStartJobPayload,
   readInitialAnimationType,
   readInitialEngine,
+  readInitialLayout,
   readInitialStyle,
 } from './helpers';
 
@@ -22,6 +23,7 @@ export function useJobFormController({ onAnimationChange, onSkipSubtitlesChange,
   const [style, setStyle] = useState<StyleName>(() => readInitialStyle());
   const [animationType, setAnimationType] = useState<SubtitleAnimationType>(() => readInitialAnimationType());
   const [engine, setEngine] = useState<string>(() => readInitialEngine());
+  const [layout, setLayout] = useState<RequestedSubtitleLayout>(() => readInitialLayout());
   const [skipSubtitles, setSkipSubtitles] = useState(false);
   const [numClips, setNumClips] = useState(8);
   const [autoMode, setAutoMode] = useState(true);
@@ -37,6 +39,7 @@ export function useJobFormController({ onAnimationChange, onSkipSubtitlesChange,
   const animationId = useId();
   const engineId = useId();
   const numClipsId = useId();
+  const layoutId = useId();
   const durationMinId = useId();
   const durationMaxId = useId();
   const resolutionId = useId();
@@ -46,9 +49,9 @@ export function useJobFormController({ onAnimationChange, onSkipSubtitlesChange,
   useEffect(() => onSkipSubtitlesChange?.(skipSubtitles), [onSkipSubtitlesChange, skipSubtitles]);
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(JOB_FORM_PREFS_STORAGE_KEY, JSON.stringify({ animationType, engine, style }));
+      window.localStorage.setItem(JOB_FORM_PREFS_STORAGE_KEY, JSON.stringify({ animationType, engine, layout, style }));
     }
-  }, [animationType, engine, style]);
+  }, [animationType, engine, layout, style]);
 
   const handleStart = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -59,7 +62,7 @@ export function useJobFormController({ onAnimationChange, onSkipSubtitlesChange,
     setIsSubmitting(true);
     setError(null);
     try {
-      await jobsApi.start(buildStartJobPayload({ animationType, autoMode, durationMax, durationMin, engine, numClips, resolution, skipSubtitles, style, url }));
+      await jobsApi.start(buildStartJobPayload({ animationType, autoMode, durationMax, durationMin, engine, layout, numClips, resolution, skipSubtitles, style, url }));
       await fetchJobs();
       setUrl('');
     } catch (error) {
@@ -82,6 +85,8 @@ export function useJobFormController({ onAnimationChange, onSkipSubtitlesChange,
     error,
     handleStart,
     isSubmitting,
+    layout,
+    layoutId,
     numClips,
     numClipsId,
     resolution,
@@ -91,6 +96,7 @@ export function useJobFormController({ onAnimationChange, onSkipSubtitlesChange,
     setDurationMax,
     setDurationMin,
     setEngine,
+    setLayout,
     setNumClips,
     setResolution,
     setSkipSubtitles,

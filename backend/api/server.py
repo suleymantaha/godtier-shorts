@@ -17,10 +17,11 @@ from backend.config import (
     CORS_ORIGINS, OUTPUTS_DIR, LOGS_DIR, MASTER_VIDEO, REQUEST_BODY_HARD_LIMIT_BYTES,
 )
 from backend.api.websocket import manager, set_main_loop
-from backend.api.routes import account, jobs, clips, editor, social
+from backend.api.routes import account, auth, jobs, clips, editor, social
 from backend.api.error_handlers import register_exception_handlers
 from backend.api.security import authenticate_websocket_token, validate_auth_configuration
 from backend.runtime_validation import validate_runtime_configuration
+from backend.system_validation import validate_accelerator_support_configuration
 from backend.services.social.crypto import validate_social_security_configuration
 from backend.services.social.scheduler import get_social_scheduler
 
@@ -38,6 +39,7 @@ async def lifespan(app: FastAPI):
     """Uygulama yaşam döngüsü yönetimi."""
     # Startup
     validate_runtime_configuration()
+    validate_accelerator_support_configuration()
     validate_auth_configuration()
     validate_social_security_configuration()
     set_main_loop(asyncio.get_running_loop())
@@ -130,6 +132,7 @@ def create_app() -> FastAPI:
     app.include_router(editor.router)
     app.include_router(social.router)
     app.include_router(account.router)
+    app.include_router(auth.router)
 
     # --- WebSocket endpoint ---
     @app.websocket("/ws/progress")
@@ -147,7 +150,7 @@ def create_app() -> FastAPI:
         if token is None:
             token = websocket.query_params.get("token")
         try:
-            auth = authenticate_websocket_token(token)
+            auth = authenticate_websocket_token(token, headers=websocket.headers)
         except Exception:
             await websocket.close(code=1008)
             return

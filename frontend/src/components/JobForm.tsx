@@ -27,10 +27,13 @@ export const JobForm = (props: JobFormProps = {}) => {
         engine={controller.engine}
         engineId={controller.engineId}
         isSubmitting={controller.isSubmitting}
+        layout={controller.layout}
+        layoutId={controller.layoutId}
         numClips={controller.numClips}
         numClipsId={controller.numClipsId}
         onAnimationChange={controller.setAnimationType}
         onEngineChange={controller.setEngine}
+        onLayoutChange={controller.setLayout}
         onNumClipsChange={controller.setNumClips}
         onSkipSubtitlesChange={controller.setSkipSubtitles}
         onStyleChange={controller.setStyle}

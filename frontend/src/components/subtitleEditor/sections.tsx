@@ -309,14 +309,50 @@ function resolveQualityTone(score?: number | null): keyof typeof QUALITY_TONE_CL
 
 function buildRenderWarnings(renderMetadata: RenderMetadata): string[] {
   const warnings: string[] = [];
-  if (renderMetadata.tracking_quality?.status === 'fallback') {
+  const trackingQuality = renderMetadata.tracking_quality;
+  const simultaneousOverlapCount = renderMetadata.transcript_quality?.simultaneous_event_overlap_count
+    ?? renderMetadata.subtitle_layout_quality?.simultaneous_event_overlap_count
+    ?? 0;
+  const primaryP95Jump = trackingQuality?.primary_p95_center_jump_px ?? 0;
+  const secondaryP95Jump = trackingQuality?.secondary_p95_center_jump_px ?? 0;
+  const startupSettleMs = trackingQuality?.startup_settle_ms ?? 0;
+  const panelSwapCount = trackingQuality?.panel_swap_count ?? 0;
+
+  if (simultaneousOverlapCount > 0) {
+    warnings.push('Subtitle event overlap tespit edildi.');
+  }
+  if (renderMetadata.duration_validation_status && renderMetadata.duration_validation_status !== 'ok') {
+    warnings.push('Render süresi istenen aralığın dışında.');
+  }
+  if (renderMetadata.layout_validation_status === 'opening_subject_delayed') {
+    warnings.push('Konuşmacı kadraja geç girdi.');
+  }
+  if (renderMetadata.layout_validation_status === 'opening_subject_missing') {
+    warnings.push('Açılışta görünür konuşmacı bulunamadı.');
+  }
+  if (trackingQuality?.status === 'fallback') {
     warnings.push('Tracking fallback aktifti.');
+  }
+  if (panelSwapCount > 0 || Math.max(primaryP95Jump, secondaryP95Jump) > 12) {
+    warnings.push('Split panel jitter yüksek.');
+  }
+  if (startupSettleMs > 250) {
+    warnings.push('Açılış kadrajı geç stabilize oldu.');
+  }
+  if (trackingQuality?.predict_fallback_active) {
+    warnings.push('Tracker fallback nedeniyle stabil mod kullanıldı.');
   }
   if (renderMetadata.transcript_quality?.status === 'partial' || renderMetadata.transcript_quality?.status === 'degraded') {
     warnings.push('Transcript kalitesi tam değil.');
   }
   if (renderMetadata.subtitle_layout_quality?.subtitle_overflow_detected || renderMetadata.transcript_quality?.subtitle_overflow_detected) {
     warnings.push('Subtitle overflow tespit edildi.');
+  }
+  if (renderMetadata.subtitle_layout_quality?.lower_third_collision_detected) {
+    warnings.push('Lower-third grafik algılandı, altyazı yukarı taşındı.');
+  }
+  if (renderMetadata.subtitle_layout_quality?.nvenc_fallback_used) {
+    warnings.push('NVENC kullanılamadı, CPU fallback ile render alındı.');
   }
   if ((renderMetadata.debug_timing?.merged_output_drift_ms ?? 0) >= QUALITY_DRIFT_WARNING_MS) {
     warnings.push('A/V drift yükseldi.');

@@ -728,47 +728,113 @@ def _is_internal_short_asset(filename: str) -> bool:
     return filename.startswith("temp_") or stem.endswith("_raw") or stem.endswith("_temp_reburn")
 
 
+def _count_legacy_flat_project_dirs(projects_root: Path) -> int:
+    """Count legacy/flat project folders that are excluded by strict owner-scoped layout."""
+    legacy_flat_dirs = 0
+    for candidate in projects_root.iterdir():
+        if not candidate.is_dir():
+            continue
+        try:
+            config.sanitize_subject_hash(candidate.name)
+        except ValueError:
+            legacy_flat_dirs += 1
+    return legacy_flat_dirs
+
+
 def _scan_clips_index() -> list[dict]:
     """Projeleri tarayıp normalize klip indeksini oluşturur."""
     clips: list[dict] = []
     if not config.PROJECTS_DIR.exists():
         return clips
 
-    for project_dir in config.iter_project_dirs():
+    stats = {
+        "projects_discovered": 0,
+        "projects_scanned": 0,
+        "projects_manifest_missing": 0,
+        "projects_manifest_inactive": 0,
+        "projects_without_shorts": 0,
+        "files_non_mp4_skipped": 0,
+        "files_internal_skipped": 0,
+        "files_metadata_missing_skipped": 0,
+        "files_metadata_invalid_skipped": 0,
+        "clips_indexed": 0,
+        "legacy_flat_dirs": _count_legacy_flat_project_dirs(config.PROJECTS_DIR),
+    }
+
+    for project_dir in config.iter_project_dirs(config.PROJECTS_DIR):
+        stats["projects_discovered"] += 1
         manifest = read_project_manifest(project_dir.name)
-        if manifest is None or manifest.status != "active":
+        if manifest is None:
+            stats["projects_manifest_missing"] += 1
+            continue
+        if manifest.status != "active":
+            stats["projects_manifest_inactive"] += 1
             continue
 
+        stats["projects_scanned"] += 1
         shorts_dir = project_dir / "shorts"
         if not shorts_dir.exists():
+            stats["projects_without_shorts"] += 1
             continue
 
         for clip_file in shorts_dir.iterdir():
-            if clip_file.suffix != ".mp4" or _is_internal_short_asset(clip_file.name):
+            if clip_file.suffix != ".mp4":
+                stats["files_non_mp4_skipped"] += 1
+                continue
+            if _is_internal_short_asset(clip_file.name):
+                stats["files_internal_skipped"] += 1
                 continue
 
             meta_path = shorts_dir / clip_file.name.replace(".mp4", ".json")
+            if not meta_path.exists():
+                stats["files_metadata_missing_skipped"] += 1
+                continue
+
             ui_title = ""
-            if meta_path.exists():
-                try:
-                    with open(meta_path, "r", encoding="utf-8") as metadata_file:
-                        meta_data = json.load(metadata_file)
-                        ui_title = extract_ui_title(meta_data)
-                except json.JSONDecodeError as e:
-                    logger.warning(f"JSON decode error in {meta_path}: {e}")
-                except OSError as e:
-                    logger.error(f"Error reading metadata {meta_path}: {e}")
+            try:
+                with open(meta_path, "r", encoding="utf-8") as metadata_file:
+                    meta_data = json.load(metadata_file)
+                    ui_title = extract_ui_title(meta_data)
+            except json.JSONDecodeError as e:
+                stats["files_metadata_invalid_skipped"] += 1
+                logger.warning(f"JSON decode error in {meta_path}: {e}")
+                continue
+            except OSError as e:
+                stats["files_metadata_invalid_skipped"] += 1
+                logger.error(f"Error reading metadata {meta_path}: {e}")
+                continue
 
             clips.append({
                 "name": clip_file.name,
                 "project": project_dir.name,
                 "url": build_project_file_url(project_dir.name, "clip", clip_file.name),
-                "has_transcript": meta_path.exists(),
+                "has_transcript": True,
                 "ui_title": ui_title,
                 "created_at": clip_file.stat().st_ctime,
             })
+            stats["clips_indexed"] += 1
 
-    return sorted(clips, key=lambda x: x["created_at"], reverse=True)
+    sorted_clips = sorted(clips, key=lambda x: x["created_at"], reverse=True)
+    logger.debug(
+        (
+            "🗂️ Clip index health: discovered={} scanned={} manifest_missing={} "
+            "manifest_inactive={} no_shorts={} indexed={} non_mp4_skipped={} "
+            "internal_skipped={} metadata_missing_skipped={} metadata_invalid_skipped={} "
+            "legacy_flat_excluded={}"
+        ),
+        stats["projects_discovered"],
+        stats["projects_scanned"],
+        stats["projects_manifest_missing"],
+        stats["projects_manifest_inactive"],
+        stats["projects_without_shorts"],
+        stats["clips_indexed"],
+        stats["files_non_mp4_skipped"],
+        stats["files_internal_skipped"],
+        stats["files_metadata_missing_skipped"],
+        stats["files_metadata_invalid_skipped"],
+        stats["legacy_flat_dirs"],
+    )
+    return sorted_clips
 
 
 def _get_clip_index() -> tuple[list[dict], int]:

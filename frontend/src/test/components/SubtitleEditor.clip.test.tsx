@@ -132,6 +132,80 @@ describe('SubtitleEditor clip mode', () => {
     expect(screen.queryByText(/audio muted veya geçersiz/i)).not.toBeInTheDocument();
   });
 
+  it('surfaces duration, overlap and opening-layout warnings from clip metadata', async () => {
+    mockGetClipTranscript.mockResolvedValue({
+      active_job_id: null,
+      capabilities: {
+        can_recover_from_project: true,
+        can_transcribe_source: true,
+        has_clip_metadata: true,
+        has_clip_transcript: true,
+        has_raw_backup: true,
+        project_has_transcript: true,
+        resolved_project_id: 'proj_1',
+      },
+      duration_validation_status: 'too_short',
+      last_error: null,
+      recommended_strategy: null,
+      render_metadata: {
+        duration_validation_status: 'too_short',
+        layout_validation_status: 'opening_subject_delayed',
+        render_quality_score: 62,
+        subtitle_layout_quality: {
+          simultaneous_event_overlap_count: 2,
+          lower_third_collision_detected: true,
+        },
+        tracking_quality: { status: 'good' },
+        transcript_quality: { status: 'good' },
+      },
+      transcript: subtitleTranscript,
+      transcript_status: 'ready',
+    });
+
+    await renderSubtitleEditor({ lockedToClip: true, targetClip: subtitleClip });
+
+    expect(await screen.findByText(/subtitle event overlap tespit edildi/i)).toBeInTheDocument();
+    expect(screen.getByText(/render süresi istenen aralığın dışında/i)).toBeInTheDocument();
+    expect(screen.getByText(/konuşmacı kadraja geç girdi/i)).toBeInTheDocument();
+    expect(screen.queryByText(/lower-third grafik algılandı/i)).not.toBeInTheDocument();
+  });
+
+  it('surfaces split jitter warnings from clip metadata', async () => {
+    mockGetClipTranscript.mockResolvedValue({
+      active_job_id: null,
+      capabilities: {
+        can_recover_from_project: true,
+        can_transcribe_source: true,
+        has_clip_metadata: true,
+        has_clip_transcript: true,
+        has_raw_backup: true,
+        project_has_transcript: true,
+        resolved_project_id: 'proj_1',
+      },
+      last_error: null,
+      recommended_strategy: null,
+      render_metadata: {
+        render_quality_score: 58,
+        tracking_quality: {
+          status: 'degraded',
+          panel_swap_count: 1,
+          primary_p95_center_jump_px: 13.6,
+          startup_settle_ms: 320,
+          predict_fallback_active: true,
+        },
+        transcript_quality: { status: 'good' },
+      },
+      transcript: subtitleTranscript,
+      transcript_status: 'ready',
+    });
+
+    await renderSubtitleEditor({ lockedToClip: true, targetClip: subtitleClip });
+
+    expect(await screen.findByText(/split panel jitter yüksek/i)).toBeInTheDocument();
+    expect(screen.getByText(/açılış kadrajı geç stabilize oldu/i)).toBeInTheDocument();
+    expect(screen.getByText(/tracker fallback nedeniyle stabil mod kullanıldı/i)).toBeInTheDocument();
+  });
+
   it('auto-starts smart transcript recovery when the selected clip transcript is missing', async () => {
     mockGetClipTranscript.mockResolvedValue({
       active_job_id: null,

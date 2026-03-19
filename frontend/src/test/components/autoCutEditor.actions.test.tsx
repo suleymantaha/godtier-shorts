@@ -10,6 +10,7 @@ function createParams(overrides: Partial<Parameters<typeof useAutoCutEditorActio
     endTime: 90,
     fetchJobs: vi.fn(async () => {}),
     fileInputRef: { current: null },
+    layout: 'auto',
     markers: [],
     numClips: 1,
     selectedFile: null,

@@ -164,6 +164,27 @@ describe('api client auth flow', () => {
     });
   });
 
+  it('surfaces the browser static-token restriction with a specific message', async () => {
+    const token = createToken(300);
+    const getToken = vi.fn().mockResolvedValue(token);
+    (window as Window & { Clerk?: unknown }).Clerk = {
+      session: { getToken },
+    };
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      createJsonResponse({
+        detail: { error: { code: 'interactive_static_token_disabled', message: 'disabled' } },
+      }, 401),
+    );
+
+    const client = await loadClientModule();
+
+    await expect(client.jobsApi.list()).rejects.toMatchObject({
+      code: 'unauthorized',
+      message: 'Tarayici oturumlari Clerk ile dogrulanmali. Static token bu akista desteklenmiyor.',
+      status: 401,
+    });
+  });
+
   it('sends the account deletion confirmation payload with DELETE', async () => {
     const token = createToken(300);
     const getToken = vi.fn().mockResolvedValue(token);

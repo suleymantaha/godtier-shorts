@@ -89,6 +89,20 @@ describe('SubtitlePreview', () => {
     expect(screen.getByText('Bu')).toBeInTheDocument();
   });
 
+  it('renders split preview demo words across two lines when the planning helper breaks them', () => {
+    render(<SubtitlePreview styleName="HORMOZI" disabled={false} layout="split" />);
+
+    expect(screen.getByTestId('subtitle-preview-line-0')).toBeInTheDocument();
+    expect(screen.getByTestId('subtitle-preview-line-1')).toBeInTheDocument();
+  });
+
+  it('moves preview subtitles upward when lower-third safe area is active', () => {
+    render(<SubtitlePreview styleName="TIKTOK" disabled={false} safeAreaProfile="lower_third_safe" />);
+    const stage = screen.getByLabelText('subtitle-preview-stage');
+    const band = stage.querySelector('div[style*="bottom: 10.5%"]');
+    expect(band).toBeInTheDocument();
+  });
+
   it('uses a phone shell for short previews and a landscape shell otherwise', () => {
     const { rerender } = render(<SubtitlePreview styleName="TIKTOK" cutAsShort={true} disabled={false} />);
     expect(screen.getByLabelText('subtitle-preview-stage')).toHaveAttribute('data-shell-type', 'phone');
@@ -142,7 +156,7 @@ describe('SubtitlePreview', () => {
 
     const band = screen.getByTestId('subtitle-preview-band');
     expect(band).toHaveAttribute('data-preview-band-mode', 'bold_plate');
-    expect(screen.getByText('Bu').parentElement?.className).toContain('rounded-[15px]');
+    expect(screen.getByText('Bu').parentElement?.parentElement?.className).toContain('rounded-[15px]');
   });
 
   it('uses style-specific preview plates for podcast, glass, and terminal styles', () => {
@@ -152,17 +166,17 @@ describe('SubtitlePreview', () => {
 
     let band = screen.getByTestId('subtitle-preview-band');
     expect(band).toHaveAttribute('data-preview-band-mode', 'soft_plate');
-    expect(screen.getByText('Bu').parentElement?.className).toContain('rounded-[16px]');
+    expect(screen.getByText('Bu').parentElement?.parentElement?.className).toContain('rounded-[16px]');
 
     rerender(<SubtitlePreview styleName="GLASS_MORPH" disabled={false} variant="device" size="tall" showLegend={false} />);
     band = screen.getByTestId('subtitle-preview-band');
     expect(band).toHaveAttribute('data-preview-band-mode', 'glass_plate');
-    expect(screen.getByText('Bu').parentElement?.className).toContain('backdrop-blur-md');
+    expect(screen.getByText('Bu').parentElement?.parentElement?.className).toContain('backdrop-blur-md');
 
     rerender(<SubtitlePreview styleName="HACKER_TERMINAL" disabled={false} variant="device" size="tall" showLegend={false} />);
     band = screen.getByTestId('subtitle-preview-band');
     expect(band).toHaveAttribute('data-preview-band-mode', 'terminal_plate');
-    expect(screen.getByText('Bu').parentElement?.className).toContain('border-emerald-400/20');
+    expect(screen.getByText('Bu').parentElement?.parentElement?.className).toContain('border-emerald-400/20');
   });
 
   it('applies motion-specific band animations so preview effects are distinguishable', () => {

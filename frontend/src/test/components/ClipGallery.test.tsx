@@ -1,6 +1,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { useJobStore } from '../../store/useJobStore';
 
 let mockClipsResponse: {
   clips: Array<{
@@ -19,6 +20,7 @@ const mockDeleteClip = vi.fn();
 const mockListClips = vi.fn();
 const authRuntimeState = {
   canUseProtectedRequests: true,
+  pauseReason: null as string | null,
 };
 
 async function chooseSelectOption(user: ReturnType<typeof userEvent.setup>, label: RegExp, option: RegExp) {
@@ -78,7 +80,9 @@ vi.mock('../../components/ui/LazyVideo', () => ({
 describe('ClipGallery', () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    useJobStore.getState().reset();
     authRuntimeState.canUseProtectedRequests = true;
+    authRuntimeState.pauseReason = null;
     mockClipsResponse = { clips: [] };
     mockShouldReject = false;
     mockDeleteClip.mockReset();
@@ -118,6 +122,7 @@ describe('ClipGallery', () => {
     expect(screen.getByText(/clip library/i)).toBeInTheDocument();
     expect(screen.getByText(/250 clips/i)).toBeInTheDocument();
     expect(screen.getByText(/showing newest 200 clips/i)).toBeInTheDocument();
+    expect(screen.getByText(/only owner-scoped new outputs are indexed/i)).toBeInTheDocument();
     expect(screen.getByTestId('lazy-video')).toHaveAttribute(
       'data-src',
       'http://localhost:8000/clips/clip-1.mp4?t=123',
@@ -132,6 +137,26 @@ describe('ClipGallery', () => {
     expect(empty).toBeInTheDocument();
   });
 
+  it('shows processing state before the first clip when a clip-producing job is active', async () => {
+    useJobStore.setState({
+      jobs: [{
+        job_id: 'manualcut_123',
+        url: '/source.mp4',
+        style: 'HORMOZI',
+        status: 'processing',
+        progress: 15,
+        last_message: 'Processing',
+        created_at: 1,
+      }],
+    });
+
+    const { ClipGallery } = await import('../../components/ClipGallery');
+    render(<ClipGallery />);
+
+    expect(await screen.findByText(/rendering clips/i)).toBeInTheDocument();
+    expect(screen.getByText(/ilk hazir klip geldiginde/i)).toBeInTheDocument();
+  });
+
   it('shows error state with retry button on fetch failure', async () => {
     mockShouldReject = true;
     const { ClipGallery } = await import('../../components/ClipGallery');
@@ -144,8 +169,9 @@ describe('ClipGallery', () => {
     expect(retryBtn).toBeInTheDocument();
   });
 
-  it('does not start clip polling before protected auth is ready', async () => {
+  it('shows an auth-blocked state before protected auth is ready', async () => {
     authRuntimeState.canUseProtectedRequests = false;
+    authRuntimeState.pauseReason = 'unauthorized';
     const { ClipGallery } = await import('../../components/ClipGallery');
 
     render(<ClipGallery />);
@@ -153,7 +179,52 @@ describe('ClipGallery', () => {
       await vi.advanceTimersByTimeAsync(35_000);
     });
 
+    expect(screen.getByText(/backend oturumu dogrulanamadi/i)).toBeInTheDocument();
     expect(mockListClips).not.toHaveBeenCalled();
+  });
+
+  it('refetches clips when clip-ready signal arrives and reveals the first clip', async () => {
+    useJobStore.setState({
+      jobs: [{
+        job_id: 'manual_123',
+        url: '/source.mp4',
+        style: 'HORMOZI',
+        status: 'processing',
+        progress: 25,
+        last_message: 'Processing',
+        created_at: 1,
+      }],
+    });
+
+    const { ClipGallery } = await import('../../components/ClipGallery');
+    render(<ClipGallery />);
+
+    expect(await screen.findByText(/rendering clips/i)).toBeInTheDocument();
+
+    mockClipsResponse = {
+      clips: [{
+        name: 'clip-ready.mp4',
+        project: 'project-1',
+        url: '/clips/clip-ready.mp4',
+        has_transcript: true,
+        ui_title: 'Hook',
+        created_at: 456,
+      }],
+      total: 1,
+    };
+
+    act(() => {
+      useJobStore.getState().markClipReady({
+        clipName: 'clip-ready.mp4',
+        job_id: 'manual_123',
+        message: 'Klip hazir',
+        progress: 90,
+        projectId: 'project-1',
+        uiTitle: 'Hook',
+      });
+    });
+
+    expect(await screen.findByText('clip-ready.mp4')).toBeInTheDocument();
   });
 
   it('renders ready clips, supports sort/filter, and forwards edit actions', async () => {

@@ -1,4 +1,5 @@
 import { getFreshToken } from '../../../api/client';
+import { createAppError } from '../../../api/errors';
 
 export function shouldUseDirectVideoSource(src: string): boolean {
   return src.startsWith('blob:') || src.startsWith('data:') || !src.includes('/api/');
@@ -13,7 +14,31 @@ export async function fetchProtectedMediaBlob(
   const response = await fetch(src, { headers, signal });
 
   if (!response.ok) {
-    throw new Error(`Video fetch failed: ${response.status}`);
+    if (response.status === 401) {
+      throw createAppError('unauthorized', 'Korumali video icin oturum dogrulanamadi.', {
+        source: 'api',
+        status: response.status,
+      });
+    }
+
+    if (response.status === 403) {
+      throw createAppError('forbidden', 'Bu video icin erisim izniniz bulunmuyor.', {
+        source: 'api',
+        status: response.status,
+      });
+    }
+
+    if (response.status === 404) {
+      throw createAppError('unknown', 'Video kaynagi bulunamadi veya artik kullanilamiyor.', {
+        source: 'api',
+        status: response.status,
+      });
+    }
+
+    throw createAppError('server_unavailable', 'Video kaynagi yuklenemedi.', {
+      source: 'api',
+      status: response.status,
+    });
   }
 
   return response.blob();

@@ -32,6 +32,7 @@ import type {
     SocialPlatform,
     PublishJob,
     AccountDeletionResponse,
+    AuthWhoAmIResponse,
 } from '../types';
 
 // ─── Kimlik Doğrulama (Clerk Token Injection) ──────────────────────────────────
@@ -298,6 +299,15 @@ function createResponseError(
 }
 
 function classifyUnauthorizedResponse(response: Response, code: string | null) {
+    if (code === 'interactive_static_token_disabled') {
+        return createResponseError(
+            'unauthorized',
+            'Tarayici oturumlari Clerk ile dogrulanmali. Static token bu akista desteklenmiyor.',
+            response,
+            code,
+        );
+    }
+
     if (code === 'token_expired') {
         return createResponseError('token_expired', 'Oturumunuzun suresi doldu. Lutfen yeniden giris yapin.', response, code);
     }
@@ -414,6 +424,11 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
         ...init,
     });
 }
+
+export const authApi = {
+    whoami: () =>
+        apiFetch<AuthWhoAmIResponse>('/api/auth/whoami'),
+};
 
 // ─── Job endpoint'leri ────────────────────────────────────────────────────────
 
@@ -546,6 +561,9 @@ export const editorApi = {
             num_clips?: number;
             cut_points?: number[];
             cut_as_short?: boolean;
+            layout?: 'auto' | 'single' | 'split';
+            duration_min?: number;
+            duration_max?: number;
         },
     ): Promise<ManualCutUploadResponse> => {
         const form = new FormData();
@@ -557,6 +575,13 @@ export const editorApi = {
         form.append('skip_subtitles', String(payload.skip_subtitles ?? false));
         form.append('num_clips', String(payload.num_clips ?? 1));
         form.append('cut_as_short', String(payload.cut_as_short ?? true));
+        form.append('layout', payload.layout ?? 'auto');
+        if (typeof payload.duration_min === 'number') {
+            form.append('duration_min', String(payload.duration_min));
+        }
+        if (typeof payload.duration_max === 'number') {
+            form.append('duration_max', String(payload.duration_max));
+        }
         if (payload.cut_points && payload.cut_points.length >= 2) {
             form.append('cut_points', JSON.stringify(payload.cut_points));
         }

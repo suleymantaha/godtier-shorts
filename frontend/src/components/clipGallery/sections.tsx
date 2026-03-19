@@ -34,6 +34,7 @@ export function GalleryHeader({
   hasMore,
   loadedCount,
   pageSizeLimit,
+  productionInProgress,
   projectFilter,
   projectOptions,
   setProjectFilter,
@@ -45,6 +46,7 @@ export function GalleryHeader({
   hasMore: boolean;
   loadedCount: number;
   pageSizeLimit: number;
+  productionInProgress: boolean;
   projectFilter: string;
   projectOptions: Array<{ label: string; value: string }>;
   setProjectFilter: (value: string) => void;
@@ -70,7 +72,16 @@ export function GalleryHeader({
             <span>{visibleCount} Visible</span>
             {hasMore && <span>Showing Newest {pageSizeLimit} Clips</span>}
             {!hasMore && loadedCount > 0 && <span>Workspace Indexed</span>}
+            {productionInProgress && <span>Production In Progress</span>}
           </div>
+          {productionInProgress && (
+            <p className="text-[11px] font-mono uppercase tracking-widest text-emerald-200/80">
+              New clips will appear automatically as each render completes
+            </p>
+          )}
+          <p className="text-[11px] font-mono uppercase tracking-widest text-amber-200/80">
+            Only owner-scoped new outputs are indexed
+          </p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 xl:min-w-[420px]">
@@ -137,6 +148,19 @@ export function LoadingState() {
   );
 }
 
+export function ProcessingState() {
+  return (
+    <div className="glass-card flex flex-col items-center justify-center gap-3 px-6 py-10 text-center" aria-live="polite">
+      <span className="animate-pulse text-xs font-mono uppercase tracking-widest text-primary/80">
+        Rendering Clips...
+      </span>
+      <p className="max-w-xl text-sm leading-6 text-muted-foreground">
+        Ilk hazir klip geldiginde kutuphane otomatik olarak acilacak. Sonraki klipler sirayla eklenecek.
+      </p>
+    </div>
+  );
+}
+
 export function ErrorState({
   errorMsg,
   onRetry,
@@ -154,6 +178,34 @@ export function ErrorState({
         onClick={onRetry}
         className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-xs font-mono uppercase transition-colors flex items-center gap-2"
         aria-label="Tekrar dene"
+      >
+        <RefreshCw className="w-3 h-3" aria-hidden="true" />
+        Tekrar Dene
+      </button>
+    </div>
+  );
+}
+
+export function AuthBlockedState({
+  errorMsg,
+  onRetry,
+}: {
+  errorMsg: string | null;
+  onRetry: () => void;
+}) {
+  return (
+    <div role="status" className="glass-card flex flex-col items-center justify-center gap-3 border-amber-500/20 px-6 py-10 text-center">
+      <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-amber-100">
+        <AlertCircle className="w-4 h-4" aria-hidden="true" />
+        Clip Library Beklemede
+      </div>
+      <p className="max-w-xl text-sm leading-6 text-amber-50/90">
+        {errorMsg ?? 'Klip kutuphanesi icin backend oturumu su anda kullanilamiyor.'}
+      </p>
+      <button
+        onClick={onRetry}
+        className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-xs font-mono uppercase transition-colors flex items-center gap-2"
+        aria-label="Klip kutuphanesini tekrar dene"
       >
         <RefreshCw className="w-3 h-3" aria-hidden="true" />
         Tekrar Dene

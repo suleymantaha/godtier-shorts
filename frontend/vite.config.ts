@@ -3,12 +3,16 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { resolveManualChunk } from './build/manualChunks'
+import { resolveWatchConfig } from './build/watchConfig'
 
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
   ],
+  server: {
+    watch: resolveWatchConfig(),
+  },
   build: {
     // Three.js publishes its core as a single ESM entry; after splitting the surrounding
     // react-three ecosystem, the remaining lazy-loaded core chunk still lands above 500 kB.

@@ -10,6 +10,7 @@ const authRuntimeState = {
 
 const storeMock = {
   updateJobProgress: vi.fn(),
+  markClipReady: vi.fn(),
   fetchJobs: vi.fn(),
   setWsStatus: vi.fn(),
 };
@@ -94,6 +95,35 @@ describe('useWebSocket', () => {
 
     act(() => ws.onmessage?.({ data: JSON.stringify({ job_id: 'j1', message: 'ok', progress: 10 }) }));
     expect(storeMock.updateJobProgress).toHaveBeenCalledWith('j1', 'ok', 10, undefined);
+  });
+
+  it('marks clip-ready signals when websocket payload announces a ready clip', async () => {
+    render(<TestComponent />);
+    await act(async () => {});
+    const ws = FakeWebSocket.instances[0];
+
+    act(() => ws.onmessage?.({
+      data: JSON.stringify({
+        event_type: 'clip_ready',
+        job_id: 'manual_1',
+        message: 'Klip hazir',
+        progress: 91,
+        status: 'processing',
+        project_id: 'proj-1',
+        clip_name: 'clip-1.mp4',
+        ui_title: 'Hook',
+      }),
+    }));
+
+    expect(storeMock.updateJobProgress).toHaveBeenCalledWith('manual_1', 'Klip hazir', 91, 'processing');
+    expect(storeMock.markClipReady).toHaveBeenCalledWith({
+      clipName: 'clip-1.mp4',
+      job_id: 'manual_1',
+      message: 'Klip hazir',
+      progress: 91,
+      projectId: 'proj-1',
+      uiTitle: 'Hook',
+    });
   });
 
   it('uses websocket subprotocol auth when token is present', async () => {

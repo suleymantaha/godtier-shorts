@@ -2,6 +2,7 @@ import {
   ANIMATION_SELECT_OPTIONS,
   isStyleName,
   isSubtitleAnimationType,
+  type RequestedSubtitleLayout,
   STYLE_LABELS,
   STYLE_OPTIONS,
   type StyleName,
@@ -27,6 +28,11 @@ export const RESOLUTION_OPTIONS = [
   { label: '720p', value: '720p' },
   { label: '480p', value: '480p' },
 ];
+export const LAYOUT_SELECT_OPTIONS = [
+  { label: 'Auto', value: 'auto' },
+  { label: 'Single', value: 'single' },
+  { label: 'Split', value: 'split' },
+];
 export const STYLE_SELECT_OPTIONS = STYLE_OPTIONS.map((style) => ({
   label: STYLE_LABELS[style],
   value: style,
@@ -36,6 +42,7 @@ export const MOTION_SELECT_OPTIONS = ANIMATION_SELECT_OPTIONS;
 interface JobFormPrefs {
   animationType?: SubtitleAnimationType;
   engine?: string;
+  layout?: RequestedSubtitleLayout;
   style?: StyleName;
 }
 
@@ -45,6 +52,7 @@ interface BuildStartJobPayloadInput {
   durationMax: number;
   durationMin: number;
   engine: string;
+  layout: RequestedSubtitleLayout;
   numClips: number;
   resolution: string;
   skipSubtitles: boolean;
@@ -67,6 +75,11 @@ export function readInitialStyle(): StyleName {
 export function readInitialAnimationType(): SubtitleAnimationType {
   const stored = readStored<JobFormPrefs>(JOB_FORM_PREFS_STORAGE_KEY, { animationType: 'default' });
   return isSubtitleAnimationType(stored.animationType) ? stored.animationType : 'default';
+}
+
+export function readInitialLayout(): RequestedSubtitleLayout {
+  const stored = readStored<JobFormPrefs>(JOB_FORM_PREFS_STORAGE_KEY, { layout: 'auto' });
+  return stored.layout === 'single' || stored.layout === 'split' || stored.layout === 'auto' ? stored.layout : 'auto';
 }
 
 export function clampClipCount(value: number): number {
@@ -94,6 +107,7 @@ export function buildStartJobPayload({
   durationMax,
   durationMin,
   engine,
+  layout,
   numClips,
   resolution,
   skipSubtitles,
@@ -108,6 +122,7 @@ export function buildStartJobPayload({
     auto_mode: autoMode,
     duration_max: resolvedDuration.max,
     duration_min: resolvedDuration.min,
+    layout,
     num_clips: clampClipCount(numClips),
     resolution,
     skip_subtitles: skipSubtitles,

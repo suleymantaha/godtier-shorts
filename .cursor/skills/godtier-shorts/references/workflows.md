@@ -29,6 +29,8 @@ Prefer existing route, orchestrator, and workspace conventions over inventing ne
 - Keep `backend/core/orchestrator.py` as the external facade.
 - Put workflow-specific logic in `backend/core/workflows_pipeline.py`, `workflows_manual.py`, `workflows_batch.py`, and `workflows_reburn.py`.
 - Keep shared media operations in `backend/core/media_ops.py` when logic is reused across workflows.
+- Keep shared workflow glue in `backend/core/workflow_helpers.py`.
+- Keep transcript snapping in `backend/core/subtitle_timing.py` and render score logic in `backend/core/render_quality.py`.
 
 ## Workspace Layout
 
@@ -38,7 +40,17 @@ Prefer existing route, orchestrator, and workspace conventions over inventing ne
   - master video path resolved from `ProjectPaths`
   - `shorts/*.mp4`
   - `shorts/*.json`
+  - `debug/<clip_stem>/` (opsiyonel debug bundle)
 - Existing scripts and routes assume this layout. Change it only with a coordinated migration.
+
+## v2.1 Workflow Notes
+
+- Pipeline, manual, batch ve reburn akışları clip metadata içine kalite alanları yazar.
+- Batch workflow `output_paths` sonucunu `render_quality_score` azalan sırada döndürür.
+- Clip-level kalite özeti yalnız clip transcript/detail yüzeyinde kullanılır; `/api/clips` listesi değişmez.
+- Manual `center_x` override tracking'i by-pass eder; bu davranışı otomatik tracking ile karıştırma.
+- Reburn yeni tracking üretmez; varsa mevcut tracking/audio metriklerini koruyup subtitle kalite alanlarını günceller.
+- Debug artifact persistence ve benchmark çıktıları public route yüzeyi değil, operasyonel tanı yüzeyidir.
 
 ## Useful Docs
 

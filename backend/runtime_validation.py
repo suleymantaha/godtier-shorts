@@ -13,6 +13,9 @@ def validate_runtime_configuration() -> None:
     request_limit = _validate_optional_positive_int("REQUEST_BODY_HARD_LIMIT_BYTES")
     _validate_optional_positive_int("SOCIAL_SCHEDULER_POLL_SECONDS")
     _validate_optional_positive_int("SOCIAL_SCHEDULER_CONCURRENCY")
+    _validate_optional_bool("REQUIRE_CUDA_FOR_APP")
+    _validate_optional_bool("REQUIRE_NVENC_FOR_APP")
+    _validate_optional_bool("LOG_ACCELERATOR_STATUS_ON_STARTUP")
 
     if upload_limit is not None and request_limit is not None and request_limit < upload_limit:
         raise RuntimeError(
@@ -45,6 +48,14 @@ def _validate_optional_positive_int(name: str) -> int | None:
     if value <= 0:
         raise RuntimeError(f"{name} pozitif bir tam sayi olmali")
     return value
+
+
+def _validate_optional_bool(name: str) -> None:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return
+    if raw.lower() not in {"0", "1", "true", "false", "yes", "no", "on", "off"}:
+        raise RuntimeError(f"{name} boolean bir deger olmali")
 
 
 def _validate_optional_url_list(name: str) -> None:

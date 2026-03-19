@@ -9,6 +9,12 @@ Uvicorn giriş noktası.
 veya doğrudan:
     uvicorn backend.api.server:app --host 0.0.0.0 --port 8000 --reload
 """
+import os
+
+# GPU probe davranisini tum calistirma yollarinda hizala.
+os.environ.setdefault("PYTORCH_NVML_BASED_CUDA_CHECK", "1")
+os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
+
 import uvicorn
 from loguru import logger
 

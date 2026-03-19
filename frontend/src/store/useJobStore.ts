@@ -3,16 +3,20 @@ import { useAuthRuntimeStore } from '../auth/runtime';
 import type { Job, LogEntry, WsStatus } from '../types';
 import { jobsApi } from '../api/client';
 
+const MAX_CORE_LOG_ENTRIES = 300;
+
 interface JobState {
     jobs: Job[];
     logs: LogEntry[];
     clips: string[];
     wsStatus: WsStatus;
     lastError: string | null;
+    clipReadySignal: number;
     /** Job tamamlandığında artar; ClipGallery yenileme tetikler */
     refreshClipsTrigger: number;
     fetchJobs: () => Promise<void>;
     updateJobProgress: (job_id: string, msg: string, progress: number, status?: Job['status']) => void;
+    markClipReady: (payload: { clipName: string; job_id: string; message: string; progress: number; projectId?: string; uiTitle?: string }) => void;
     cancelJob: (job_id: string) => Promise<void>;
     setWsStatus: (status: WsStatus) => void;
     addClip: (url: string) => void;
@@ -26,6 +30,7 @@ export const useJobStore = create<JobState>((set) => ({
     clips: [],
     wsStatus: 'connecting' as WsStatus,
     lastError: null,
+    clipReadySignal: 0,
     refreshClipsTrigger: 0,
 
     fetchJobs: async () => {
@@ -71,10 +76,22 @@ export const useJobStore = create<JobState>((set) => ({
             logs: [
                 ...state.logs,
                 { message: `[${job_id}] ${msg}`, progress, timestamp: new Date().toLocaleTimeString() },
-            ].slice(-50),
+            ].slice(-MAX_CORE_LOG_ENTRIES),
             refreshClipsTrigger: jobCompleted ? state.refreshClipsTrigger + 1 : state.refreshClipsTrigger,
         };
     }),
+
+    markClipReady: ({ clipName, job_id, message, progress, projectId, uiTitle }) => set((state) => ({
+        clipReadySignal: state.clipReadySignal + 1,
+        logs: [
+            ...state.logs,
+            {
+                message: `[${job_id}] ${message}${uiTitle ? ` (${uiTitle})` : ''} -> ${projectId ?? 'unknown'}/${clipName}`,
+                progress,
+                timestamp: new Date().toLocaleTimeString(),
+            },
+        ].slice(-MAX_CORE_LOG_ENTRIES),
+    })),
 
     cancelJob: async (job_id) => {
         try {
@@ -92,5 +109,5 @@ export const useJobStore = create<JobState>((set) => ({
 
     setWsStatus: (status) => set({ wsStatus: status }),
     addClip: (url) => set((state) => ({ clips: [...state.clips, url] })),
-    reset: () => set({ jobs: [], logs: [], lastError: null, refreshClipsTrigger: 0, wsStatus: 'connecting' }),
+    reset: () => set({ jobs: [], logs: [], lastError: null, clipReadySignal: 0, refreshClipsTrigger: 0, wsStatus: 'connecting' }),
 }));

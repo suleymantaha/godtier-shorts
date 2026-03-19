@@ -53,6 +53,9 @@ Runtime config hardening:
 - `API_PORT`, `UPLOAD_MAX_FILE_SIZE`, `REQUEST_BODY_HARD_LIMIT_BYTES`, `SOCIAL_SCHEDULER_*` alanlari pozitif tam sayi olmalidir.
 - `REQUEST_BODY_HARD_LIMIT_BYTES`, `UPLOAD_MAX_FILE_SIZE` degerinden kucuk olamaz.
 - `FRONTEND_URL`, `CORS_ORIGINS`, `PUBLIC_APP_URL`, `POSTIZ_API_BASE_URL` alanlari mutlak `http(s)` URL olmalidir; query/fragment icermemelidir.
+- `REQUIRE_CUDA_FOR_APP`, `REQUIRE_NVENC_FOR_APP`, `LOG_ACCELERATOR_STATUS_ON_STARTUP` boolean alanlardir.
+- `REQUIRE_CUDA_FOR_APP=1` ise backend startup ve YOLO model yukleme sirasinda CUDA zorunlu olur.
+- `REQUIRE_NVENC_FOR_APP=1` ise startup onkontrolu NVENC yolunu zorunlu kilir. Subtitle burn tarafinda ayrica `REQUIRE_NVENC_FOR_BURN=1` kullanilabilir.
 
 Detayli son kullanici kurulumu ve "bu key'i nereden alacagim?" rehberi:
 [`docs/api-key-setup.md`](docs/api-key-setup.md)
@@ -67,6 +70,10 @@ Detayli son kullanici kurulumu ve "bu key'i nereden alacagim?" rehberi:
 python -m backend.main          # Backend: http://0.0.0.0:8000
 cd frontend && npm run dev      # Frontend: http://localhost:5173
 ```
+
+`run.sh` varsayılan olarak `PYTORCH_NVML_BASED_CUDA_CHECK=1`, `CUDA_DEVICE_ORDER=PCI_BUS_ID` ve `LOG_ACCELERATOR_STATUS_ON_STARTUP=1` export eder. GPU zorunlu deploylarda `REQUIRE_CUDA_FOR_APP=1` veya `REQUIRE_NVENC_FOR_APP=1` ile fail-fast açılabilir.
+
+Linux geliştirme ortamlarında Vite watcher kotası düşükse `./run.sh` frontend'i önce native watch ile dener, `ENOSPC` alırsa otomatik olarak polling fallback moduna (`CHOKIDAR_USEPOLLING=1`) geçer.
 
 ## Sayfa Rehberi
 
@@ -244,6 +251,7 @@ python scripts/check_runtime_config.py
 # Sistem bagimliliklari (ffmpeg / yt-dlp / opsiyonel GPU)
 python scripts/check_system_deps.py
 python scripts/check_system_deps.py --require-gpu
+python scripts/check_system_deps.py --require-nvenc
 
 # Backend
 pytest backend/tests -v
@@ -257,7 +265,7 @@ cd frontend && npm run verify
 python scripts/benchmark_render_stability.py --project ID --clip NAME --runs 3 --samples 5
 ```
 
-`bash scripts/verify.sh` kanonik tam dogrulama komutudur; toolchain check + runtime config check + frontend `lint + test + build` ile backend `pytest backend/tests -q` adimlarini fail-fast kosar. `python scripts/check_system_deps.py` ise yeni makine hazirligi ve medya pipeline bagimliliklari icin ayrica kosulmalidir.
+`bash scripts/verify.sh` kanonik tam dogrulama komutudur; toolchain check + runtime config check + frontend `lint + test + build` ile backend `pytest backend/tests -q` adimlarini fail-fast kosar. `python scripts/check_system_deps.py` ise yeni makine hazirligi ve medya pipeline bagimliliklari icin ayrica kosulmalidir. `--require-gpu` CUDA gorunurlugunu, `--require-nvenc` ise `ffmpeg h264_nvenc` encoder yolunu ayrica zorlar.
 
 Pyre statik analiz (opsiyonel):
 

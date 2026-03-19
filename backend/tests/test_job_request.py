@@ -114,6 +114,12 @@ def test_job_request_rejects_unknown_style_name():
 def test_job_request_validates_layout_name():
     req = JobRequest(
         youtube_url="https://youtube.com/watch?v=test",
+        layout="auto",
+    )
+    assert req.layout == "auto"
+
+    req = JobRequest(
+        youtube_url="https://youtube.com/watch?v=test",
         layout="split",
     )
     assert req.layout == "split"
@@ -123,7 +129,7 @@ def test_job_request_validates_layout_name():
             youtube_url="https://youtube.com/watch?v=test",
             layout="grid",
         )
-    assert "unknown layout" in str(exc_info.value)
+    assert "unknown requested layout" in str(exc_info.value)
 
 
 def test_job_request_validates_animation_type():

@@ -21,6 +21,9 @@ describe('JobForm accessibility and layout', () => {
 
     const engineSelect = screen.getByLabelText(/ai core engine/i);
     expect(engineSelect).toBeInTheDocument();
+
+    const layoutSelect = screen.getByLabelText(/frame layout/i);
+    expect(layoutSelect).toBeInTheDocument();
   });
 
   it('renders responsive layout classes and toggles', async () => {

@@ -40,6 +40,7 @@ from backend.api.routes.clips import (
     resolve_project_transcript_state,
 )
 from backend.core.media_ops import build_shifted_transcript_segments
+from backend.core.render_contracts import resolve_duration_range
 from backend.core.orchestrator import GodTierShortsCreator
 from backend.core.exceptions import InvalidInputError, JobExecutionError
 from backend.models.schemas import (
@@ -56,7 +57,7 @@ from backend.services.transcription import run_transcription
 
 router = APIRouter(prefix="/api", tags=["editor"])
 DEFAULT_MANUAL_CUT_STYLE = "HORMOZI"
-DEFAULT_MANUAL_CUT_LAYOUT = "single"
+DEFAULT_MANUAL_CUT_LAYOUT = "auto"
 CLIP_RECOVERY_JOB_PREFIX = "cliprecover"
 
 
@@ -310,6 +311,10 @@ async def process_batch_clips(
             cb = lambda s: thread_safe_broadcast(s, job_id)
             orchestrator = GodTierShortsCreator(ui_callback=cb, subject=auth.subject)
             try:
+                resolved_duration_min, resolved_duration_max = resolve_duration_range(
+                    request.duration_min,
+                    request.duration_max,
+                )
                 path = get_project_path(request.project_id, "transcript.json") if request.project_id else VIDEO_METADATA
                 if path.exists():
                     with open(path, "r", encoding="utf-8") as f:
@@ -323,8 +328,8 @@ async def process_batch_clips(
                     end_t=request.end_time,
                     num_clips=request.num_clips,
                     transcript_data=transcript_data,
-                    duration_min=120.0,
-                    duration_max=180.0,
+                    duration_min=resolved_duration_min,
+                    duration_max=resolved_duration_max,
                     style_name=request.style_name,
                     animation_type=request.animation_type,
                     project_id=request.project_id,
@@ -370,6 +375,9 @@ async def manual_cut_upload(
     num_clips: int = Form(1),
     cut_points: str | None = Form(None),
     cut_as_short: bool = Form(True),
+    layout: str = Form(DEFAULT_MANUAL_CUT_LAYOUT),
+    duration_min: float | None = Form(None),
+    duration_max: float | None = Form(None),
     auth: AuthContext = Depends(require_policy("manual_cut_upload")),
 ) -> dict:
     """Video + zaman aralığı ile otomatik manual cut üretir. cut_points veya num_clips>1 ile çoklu klip."""
@@ -385,6 +393,12 @@ async def manual_cut_upload(
         animation_type = StyleManager.ensure_valid_animation_type(animation_type)
     except ValueError as exc:
         raise InvalidInputError(str(exc)) from exc
+    try:
+        layout = StyleManager.ensure_valid_requested_layout(layout)
+    except ValueError as exc:
+        raise InvalidInputError(str(exc)) from exc
+
+    resolved_duration_min, resolved_duration_max = resolve_duration_range(duration_min, duration_max)
 
     pts = _parse_cut_points(cut_points)
     use_cut_points = pts is not None and len(pts) >= 2
@@ -410,6 +424,7 @@ async def manual_cut_upload(
         "clip_name": clip_name,
         "output_url": output_url,
         "num_clips": num_clips,
+        "layout": layout,
         "subject": auth.subject,
     }
 
@@ -441,7 +456,7 @@ async def manual_cut_upload(
                             style_name=style_name,
                             animation_type=animation_type,
                             project_id=project_id,
-                            layout=DEFAULT_MANUAL_CUT_LAYOUT,
+                            layout=layout,
                             skip_subtitles=skip_subtitles,
                             cut_as_short=cut_as_short,
                         )
@@ -466,12 +481,12 @@ async def manual_cut_upload(
                             end_t=request.end_time,
                             num_clips=num_clips,
                             transcript_data=transcript_data,
-                            duration_min=120.0,
-                            duration_max=180.0,
+                            duration_min=resolved_duration_min,
+                            duration_max=resolved_duration_max,
                             style_name=style_name,
                             animation_type=animation_type,
                             project_id=project_id,
-                            layout=DEFAULT_MANUAL_CUT_LAYOUT,
+                            layout=layout,
                             skip_subtitles=skip_subtitles,
                             cut_as_short=cut_as_short,
                         )
@@ -499,7 +514,7 @@ async def manual_cut_upload(
                             animation_type=animation_type,
                             project_id=project_id,
                             center_x=None,
-                            layout=DEFAULT_MANUAL_CUT_LAYOUT,
+                            layout=layout,
                             output_name=clip_name,
                             skip_subtitles=skip_subtitles,
                             cut_as_short=cut_as_short,

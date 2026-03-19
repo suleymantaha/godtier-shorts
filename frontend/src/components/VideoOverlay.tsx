@@ -16,8 +16,10 @@ import {
   type StyleName,
   type SubtitleAnimationType,
   type SubtitleLayout,
+  type SubtitleSafeAreaProfile,
 } from '../config/subtitleStyles';
 import { buildTextShadow } from './subtitlePreview/helpers';
+import { getSubtitleChunkLines } from '../utils/subtitleTiming';
 import {
   buildCropGuideStyle,
   findCurrentSubtitleState,
@@ -33,6 +35,7 @@ interface VideoOverlayProps {
   centerX: number;
   onCropChange: (x: number) => void;
   layout?: SubtitleLayout;
+  safeAreaProfile?: SubtitleSafeAreaProfile;
 }
 
 export function VideoOverlay({
@@ -43,10 +46,23 @@ export function VideoOverlay({
   centerX,
   onCropChange,
   layout = 'single',
+  safeAreaProfile = 'default',
 }: VideoOverlayProps) {
+  const resolvedStyle = useMemo(
+    () => resolveSubtitleStyle(style, animationType),
+    [animationType, style],
+  );
+  const fontSizeRem = useMemo(
+    () => Number.parseFloat(resolvedStyle.inline.fontSize) || 2.4,
+    [resolvedStyle.inline.fontSize],
+  );
   const currentSubtitleState = useMemo(
-    () => findCurrentSubtitleState(transcript, currentTime),
-    [currentTime, transcript],
+    () => findCurrentSubtitleState(transcript, currentTime, {
+      layout,
+      fontSizeRem,
+      fontWeight: resolvedStyle.inline.fontWeight,
+    }),
+    [currentTime, fontSizeRem, layout, resolvedStyle.inline.fontWeight, transcript],
   );
 
   const handleMouseDown = useCallback((e: MouseEvent<HTMLDivElement>) => {
@@ -104,7 +120,7 @@ export function VideoOverlay({
       onTouchStart={handleTouchStart}
     >
       <CropGuide centerX={centerX} />
-      <LiveSubtitle currentSubtitleState={currentSubtitleState} style={style} animationType={animationType} layout={layout} />
+      <LiveSubtitle currentSubtitleState={currentSubtitleState} resolved={resolvedStyle} layout={layout} safeAreaProfile={safeAreaProfile} />
       <CropSlider centerX={centerX} onKeyDown={handleKeyDown} />
     </div>
   );
@@ -124,17 +140,16 @@ function CropGuide({ centerX }: { centerX: number }) {
 }
 
 function LiveSubtitle({
-  animationType,
   currentSubtitleState,
-  style,
+  resolved,
   layout,
+  safeAreaProfile,
 }: {
-  animationType: SubtitleAnimationType;
   currentSubtitleState: ReturnType<typeof findCurrentSubtitleState>;
-  style: StyleName;
+  resolved: ReturnType<typeof resolveSubtitleStyle>;
   layout: SubtitleLayout;
+  safeAreaProfile: SubtitleSafeAreaProfile;
 }) {
-  const resolved = resolveSubtitleStyle(style, animationType);
   const [entered, setEntered] = useState(resolved.resolvedAnimationType === 'none');
 
   useEffect(() => {
@@ -163,7 +178,7 @@ function LiveSubtitle({
   const textStyle: CSSProperties = {
     color: inline.primaryColor,
     fontFamily: inline.fontFamily,
-    fontSize: inline.fontSize,
+    fontSize: scaleCssFontSize(inline.fontSize, currentSubtitleState.chunk.fontScale),
     fontStyle: inline.fontStyle ?? 'normal',
     fontWeight: inline.fontWeight,
     letterSpacing: inline.letterSpacing,
@@ -178,9 +193,10 @@ function LiveSubtitle({
     transition: `transform ${motionProfile.animationDurationMs}ms cubic-bezier(0.22, 1, 0.36, 1), opacity ${motionProfile.animationDurationMs}ms ease`,
   };
   const wrapperStyle: CSSProperties = {
-    ...getSubtitleBoxStyle(layout),
+    ...getSubtitleBoxStyle(layout, 'overlay', safeAreaProfile),
     backgroundColor: inline.backgroundColor ?? undefined,
   };
+  const chunkLines = getSubtitleChunkLines(currentSubtitleState.chunk);
 
   return (
     <div className="pointer-events-none absolute flex items-center justify-center" style={wrapperStyle}>
@@ -188,20 +204,47 @@ function LiveSubtitle({
         className={`max-w-full break-words text-center drop-shadow-[0_4px_4px_rgba(0,0,0,1)] ${resolved.overlayClassName}`}
         style={textStyle}
       >
-        {currentSubtitleState.chunk.words.map((word, index) => (
-          <span
-            key={`${word.start}-${word.word}`}
-            style={index === currentSubtitleState.activeWordIndex ? {
-              color: inline.highlightColor,
-            } : undefined}
+        {chunkLines.map((line, lineIndex) => (
+          <div
+            key={`line-${lineIndex}`}
+            data-testid={`live-subtitle-line-${lineIndex}`}
           >
-            {index > 0 ? ' ' : null}
-            {word.word}
-          </span>
+            {line.map((word, index) => {
+              const globalIndex = chunkLines
+                .slice(0, lineIndex)
+                .reduce((sum, candidate) => sum + candidate.length, 0) + index;
+              return (
+                <span
+                  key={`${word.start}-${word.word}`}
+                  style={globalIndex === currentSubtitleState.activeWordIndex ? {
+                    color: inline.highlightColor,
+                  } : undefined}
+                >
+                  {index > 0 ? ' ' : null}
+                  {word.word}
+                </span>
+              );
+            })}
+          </div>
         ))}
       </div>
     </div>
   );
+}
+
+function scaleCssFontSize(fontSize: string | number | undefined, fontScale?: number): string | number | undefined {
+  if (!fontSize || !fontScale || fontScale >= 0.9999) {
+    return fontSize;
+  }
+  if (typeof fontSize === 'number') {
+    return +(fontSize * fontScale).toFixed(2);
+  }
+  const parsed = Number.parseFloat(fontSize);
+  if (!Number.isFinite(parsed)) {
+    return fontSize;
+  }
+  const unit = fontSize.replace(String(parsed), '') || 'px';
+  return `${(parsed * fontScale).toFixed(3)}${unit}`;
 }
 
 function resolveOverlayBaseOpacity(animationType: ReturnType<typeof resolveSubtitleStyle>['resolvedAnimationType']): number {

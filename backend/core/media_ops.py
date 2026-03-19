@@ -263,6 +263,7 @@ def cut_and_burn_clip(
     subtitle_engine: Optional[SubtitleRenderer],
     layout: str,
     center_x: Optional[float],
+    initial_slot_centers: tuple[float, float] | None = None,
     cut_as_short: bool,
     require_audio: bool = False,
 ) -> dict:
@@ -278,6 +279,7 @@ def cut_and_burn_clip(
                 smoothness=0.1,
                 manual_center_x=center_x,
                 layout=layout,
+                initial_slot_centers=initial_slot_centers,
                 cancel_event=cancel_event,
                 require_audio=require_audio,
             )

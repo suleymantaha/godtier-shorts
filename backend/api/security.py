@@ -30,6 +30,7 @@ class AuthContext:
     subject: str
     roles: set[str]
     token_type: str
+    auth_mode: str = "static_token"
 
 
 POLICY_ROLES: dict[str, set[str]] = {
@@ -116,6 +117,20 @@ def _get_static_token_mapping() -> dict[str, set[str]]:
     return {}
 
 
+def is_clerk_auth_configured() -> bool:
+    return bool(os.getenv("CLERK_ISSUER_URL", "").strip())
+
+
+def _is_interactive_browser_request(headers: Any | None) -> bool:
+    if headers is None:
+        return False
+
+    origin = str(headers.get("origin") or "").strip()
+    sec_fetch_mode = str(headers.get("sec-fetch-mode") or "").strip()
+    sec_fetch_site = str(headers.get("sec-fetch-site") or "").strip()
+    return bool(origin or sec_fetch_mode or sec_fetch_site)
+
+
 def _extract_roles(payload: dict[str, Any]) -> set[str]:
     raw_roles = payload.get("roles", payload.get("role", []))
     if isinstance(raw_roles, str):
@@ -179,10 +194,10 @@ def _decode_jwt(token: str, issuer: str, audience: str) -> AuthContext:
     roles = _extract_roles(payload)
     if not roles:
         raise ValueError("JWT roles claim eksik veya boş")
-    return AuthContext(subject=subject, roles=roles, token_type="jwt")
+    return AuthContext(subject=subject, roles=roles, token_type="jwt", auth_mode="clerk_jwt")
 
 
-def _authenticate_token(token: str) -> AuthContext:
+def _authenticate_token(token: str, *, interactive_browser: bool = False) -> AuthContext:
     token = token.strip()
     if not token:
         raise _auth_exception(status.HTTP_401_UNAUTHORIZED, "unauthorized", "Bearer token gerekli")
@@ -196,9 +211,20 @@ def _authenticate_token(token: str) -> AuthContext:
             str(exc),
         ) from exc
     if token in static_tokens:
+        if is_clerk_auth_configured() and interactive_browser:
+            raise _auth_exception(
+                status.HTTP_401_UNAUTHORIZED,
+                "interactive_static_token_disabled",
+                "Tarayici oturumlari Clerk JWT ile dogrulanmali",
+            )
         roles = static_tokens[token]
         fingerprint = hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
-        return AuthContext(subject=f"static-token:{fingerprint}", roles=roles, token_type="bearer")
+        return AuthContext(
+            subject=f"static-token:{fingerprint}",
+            roles=roles,
+            token_type="bearer",
+            auth_mode="static_token",
+        )
 
     clerk_issuer = os.getenv("CLERK_ISSUER_URL", "").strip()
     clerk_audience = os.getenv("CLERK_AUDIENCE", "").strip()
@@ -288,18 +314,24 @@ def authenticate_request(
         raise _auth_exception(status.HTTP_401_UNAUTHORIZED, "unauthorized", "Bearer token gerekli")
 
     try:
-        return _authenticate_token(credentials.credentials)
+        return _authenticate_token(
+            credentials.credentials,
+            interactive_browser=_is_interactive_browser_request(request.headers),
+        )
     except HTTPException as exc:
         _security_log(request, event="auth_failed", reason=str(exc.detail))
         raise
 
 
-def authenticate_websocket_token(token: str | None) -> AuthContext:
+def authenticate_websocket_token(token: str | None, headers: Any | None = None) -> AuthContext:
     if token is None:
         _security_log_ws(event="auth_failed", reason="WebSocket token eksik")
         raise _auth_exception(status.HTTP_401_UNAUTHORIZED, "unauthorized", "WebSocket token gerekli")
     try:
-        return _authenticate_token(token)
+        return _authenticate_token(
+            token,
+            interactive_browser=_is_interactive_browser_request(headers),
+        )
     except HTTPException as exc:
         _security_log_ws(event="auth_failed", reason=str(exc.detail))
         raise

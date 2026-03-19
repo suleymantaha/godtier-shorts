@@ -120,6 +120,8 @@ def merge_transcript_quality(
             "subtitle_overflow_detected": bool(layout_metrics.get("subtitle_overflow_detected", merged.get("subtitle_overflow_detected", False))),
             "max_rendered_line_width_ratio": layout_metrics.get("max_rendered_line_width_ratio", merged.get("max_rendered_line_width_ratio", 0.0)),
             "safe_area_violation_count": layout_metrics.get("safe_area_violation_count", merged.get("safe_area_violation_count", 0)),
+            "simultaneous_event_overlap_count": int(layout_metrics.get("simultaneous_event_overlap_count", merged.get("simultaneous_event_overlap_count", 0) or 0)),
+            "max_simultaneous_events": int(layout_metrics.get("max_simultaneous_events", merged.get("max_simultaneous_events", 1) or 1)),
         }
     )
     if snapping_report:
@@ -128,8 +130,9 @@ def merge_transcript_quality(
 
     coverage_ratio = float(merged.get("word_coverage_ratio", 0.0) or 0.0)
     overflow = bool(merged.get("subtitle_overflow_detected"))
+    overlap_count = int(merged.get("simultaneous_event_overlap_count", 0) or 0)
     empty_segments = int(merged.get("empty_text_segments_after_rebuild", 0) or 0)
-    if overflow or empty_segments > 0 or coverage_ratio < 0.60:
+    if overflow or overlap_count > 0 or empty_segments > 0 or coverage_ratio < 0.60:
         merged["status"] = "degraded"
     elif coverage_ratio < 0.80 or int(merged.get("segments_without_words", 0) or 0) > 0:
         merged["status"] = "partial"
@@ -147,7 +150,19 @@ def _tracking_score_component(tracking_quality: dict | None) -> float:
     total_frames = float(tracking_quality.get("total_frames", 0.0) or 0.0)
     fallback_ratio = fallback_frames / total_frames if total_frames > 0 else 0.0
     avg_center_jump = float(tracking_quality.get("avg_center_jump_px", 0.0) or 0.0)
-    penalty = min(26.0, fallback_ratio * 45.0) + min(18.0, avg_center_jump / 18.0)
+    panel_swap_count = float(tracking_quality.get("panel_swap_count", 0.0) or 0.0)
+    primary_p95 = float(tracking_quality.get("primary_p95_center_jump_px", tracking_quality.get("p95_center_jump_px", 0.0)) or 0.0)
+    secondary_p95 = float(tracking_quality.get("secondary_p95_center_jump_px", 0.0) or 0.0)
+    startup_settle_ms = float(tracking_quality.get("startup_settle_ms", 0.0) or 0.0)
+    predict_fallback_active = bool(tracking_quality.get("predict_fallback_active"))
+    split_motion_policy = str(tracking_quality.get("split_motion_policy") or "")
+    jitter_penalty = 0.0
+    jitter_penalty += min(18.0, max(primary_p95, secondary_p95) / 2.4)
+    jitter_penalty += min(12.0, startup_settle_ms / 45.0)
+    jitter_penalty += min(20.0, panel_swap_count * 18.0)
+    if predict_fallback_active and split_motion_policy == "stable":
+        jitter_penalty += 8.0
+    penalty = min(26.0, fallback_ratio * 45.0) + min(18.0, avg_center_jump / 18.0) + jitter_penalty
     return max(0.0, min(100.0, base - penalty))
 
 
@@ -179,8 +194,13 @@ def _subtitle_score_component(subtitle_quality: dict | None) -> float:
     overflow = bool(subtitle_quality.get("subtitle_overflow_detected"))
     safe_area_violations = float(subtitle_quality.get("safe_area_violation_count", 0.0) or 0.0)
     width_ratio = float(subtitle_quality.get("max_rendered_line_width_ratio", 0.0) or 0.0)
+    overlap_count = float(subtitle_quality.get("simultaneous_event_overlap_count", 0.0) or 0.0)
     base = 96.0 if not overflow else 72.0
-    penalty = min(24.0, safe_area_violations * 8.0) + max(0.0, (width_ratio - 0.92) * 22.0)
+    penalty = (
+        min(24.0, safe_area_violations * 8.0)
+        + max(0.0, (width_ratio - 0.92) * 22.0)
+        + min(40.0, overlap_count * 25.0)
+    )
     return max(0.0, min(100.0, base - penalty))
 
 

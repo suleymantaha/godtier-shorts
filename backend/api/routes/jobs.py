@@ -18,7 +18,9 @@ from loguru import logger
 
 from backend.models.schemas import JobRequest
 from backend.api.websocket import manager, thread_safe_broadcast
+from backend.api.routes.clips import invalidate_clips_cache
 from backend.api.security import AuthContext, require_policy
+from backend.core.render_contracts import resolve_duration_range
 from backend.core.orchestrator import GodTierShortsCreator
 from backend.core.exceptions import JobExecutionError, NotFoundError
 from backend.services.subtitle_styles import StyleManager
@@ -61,11 +63,10 @@ async def run_gpu_job(job_id: str, request: JobRequest) -> None:
             )
             orchestrator.analyzer.engine = request.ai_engine
 
-            duration_min = 120.0
-            duration_max = 180.0
-            if not request.auto_mode and request.duration_min is not None and request.duration_max is not None:
-                duration_min = float(request.duration_min)
-                duration_max = float(request.duration_max)
+            duration_min, duration_max = resolve_duration_range(
+                request.duration_min if not request.auto_mode else None,
+                request.duration_max if not request.auto_mode else None,
+            )
 
             try:
                 await orchestrator.run_pipeline_async(
@@ -80,6 +81,7 @@ async def run_gpu_job(job_id: str, request: JobRequest) -> None:
                     request.resolution,
                 )
                 _finalize_job(job_id, "completed", progress=100)
+                invalidate_clips_cache(reason=f"job_success:{job_id}")
                 logger.success(f"🔓 İşlem tamamlandı: {job_id}")
             except asyncio.CancelledError:
                 _finalize_job(job_id, "cancelled")

@@ -16,9 +16,11 @@ import {
 
 import {
   ANIMATION_SELECT_OPTIONS,
+  resolvePreviewLayout,
   STYLE_OPTIONS,
   isStyleName,
   isSubtitleAnimationType,
+  type RequestedSubtitleLayout,
   type StyleName,
   type SubtitleAnimationType,
 } from '../../config/subtitleStyles';
@@ -34,6 +36,12 @@ import type { AutoCutEditorController } from './useAutoCutEditorController';
 interface AutoCutEditorLayoutProps {
   controller: AutoCutEditorController;
 }
+
+const LAYOUT_SELECT_OPTIONS = [
+  { label: 'Auto', value: 'auto' },
+  { label: 'Single', value: 'single' },
+  { label: 'Split', value: 'split' },
+];
 
 export function AutoCutEditorLayout({ controller }: AutoCutEditorLayoutProps) {
   return (
@@ -296,8 +304,10 @@ function AutoCutOptionsCard({ controller }: AutoCutEditorLayoutProps) {
         <AutoCutSubtitleOptions
           animationType={controller.animationType}
           cutAsShort={controller.cutAsShort}
+          layout={controller.layout}
           setAnimationType={controller.setAnimationType}
           setCutAsShort={controller.setCutAsShort}
+          setLayout={controller.setLayout}
           setSkipSubtitles={controller.setSkipSubtitles}
           setStyle={controller.setStyle}
           skipSubtitles={controller.skipSubtitles}
@@ -313,7 +323,7 @@ function AutoCutOptionsCard({ controller }: AutoCutEditorLayoutProps) {
             animationType={controller.animationType}
             cutAsShort={controller.cutAsShort}
             disabled={controller.skipSubtitles}
-            layout="single"
+            layout={resolvePreviewLayout(controller.layout)}
             styleName={controller.style}
             videoSrc={controller.videoSrc}
           />
@@ -326,8 +336,10 @@ function AutoCutOptionsCard({ controller }: AutoCutEditorLayoutProps) {
 function AutoCutSubtitleOptions({
   animationType,
   cutAsShort,
+  layout,
   setAnimationType,
   setCutAsShort,
+  setLayout,
   setSkipSubtitles,
   setStyle,
   skipSubtitles,
@@ -335,8 +347,10 @@ function AutoCutSubtitleOptions({
 }: {
   animationType: SubtitleAnimationType;
   cutAsShort: boolean;
+  layout: RequestedSubtitleLayout;
   setAnimationType: React.Dispatch<React.SetStateAction<SubtitleAnimationType>>;
   setCutAsShort: React.Dispatch<React.SetStateAction<boolean>>;
+  setLayout: React.Dispatch<React.SetStateAction<RequestedSubtitleLayout>>;
   setSkipSubtitles: React.Dispatch<React.SetStateAction<boolean>>;
   setStyle: React.Dispatch<React.SetStateAction<StyleName>>;
   skipSubtitles: boolean;
@@ -387,6 +401,15 @@ function AutoCutSubtitleOptions({
         disabled={skipSubtitles}
         className={skipSubtitles ? 'opacity-40' : ''}
       />
+      <div className="space-y-1">
+        <label className="text-[11px] text-muted-foreground uppercase block">Layout</label>
+        <Select
+          value={layout}
+          onChange={(value) => setLayout(value === 'split' ? 'split' : value === 'single' ? 'single' : 'auto')}
+          options={LAYOUT_SELECT_OPTIONS}
+          icon={<Sparkles className="w-4 h-4 text-secondary/50" />}
+        />
+      </div>
       <div className="space-y-1">
         <label className="text-[11px] text-muted-foreground uppercase block">Motion</label>
         <Select

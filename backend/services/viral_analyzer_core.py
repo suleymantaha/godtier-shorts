@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Callable
 
+from backend.core.render_contracts import resolve_duration_validation_status
+
 
 def clip_words(text: str, limit: int) -> str:
     return " ".join(text.split()[:limit]).strip()
@@ -13,6 +15,80 @@ def clip_words(text: str, limit: int) -> str:
 def normalize_hook(text: str) -> str:
     hook = " ".join(text.split()[:7]).strip()
     return (hook or "DIKKAT CEKEN AN").upper()
+
+
+def normalize_viral_segments(
+    result: dict | None,
+    transcript_data: list[dict],
+    *,
+    limit: int,
+    duration_min: float,
+    duration_max: float,
+) -> dict | None:
+    if result is None or not isinstance(result, dict):
+        return None
+
+    raw_segments = result.get("segments")
+    if not isinstance(raw_segments, list):
+        return None
+
+    usable_segments = [
+        seg for seg in transcript_data if isinstance(seg, dict) and "start" in seg and "end" in seg
+    ]
+    if not usable_segments:
+        return {"segments": []}
+
+    transcript_start = float(usable_segments[0]["start"])
+    transcript_end = float(usable_segments[-1]["end"])
+    normalized_segments: list[dict] = []
+
+    for candidate in raw_segments:
+        if not isinstance(candidate, dict):
+            continue
+        try:
+            start_time = float(candidate.get("start_time"))
+            end_time = float(candidate.get("end_time"))
+        except (TypeError, ValueError):
+            continue
+
+        if start_time < transcript_start or end_time > transcript_end:
+            continue
+
+        if resolve_duration_validation_status(
+            start_time,
+            end_time,
+            duration_min=duration_min,
+            duration_max=duration_max,
+        ) != "ok":
+            continue
+
+        hook_text = str(candidate.get("hook_text", "")).strip()
+        ui_title = str(candidate.get("ui_title", "")).strip()
+        if not hook_text:
+            hook_text = normalize_hook(ui_title or "DIKKAT CEKEN AN")
+        if not ui_title:
+            ui_title = clip_words(hook_text, 12) or "Otomatik Secilen Klip"
+
+        social_caption = str(candidate.get("social_caption", "")).strip() or f"{ui_title} #shorts #viral"
+        try:
+            viral_score = int(candidate.get("viral_score", 70))
+        except (TypeError, ValueError):
+            viral_score = 70
+
+        normalized_segments.append(
+            {
+                "start_time": start_time,
+                "end_time": end_time,
+                "hook_text": hook_text,
+                "ui_title": ui_title,
+                "social_caption": social_caption,
+                "viral_score": max(1, min(100, viral_score)),
+            }
+        )
+        if len(normalized_segments) >= limit:
+            break
+
+    return {"segments": normalized_segments}
 
 
 def build_fallback_segments(
@@ -76,6 +152,13 @@ def build_fallback_segments(
         full_end = float(usable_segments[-1]["end"])
         joined_text = " ".join(str(seg.get("text", "")).strip() for seg in usable_segments)
         title = clip_words(joined_text, 12) or "Otomatik Secilen Klip"
+        if resolve_duration_validation_status(
+            full_start,
+            full_end,
+            duration_min=min_duration,
+            duration_max=max_duration,
+        ) != "ok":
+            return {"segments": []}
         return {
             "segments": [
                 {
@@ -207,8 +290,9 @@ def build_metadata_prompt(full_text: str, *, num_clips: int, duration_min: float
         "3. ZITLIK VE ÇATIŞMA: İki farklı ismin veya zıt fikrin (Örn: Erdoğan vs. İmamoğlu) sert şekilde karşı karşıya getirildiği anları yakala.\n\n"
         
         "ZAMANLAMA VE KURGU KURALLARI:\n"
-        "- BAĞLAM PENCERESİ: Ana vurucu cümleyi (punchline) bulduğunda, klibi o cümleden en az 10 saniye ÖNCE başlat (bağlam kurmak için) "
-        "ve düşünce bittikten 5 saniye SONRA bitir.\n"
+        f"- HER KLIP ZORUNLU OLARAK {dur_range} saniye araliginda olmalidir. Bu araligin disina cikma.\n"
+        "- BAĞLAM PENCERESİ: Ana vurucu cümleyi bulduğunda klibi yalnız gerektiği kadar erken başlat; "
+        "genelde 2-6 saniye öncesi yeterlidir. Görsel olarak konuya çok erken girmeyen, doğal açılışları tercih et.\n"
         "- BÜTÜNLÜK: Cümleleri asla ortadan kesme. Timestamp'lere %100 sadık kal.\n\n"
         
         "GÖREVLERİN:\n"
@@ -222,6 +306,7 @@ def build_metadata_prompt(full_text: str, *, num_clips: int, duration_min: float
         "Sadece en yüksek tutma (retention) potansiyeline sahip olanları seç.\n\n"
         
         f"Çıktıyı SADECE şu JSON formatında ver: {default_segments_schema_json()}\n\n"
+        f"TEKRAR HATIRLATMA: Her segment {dur_range} saniye araliginda olmak zorunda.\n\n"
         "ÖNEMLİ: Çıktıda sadece JSON olsun, açıklama ekleme.\n\n"
         f"TRANSKRİPT:\n{full_text}"
     )

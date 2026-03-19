@@ -1,0 +1,31 @@
+# GodTier Shorts Project Rule
+
+Use `.cursor/skills/godtier-shorts/SKILL.md` as the repo-specific playbook for this project.
+
+## Default Behavior
+
+- Before changing workflows, subtitle styles, auth, WebSocket progress, social publishing, or runtime config, read the matching file under `.cursor/skills/godtier-shorts/references/`.
+- Prefer these canonical entry points:
+  - `backend/api/server.py`
+  - `backend/core/orchestrator.py`
+  - `backend/core/workflows_*.py`
+  - `backend/core/workflow_helpers.py`
+  - `backend/core/render_quality.py`
+  - `backend/core/subtitle_timing.py`
+  - `backend/services/subtitle_renderer.py`
+  - `backend/services/subtitle_styles.py`
+  - `frontend/src/config/subtitleStyles.ts`
+  - `frontend/src/utils/subtitleTiming.ts`
+- Keep backend and frontend contracts aligned for shared payloads, style names, message shapes, and subtitle timing behavior.
+- Preserve the existing `workspace/projects/<project_id>/` layout and path sanitization helpers.
+- Treat clip-level `render_metadata` as the home of quality/debug fields; keep `/api/clips` and `Clip` list payloads lightweight.
+- Treat `workspace/projects/<project_id>/debug/<clip_stem>/` as an optional debug bundle path gated by `DEBUG_RENDER_ARTIFACTS=1`.
+- Preserve additive metadata semantics: prefer omitting unknown/unmeasured quality fields instead of writing `null`.
+- Run the smallest relevant checks first; use `bash scripts/verify.sh` for broad verification.
+- Use `scripts/benchmark_render_stability.py` when debugging determinism, throughput, or render reproducibility.
+- Do not reintroduce legacy subtitle renderer imports or collapse workflow modules back into monoliths.
+- Keep compatibility aliases in workflow modules if tests or stable callers monkeypatch module-level symbols directly.
+
+---
+
+## alwaysApply: true

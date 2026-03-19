@@ -63,6 +63,7 @@ class OrchestratorContext(Protocol):
         subtitle_engine: Optional[SubtitleRenderer],
         layout: str = "single",
         center_x: Optional[float] = None,
+        initial_slot_centers: tuple[float, float] | None = None,
         cut_as_short: bool = True,
         require_audio: bool = False,
     ) -> dict:

@@ -2,7 +2,8 @@ import { useAuth } from '@clerk/clerk-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import type { AppError } from '../api/errors';
-import { getFreshToken, setApiToken } from '../api/client';
+import { authApi, getFreshToken, setApiToken } from '../api/client';
+import { isAppError } from '../api/errors';
 import { useAuthRuntimeStore } from './runtime';
 import {
   AUTH_BOOTSTRAP_TIMEOUT_MS,
@@ -54,6 +55,7 @@ export function useResilientAuth(): ResilientAuthState {
   const isOnline = useOnlineStatus();
   const bootstrapTimedOut = useBootstrapTimeout(isLoaded, AUTH_BOOTSTRAP_TIMEOUT_MS);
   const [authError, setAuthError] = useState<AppError | null>(null);
+  const [backendIdentity, setBackendIdentity] = useState<{ subject: string } | null>(null);
   const backendAuthStatus = useAuthRuntimeStore((state) => state.backendAuthStatus);
   const canUseProtectedRequests = useAuthRuntimeStore((state) => state.canUseProtectedRequests);
   const pauseReason = useAuthRuntimeStore((state) => state.pauseReason);
@@ -67,6 +69,8 @@ export function useResilientAuth(): ResilientAuthState {
 
     if (!isSignedIn) {
       setApiToken(null);
+      setBackendIdentity(null);
+      setAuthError(null);
       if (isOnline) {
         clearAuthSnapshot();
       }
@@ -79,6 +83,7 @@ export function useResilientAuth(): ResilientAuthState {
     const syncToken = async () => {
       try {
         const token = await getFreshToken();
+        const whoami = await authApi.whoami();
         if (cancelled) {
           return;
         }
@@ -90,13 +95,15 @@ export function useResilientAuth(): ResilientAuthState {
           userId,
         });
         writeAuthSnapshot(nextSnapshot);
+        setBackendIdentity({ subject: whoami.subject });
         setAuthError(null);
       } catch (error) {
         if (cancelled) {
           return;
         }
 
-        setAuthError(classifyTokenRefreshError(error, isOnline));
+        setBackendIdentity(null);
+        setAuthError(isAppError(error) ? error : classifyTokenRefreshError(error, isOnline));
       }
     };
 
@@ -122,18 +129,18 @@ export function useResilientAuth(): ResilientAuthState {
         isOnline,
         isSignedIn,
       }),
-      identityKey: isSignedIn ? sessionId ?? userId ?? null : null,
+      identityKey: isSignedIn ? backendIdentity?.subject ?? userId ?? null : null,
     }),
     [
       authError,
       backendAuthStatus,
+      backendIdentity?.subject,
       bootstrapTimedOut,
       canUseProtectedRequests,
       isLoaded,
       isOnline,
       isSignedIn,
       pauseReason,
-      sessionId,
       tokenExpiresAt,
       userId,
     ],

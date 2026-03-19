@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 from backend.config import ProjectPaths, TEMP_DIR
+from backend.core.render_contracts import resolve_duration_validation_status
 from loguru import logger
 
 
@@ -64,6 +65,29 @@ def build_hook_slug(hook: str, *, max_length: int) -> str:
     return cleaned[:max_length]
 
 
+def apply_opening_validation(
+    *,
+    video_processor,
+    source_video: str,
+    start_t: float,
+    end_t: float,
+    resolved_layout: str,
+    manual_center_x: float | None = None,
+) -> tuple[float, dict[str, object]]:
+    opening_report = video_processor.analyze_opening_shot(
+        input_video=source_video,
+        start_time=start_t,
+        end_time=end_t,
+        resolved_layout=resolved_layout,
+        manual_center_x=manual_center_x,
+    )
+    suggested_start = float(opening_report.get("suggested_start_time", start_t) or start_t)
+    if suggested_start >= end_t:
+        suggested_start = start_t
+    opening_report["suggested_start_time"] = suggested_start
+    return suggested_start, opening_report
+
+
 async def run_blocking(func, /, *args, **kwargs):
     """Run a blocking callable inline in tests, otherwise offload to a worker thread."""
     if os.getenv("PYTEST_CURRENT_TEST") or os.getenv("WORKFLOW_INLINE_BLOCKING") == "1":
@@ -71,13 +95,13 @@ async def run_blocking(func, /, *args, **kwargs):
     return await asyncio.to_thread(partial(func, *args, **kwargs))
 
 
-def write_json_atomic(path: str | Path, payload: object) -> None:
+def write_json_atomic(path: str | Path, payload: object, *, indent: int = 2) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_path = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            json.dump(payload, handle, ensure_ascii=False, indent=indent)
         os.replace(temp_path, path)
     finally:
         try:
@@ -85,6 +109,68 @@ def write_json_atomic(path: str | Path, payload: object) -> None:
                 os.remove(temp_path)
         except OSError:
             pass
+
+
+def publish_clip_ready_event(
+    *,
+    subject: str | None = None,
+    job_id: str | None = None,
+    project_id: str,
+    clip_name: str,
+    message: str,
+    progress: int,
+    ui_title: str | None = None,
+) -> bool:
+    """Broadcast a clip-ready signal after the clip metadata has been committed."""
+    from backend.api.routes.clips import invalidate_clips_cache
+    from backend.api.websocket import manager, thread_safe_broadcast
+
+    safe_progress = max(0, min(progress, 99))
+    invalidate_clips_cache(reason=f"clip_ready:{project_id}/{clip_name}")
+
+    resolved_job_id = job_id
+    if resolved_job_id is None and subject:
+        active_jobs = [
+            (float(job.get("created_at") or 0.0), candidate_job_id)
+            for candidate_job_id, job in manager.jobs.items()
+            if str(job.get("subject") or "") == subject
+            and str(job.get("status") or "") in {"queued", "processing"}
+        ]
+        if active_jobs:
+            resolved_job_id = max(active_jobs)[1]
+
+    if resolved_job_id is None:
+        active_jobs = [
+            (float(job.get("created_at") or 0.0), candidate_job_id)
+            for candidate_job_id, job in manager.jobs.items()
+            if str(job.get("project_id") or "") == project_id
+            and str(job.get("status") or "") in {"queued", "processing"}
+        ]
+        if active_jobs:
+            resolved_job_id = max(active_jobs)[1]
+
+    if not resolved_job_id:
+        logger.warning(
+            "Clip ready olayı job bulunamadığı için websocket'e yayınlanamadı: project_id={} clip_name={}",
+            project_id,
+            clip_name,
+        )
+        return False
+
+    extra_payload: dict[str, object] = {
+        "event_type": "clip_ready",
+        "project_id": project_id,
+        "clip_name": clip_name,
+    }
+    if ui_title:
+        extra_payload["ui_title"] = ui_title
+
+    thread_safe_broadcast(
+        {"message": message, "progress": safe_progress, "status": "processing"},
+        resolved_job_id,
+        extra=extra_payload,
+    )
+    return True
 
 
 def move_file_atomic(source: str | Path, destination: Path) -> None:
@@ -346,10 +432,18 @@ async def analyze_pipeline_segments(
         logger.error("❌ LLM viral kısım bulamadı!")
         ctx._update_status("HATA: Viral klip secimi basarisiz.", -1)
         raise RuntimeError("Viral klip seçimi başarısız oldu.")
+    if not viral_results["segments"]:
+        logger.error("❌ Süre/layout kontratını karşılayan viral segment bulunamadı!")
+        ctx._update_status("HATA: İstenen süre aralığında uygun segment bulunamadı.", -1)
+        raise RuntimeError("İstenen süre aralığında uygun segment bulunamadı.")
 
-    with open(ctx.project.viral_meta, "w", encoding="utf-8") as handle:
-        json.dump(viral_results, handle, ensure_ascii=False, indent=4)
-    return viral_results
+    enriched_results = {
+        **viral_results,
+        "requested_duration_min": duration_min,
+        "requested_duration_max": duration_max,
+    }
+    write_json_atomic(ctx.project.viral_meta, enriched_results, indent=4)
+    return enriched_results
 
 
 async def render_pipeline_segments(
@@ -362,6 +456,8 @@ async def render_pipeline_segments(
     animation_type: str,
     layout: str,
     skip_subtitles: bool,
+    duration_min: float,
+    duration_max: float,
 ) -> None:
     from backend.core.media_ops import shift_timestamps_with_report
     from backend.core.render_quality import (
@@ -414,6 +510,44 @@ async def render_pipeline_segments(
             cut_as_short=True,
             manual_center_x=None,
         )
+        validated_start_t, opening_report = apply_opening_validation(
+            video_processor=ctx.video_processor,
+            source_video=master_video,
+            start_t=start_t,
+            end_t=end_t,
+            resolved_layout=render_plan.resolved_layout,
+            manual_center_x=None,
+        )
+        if str(opening_report.get("layout_validation_status")) == "opening_subject_missing":
+            raise RuntimeError("Açılışta görünür subject bulunamadı.")
+        if validated_start_t > start_t:
+            start_t = validated_start_t
+            start_t, end_t, snap_report = snap_segment_boundaries(source_transcript, start_t, end_t)
+            render_plan = resolve_subtitle_render_plan(
+                video_processor=ctx.video_processor,
+                source_video=master_video,
+                start_t=start_t,
+                end_t=end_t,
+                requested_layout=layout,
+                cut_as_short=True,
+                manual_center_x=None,
+            )
+            _, opening_report = apply_opening_validation(
+                video_processor=ctx.video_processor,
+                source_video=master_video,
+                start_t=start_t,
+                end_t=end_t,
+                resolved_layout=render_plan.resolved_layout,
+                manual_center_x=None,
+            )
+        duration_validation_status = resolve_duration_validation_status(
+            start_t,
+            end_t,
+            duration_min=duration_min,
+            duration_max=duration_max,
+        )
+        if duration_validation_status != "ok":
+            raise RuntimeError("Segment süresi istenen aralığın dışına çıktı.")
         resolved_style = StyleManager.resolve_style(style_name, animation_type)
         subtitle_engine = None if skip_subtitles else create_subtitle_renderer(
             style_name,
@@ -421,6 +555,11 @@ async def render_pipeline_segments(
             canvas_width=render_plan.canvas_width,
             canvas_height=render_plan.canvas_height,
             layout=render_plan.resolved_layout,
+            safe_area_profile=render_plan.safe_area_profile,
+            lower_third_detection={
+                "lower_third_collision_detected": render_plan.lower_third_collision_detected,
+                "lower_third_band_height_ratio": render_plan.lower_third_band_height_ratio,
+            },
         )
 
         with TempArtifactManager(shifted_json, ass_file) as artifacts:
@@ -449,6 +588,7 @@ async def render_pipeline_segments(
                 subtitle_engine,
                 layout=render_plan.resolved_layout,
                 center_x=None,
+                initial_slot_centers=tuple(opening_report["initial_slot_centers"]) if isinstance(opening_report.get("initial_slot_centers"), list) and len(opening_report["initial_slot_centers"]) == 2 else None,
                 cut_as_short=True,
                 require_audio=True,
             )
@@ -491,11 +631,16 @@ async def render_pipeline_segments(
                     "clip_name": clip_filename,
                     "start_time": start_t,
                     "end_time": end_t,
+                    "requested_duration_min": duration_min,
+                    "requested_duration_max": duration_max,
+                    "duration_validation_status": duration_validation_status,
                     "crop_mode": "auto",
                     "center_x": None,
                     "layout": layout,
                     "resolved_layout": render_plan.resolved_layout,
                     "layout_fallback_reason": render_plan.layout_fallback_reason,
+                    "layout_validation_status": opening_report.get("layout_validation_status"),
+                    "opening_visibility_delay_ms": opening_report.get("opening_visibility_delay_ms"),
                     "style_name": style_name,
                     "animation_type": animation_type,
                     "resolved_animation_type": resolved_style.animation_type,
@@ -512,8 +657,15 @@ async def render_pipeline_segments(
                     **({"debug_artifacts": debug_artifacts} if debug_artifacts else {}),
                 },
             )
-            with open(final_output.replace(".mp4", ".json"), "w", encoding="utf-8") as handle:
-                json.dump(clip_full_metadata, handle, ensure_ascii=False, indent=4)
+            write_json_atomic(Path(final_output).with_suffix(".json"), clip_full_metadata, indent=4)
+            publish_clip_ready_event(
+                subject=ctx.subject,
+                project_id=ctx.project.root.name,
+                clip_name=clip_filename,
+                message=f"Klip {clip_num}/{total} hazır.",
+                progress=min(render_pct + 4, 99),
+                ui_title=str(seg.get("ui_title", "")).strip() or None,
+            )
 
 
 async def run_cut_points_workflow(
@@ -578,6 +730,8 @@ async def render_batch_segments(
     layout: str,
     skip_subtitles: bool,
     cut_as_short: bool,
+    duration_min: float,
+    duration_max: float,
 ) -> list[tuple[str, float, int]]:
     from backend.core.media_ops import build_shifted_transcript_segments_with_report
     from backend.core.render_quality import (
@@ -626,6 +780,49 @@ async def render_batch_segments(
             cut_as_short=cut_as_short,
             manual_center_x=None,
         )
+        opening_report = {
+            "layout_validation_status": "not_applicable",
+            "opening_visibility_delay_ms": 0.0,
+            "suggested_start_time": s_t,
+        }
+        if cut_as_short:
+            validated_start_t, opening_report = apply_opening_validation(
+                video_processor=ctx.video_processor,
+                source_video=master_video,
+                start_t=s_t,
+                end_t=e_t,
+                resolved_layout=render_plan.resolved_layout,
+                manual_center_x=None,
+            )
+            if str(opening_report.get("layout_validation_status")) == "opening_subject_missing":
+                raise RuntimeError("Açılışta görünür subject bulunamadı.")
+            if validated_start_t > s_t:
+                s_t, e_t, snap_report = snap_segment_boundaries(transcript_data, validated_start_t, e_t)
+                render_plan = resolve_subtitle_render_plan(
+                    video_processor=ctx.video_processor,
+                    source_video=master_video,
+                    start_t=s_t,
+                    end_t=e_t,
+                    requested_layout=layout,
+                    cut_as_short=cut_as_short,
+                    manual_center_x=None,
+                )
+                _, opening_report = apply_opening_validation(
+                    video_processor=ctx.video_processor,
+                    source_video=master_video,
+                    start_t=s_t,
+                    end_t=e_t,
+                    resolved_layout=render_plan.resolved_layout,
+                    manual_center_x=None,
+                )
+        duration_validation_status = resolve_duration_validation_status(
+            s_t,
+            e_t,
+            duration_min=duration_min,
+            duration_max=duration_max,
+        )
+        if duration_validation_status != "ok":
+            raise RuntimeError("Segment süresi istenen aralığın dışına çıktı.")
         resolved_style = StyleManager.resolve_style(style_name, animation_type)
         subtitle_engine: SubtitleRenderer | None = None
         if not skip_subtitles:
@@ -635,6 +832,11 @@ async def render_batch_segments(
                 canvas_width=render_plan.canvas_width,
                 canvas_height=render_plan.canvas_height,
                 layout=render_plan.resolved_layout,
+                safe_area_profile=render_plan.safe_area_profile,
+                lower_third_detection={
+                    "lower_third_collision_detected": render_plan.lower_third_collision_detected,
+                    "lower_third_band_height_ratio": render_plan.lower_third_band_height_ratio,
+                },
             )
 
         with TempArtifactManager(temp_orig, shifted_json) as artifacts:
@@ -665,6 +867,7 @@ async def render_batch_segments(
                 subtitle_engine,
                 render_plan.resolved_layout,
                 None,
+                tuple(opening_report["initial_slot_centers"]) if isinstance(opening_report.get("initial_slot_centers"), list) and len(opening_report["initial_slot_centers"]) == 2 else None,
                 cut_as_short,
                 False,
             )
@@ -707,11 +910,16 @@ async def render_batch_segments(
                     "clip_name": clip_filename,
                     "start_time": s_t,
                     "end_time": e_t,
+                    "requested_duration_min": duration_min,
+                    "requested_duration_max": duration_max,
+                    "duration_validation_status": duration_validation_status,
                     "crop_mode": "auto",
                     "center_x": None,
                     "layout": layout,
                     "resolved_layout": render_plan.resolved_layout,
                     "layout_fallback_reason": render_plan.layout_fallback_reason,
+                    "layout_validation_status": opening_report.get("layout_validation_status"),
+                    "opening_visibility_delay_ms": opening_report.get("opening_visibility_delay_ms"),
                     "style_name": style_name,
                     "animation_type": animation_type,
                     "resolved_animation_type": resolved_style.animation_type,
@@ -728,8 +936,15 @@ async def render_batch_segments(
                     **({"debug_artifacts": debug_artifacts} if debug_artifacts else {}),
                 },
             )
-            with open(final_output.replace(".mp4", ".json"), "w", encoding="utf-8") as handle:
-                json.dump(clip_meta, handle, ensure_ascii=False, indent=4)
+            write_json_atomic(Path(final_output).with_suffix(".json"), clip_meta, indent=4)
+            publish_clip_ready_event(
+                subject=ctx.subject,
+                project_id=ctx.project.root.name,
+                clip_name=clip_filename,
+                message=f"Klip {clip_num}/{total} hazır.",
+                progress=min(render_pct + 4, 99),
+                ui_title=str(seg.get("ui_title", "")).strip() or None,
+            )
             results.append((final_output, render_quality_score, idx))
 
     return results

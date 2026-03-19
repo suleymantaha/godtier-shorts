@@ -13,6 +13,8 @@ Use these contracts to avoid refactors that pass locally but break repo conventi
 - `workflows_reburn.py` stays at or below 150 lines.
 - `backend.core.workflows.__all__` keeps the expected public exports.
 
+Keep small compatibility aliases in workflow modules when tests or stable callers monkeypatch module-level symbols directly.
+
 ## Orchestrator Facade
 
 `backend/tests/test_orchestrator_refactor_guardrails.py` enforces:
@@ -37,3 +39,9 @@ Always import `backend.services.subtitle_renderer`.
 ## Import Smoke
 
 `backend/tests/test_route_imports_smoke.py` verifies that route modules and `create_app()` still import cleanly with lightweight stubs.
+
+## Test Harness Stability
+
+- `backend/tests/compat_testclient.py` is the repo-compatible HTTP client for local test stability.
+- `backend/tests/conftest.py` patches thread-offload helpers inline during tests to avoid local deadlocks.
+- WebSocket tests intentionally use a direct ASGI harness instead of `TestClient`.

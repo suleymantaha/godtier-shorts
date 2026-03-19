@@ -158,6 +158,22 @@ function buildProtectedAccessNotice(
     };
   }
 
+  if (pauseReason === 'unauthorized') {
+    return {
+      message: 'Backend oturumu dogrulanamadi. Ayni Clerk hesabi ile giris yaptiginizi ve backend auth ayarlarini kontrol edin.',
+      title: 'Backend oturumu dogrulanamadi',
+      tone: 'danger',
+    };
+  }
+
+  if (pauseReason === 'forbidden') {
+    return {
+      message: 'Bu hesapla korumali medya ve proje kaynaklarina erisim izni bulunmuyor.',
+      title: 'Erisim izni gerekli',
+      tone: 'danger',
+    };
+  }
+
   return null;
 }
 

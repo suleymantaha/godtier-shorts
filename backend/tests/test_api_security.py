@@ -3,6 +3,7 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
+from backend.api.routes import auth as auth_routes
 from backend.api.security import (
     ClerkProviderUnavailableError,
     ClerkTokenExpiredError,
@@ -11,6 +12,7 @@ from backend.api.security import (
     require_policy,
     validate_auth_configuration,
 )
+from backend.services.ownership import build_subject_hash
 
 
 def test_authenticate_with_static_token(monkeypatch: pytest.MonkeyPatch):
@@ -142,3 +144,62 @@ def test_unreachable_clerk_provider_returns_503(monkeypatch: pytest.MonkeyPatch)
 
     assert response.status_code == 503
     assert response.json()["detail"]["error"]["code"] == "auth_provider_unavailable"
+
+
+def test_browser_requests_reject_static_tokens_when_clerk_is_configured(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("API_BEARER_TOKENS", "token123:viewer")
+    monkeypatch.setenv("CLERK_ISSUER_URL", "https://example.clerk.accounts.dev")
+    monkeypatch.setenv("CLERK_AUDIENCE", "godtier-shorts-api")
+
+    app = FastAPI()
+
+    @app.get("/projects")
+    def projects(_: object = Depends(require_policy("view_projects"))):
+        return {"ok": True}
+
+    client = TestClient(app)
+    response = client.get(
+        "/projects",
+        headers={
+            "Authorization": "Bearer token123",
+            "Origin": "http://localhost:5173",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["error"]["code"] == "interactive_static_token_disabled"
+
+
+def test_whoami_returns_subject_hash_and_auth_mode(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("CLERK_ISSUER_URL", "https://example.clerk.accounts.dev")
+    monkeypatch.setenv("CLERK_AUDIENCE", "godtier-shorts-api")
+
+    def _decode(_token: str, _issuer: str, _audience: str):
+        from backend.api.security import AuthContext
+
+        return AuthContext(
+            subject="user_123",
+            roles={"viewer", "editor"},
+            token_type="jwt",
+            auth_mode="clerk_jwt",
+        )
+
+    monkeypatch.setattr("backend.api.security._decode_jwt", _decode)
+
+    app = FastAPI()
+    app.include_router(auth_routes.router)
+
+    client = TestClient(app)
+    response = client.get(
+        "/api/auth/whoami",
+        headers={"Authorization": "Bearer jwt-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "auth_mode": "clerk_jwt",
+        "roles": ["editor", "viewer"],
+        "subject": "user_123",
+        "subject_hash": build_subject_hash("user_123"),
+        "token_type": "jwt",
+    }

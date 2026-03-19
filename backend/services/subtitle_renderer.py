@@ -12,10 +12,12 @@ import subprocess
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
 from backend.config import LOGS_DIR
+from backend.core.render_quality import extract_media_stream_metrics, probe_media
 from backend.core.subtitle_timing import (
     DEFAULT_MAX_CHUNK_DURATION,
     DEFAULT_MAX_WORDS_PER_SCREEN,
@@ -41,8 +43,42 @@ logger.add(
     level="DEBUG",
 )
 
+SPLIT_MAX_WORDS_PER_SCREEN = 2
+SPLIT_SOFT_WRAP_RATIO = 0.92
+SPLIT_HARD_OVERFLOW_RATIO = 1.0
+SINGLE_MIN_FONT_SCALE = 0.72
+SPLIT_MIN_FONT_SCALE = 0.82
+SPLIT_FONT_CLAMP_MARGIN = 0.995
+SMALL_GAP_BRIDGE_THRESHOLD = 0.18
+NARROW_CHARACTERS = set("ilı!:;'|")
+WIDE_LOWER_CHARACTERS = set("mw")
+PUNCTUATION_CHARACTERS = set(".,?")
+
 
 class SubtitleRenderer:
+    @staticmethod
+    def _count_simultaneous_event_overlaps(intervals: list[tuple[float, float]]) -> tuple[int, int]:
+        events: list[tuple[float, int]] = []
+        for start, end in intervals:
+            if end <= start:
+                continue
+            events.append((start, 1))
+            events.append((end, -1))
+        events.sort(key=lambda item: (item[0], item[1]))
+
+        active = 0
+        max_active = 0
+        overlap_samples = 0
+        previous_time: float | None = None
+        for timestamp, delta in events:
+            if previous_time is not None and timestamp > previous_time and active > 1:
+                overlap_samples += 1
+            active += delta
+            max_active = max(max_active, active)
+            previous_time = timestamp
+        simultaneous_overlap_count = max(0, max_active - 1)
+        return simultaneous_overlap_count, max_active
+
     @staticmethod
     def _run_command_with_cancel(
         cmd: list[str],
@@ -74,22 +110,83 @@ class SubtitleRenderer:
         canvas_width: int = LOGICAL_CANVAS_WIDTH,
         canvas_height: int = LOGICAL_CANVAS_HEIGHT,
         layout: str = "single",
+        safe_area_profile: str = "default",
+        lower_third_detection: dict[str, object] | None = None,
     ):
         self.style = style
+        self.lower_third_detection = {
+            "lower_third_collision_detected": bool((lower_third_detection or {}).get("lower_third_collision_detected", False)),
+            "lower_third_band_height_ratio": round(float((lower_third_detection or {}).get("lower_third_band_height_ratio", 0.0) or 0.0), 4),
+        }
         self.spec: ResolvedSubtitleRenderSpec = StyleManager.resolve_render_spec(
             style,
             canvas_width=canvas_width,
             canvas_height=canvas_height,
             layout=layout,
+            safe_area_profile=safe_area_profile,
         )
         logger.info(
-            "Kinetik Altyazi Motoru baslatildi. Stil={} layout={} canvas={}x{}",
+            "Kinetik Altyazi Motoru baslatildi. Stil={} layout={} canvas={}x{} safe_area_profile={}",
             style.name,
             self.spec.canvas.layout,
             self.spec.canvas.width,
             self.spec.canvas.height,
+            self.spec.safe_area.profile,
         )
-        self.last_render_report: dict[str, object] = {}
+        self.last_render_report: dict[str, object] = self._build_base_render_report()
+
+    def _build_base_render_report(self) -> dict[str, object]:
+        return {
+            "resolved_safe_area_profile": self.spec.safe_area.profile,
+            "lower_third_collision_detected": self.lower_third_detection["lower_third_collision_detected"],
+            "lower_third_band_height_ratio": self.lower_third_detection["lower_third_band_height_ratio"],
+        }
+
+    @staticmethod
+    def _tail_text(text: str, limit: int = 1000) -> str:
+        return text[-limit:] if len(text) > limit else text
+
+    @staticmethod
+    def _looks_like_nvenc_failure(stderr: str) -> bool:
+        lowered = stderr.lower()
+        return "cuda" in lowered or "nvenc" in lowered or "hwaccel" in lowered
+
+    @staticmethod
+    def _summarize_nvenc_failure(stderr: str) -> str:
+        lowered = stderr.lower()
+        if "cannot load libcuda" in lowered or "libcuda.so" in lowered:
+            return "cuda_runtime_unavailable"
+        if "no capable devices found" in lowered or "no nvenc capable devices found" in lowered:
+            return "nvenc_device_unavailable"
+        if "driver does not support" in lowered or "minimum required driver" in lowered:
+            return "driver_incompatible"
+        if "out of memory" in lowered:
+            return "nvenc_oom"
+        if "cuda" in lowered:
+            return "cuda_error"
+        if "nvenc" in lowered:
+            return "nvenc_error"
+        return "unknown"
+
+    @staticmethod
+    def _probe_video_forensics(video_path: str) -> dict[str, Any]:
+        try:
+            probe = probe_media(video_path)
+            metrics = extract_media_stream_metrics(probe)
+        except Exception:
+            return {}
+
+        streams = probe.get("streams") if isinstance(probe, dict) else []
+        if not isinstance(streams, list):
+            streams = []
+        video_stream = next((stream for stream in streams if stream.get("codec_type") == "video"), {})
+
+        return {
+            "burn_input_codec": video_stream.get("codec_name"),
+            "burn_input_width": int(video_stream.get("width", 0) or 0) or None,
+            "burn_input_height": int(video_stream.get("height", 0) or 0) or None,
+            "burn_input_fps": round(float(metrics.get("fps", 0.0) or 0.0), 4),
+        }
 
     def _format_time_ass(self, seconds: float) -> str:
         hours = int(seconds // 3600)
@@ -252,11 +349,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         chunks: list[list[dict]],
         *,
         line_breaks: dict[int, int] | None = None,
+        font_scales: dict[int, float] | None = None,
     ) -> dict[str, object]:
         overflow_detected = False
         max_width_ratio = 0.0
         safe_area_violations = 0
         line_breaks = line_breaks or {}
+        font_scales = font_scales or {}
 
         for index, chunk in enumerate(chunks):
             if not chunk:
@@ -264,7 +363,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             lines = self._chunk_lines(chunk, line_break_after=line_breaks.get(index))
             if not lines:
                 continue
-            line_widths = [self._estimate_line_width_ratio(line) for line in lines]
+            font_scale = font_scales.get(index, 1.0)
+            line_widths = [self._estimate_line_width_ratio(line, font_scale=font_scale) for line in lines]
             widest = max(line_widths)
             max_width_ratio = max(max_width_ratio, widest)
             if widest > 1.0:
@@ -277,13 +377,33 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             "safe_area_violation_count": safe_area_violations,
         }
 
-    def _estimate_line_width_ratio(self, line_words: list[dict]) -> float:
+    def _estimate_text_units(self, normalized_text: str) -> float:
+        units = 0.0
+        for char in normalized_text:
+            if char.isspace():
+                units += 0.28
+            elif char in NARROW_CHARACTERS:
+                units += 0.34
+            elif char in PUNCTUATION_CHARACTERS:
+                units += 0.26
+            elif char.isdigit():
+                units += 0.52
+            elif char in WIDE_LOWER_CHARACTERS:
+                units += 0.62
+            elif char.isalpha():
+                units += 0.58 if char.isupper() else 0.49
+            else:
+                units += 0.49
+        return units
+
+    def _estimate_line_width_ratio(self, line_words: list[dict], *, font_scale: float = 1.0) -> float:
         text = " ".join(str(word.get("word", "")).strip() for word in line_words if str(word.get("word", "")).strip())
         normalized = normalize_subtitle_text(text)
         if not normalized:
             return 0.0
-        effective_char_width = self.spec.font_size * 0.58
-        estimated_width = len(normalized) * effective_char_width
+        estimated_width = self._estimate_text_units(normalized) * float(self.spec.font_size) * max(font_scale, 0.0)
+        if self.style.high_contrast or self.style.large_text or int(self.style.font_weight) >= 800:
+            estimated_width *= 1.05
         return estimated_width / max(self.spec.safe_area.max_text_width, 1)
 
     @staticmethod
@@ -291,6 +411,117 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if line_break_after is None or line_break_after < 0 or line_break_after >= len(chunk) - 1:
             return [chunk]
         return [chunk[: line_break_after + 1], chunk[line_break_after + 1 :]]
+
+    def _resolve_split_line_break_after(self, chunk: list[dict]) -> tuple[int | None, float]:
+        if len(chunk) < 2:
+            widest = self._estimate_line_width_ratio(chunk)
+            return None, widest
+
+        best_index: int | None = None
+        best_widest = float("inf")
+        for candidate in range(len(chunk) - 1):
+            lines = self._chunk_lines(chunk, line_break_after=candidate)
+            widest = max((self._estimate_line_width_ratio(line) for line in lines if line), default=0.0)
+            if widest < best_widest:
+                best_index = candidate
+                best_widest = widest
+
+        if best_index is None:
+            return None, self._estimate_line_width_ratio(chunk)
+        return best_index, best_widest
+
+    @staticmethod
+    def _promote_overflow_strategy(current: str, candidate: str) -> str:
+        priority = {
+            "default": 0,
+            "rechunk_2_words": 1,
+            "conservative_line_break": 2,
+            "single_font_clamp": 3,
+            "split_line_break": 4,
+            "split_rechunk_1_word": 5,
+        }
+        return candidate if priority.get(candidate, 0) >= priority.get(current, 0) else current
+
+    def _resolve_chunk_font_scale(
+        self,
+        chunk: list[dict],
+        *,
+        line_break_after: int | None = None,
+        min_scale: float = SPLIT_MIN_FONT_SCALE,
+    ) -> float:
+        lines = self._chunk_lines(chunk, line_break_after=line_break_after)
+        widest = max((self._estimate_line_width_ratio(line) for line in lines if line), default=0.0)
+        if widest <= 1.0:
+            return 1.0
+        desired_scale = (1.0 / widest) * SPLIT_FONT_CLAMP_MARGIN
+        return round(min(1.0, max(min_scale, desired_scale)), 4)
+
+    def _resolve_split_chunk_font_scales(
+        self,
+        chunks: list[list[dict]],
+        *,
+        line_breaks: dict[int, int],
+    ) -> dict[int, float]:
+        font_scales: dict[int, float] = {}
+        for index, chunk in enumerate(chunks):
+            if not chunk:
+                continue
+            font_scale = self._resolve_chunk_font_scale(
+                chunk,
+                line_break_after=line_breaks.get(index),
+                min_scale=SPLIT_MIN_FONT_SCALE,
+            )
+            if font_scale < 0.9999:
+                font_scales[index] = font_scale
+        return font_scales
+
+    def _resolve_single_chunk_font_scales(
+        self,
+        chunks: list[list[dict]],
+        *,
+        line_breaks: dict[int, int],
+    ) -> dict[int, float]:
+        font_scales: dict[int, float] = {}
+        for index, chunk in enumerate(chunks):
+            if not chunk:
+                continue
+            font_scale = self._resolve_chunk_font_scale(
+                chunk,
+                line_break_after=line_breaks.get(index),
+                min_scale=SINGLE_MIN_FONT_SCALE,
+            )
+            if font_scale < 0.9999:
+                font_scales[index] = font_scale
+        return font_scales
+
+    def _prepare_split_render_chunks(
+        self,
+        chunks: list[list[dict]],
+    ) -> tuple[list[list[dict]], dict[int, int], str]:
+        planned_chunks: list[list[dict]] = []
+        line_breaks: dict[int, int] = {}
+        overflow_strategy = "default"
+
+        for chunk in chunks:
+            if not chunk:
+                continue
+
+            widest_single_line = self._estimate_line_width_ratio(chunk)
+            if widest_single_line <= SPLIT_SOFT_WRAP_RATIO:
+                planned_chunks.append(chunk)
+                continue
+
+            break_after, broken_widest = self._resolve_split_line_break_after(chunk)
+            if break_after is not None and broken_widest <= SPLIT_HARD_OVERFLOW_RATIO:
+                line_breaks[len(planned_chunks)] = break_after
+                planned_chunks.append(chunk)
+                overflow_strategy = self._promote_overflow_strategy(overflow_strategy, "split_line_break")
+                continue
+
+            overflow_strategy = self._promote_overflow_strategy(overflow_strategy, "split_rechunk_1_word")
+            planned_chunks.extend([[word] for word in chunk])
+
+        return planned_chunks, line_breaks, overflow_strategy
 
     def _resolve_conservative_line_breaks(self, chunks: list[list[dict]]) -> dict[int, int]:
         line_breaks: dict[int, int] = {}
@@ -305,15 +536,37 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         all_words: list[dict],
         *,
         max_words_per_screen: int,
-    ) -> tuple[list[list[dict]], dict[str, object], dict[int, int]]:
+    ) -> tuple[list[list[dict]], dict[str, object], dict[int, int], dict[int, float]]:
+        if self.spec.canvas.layout == "split" and max_words_per_screen == DEFAULT_MAX_WORDS_PER_SCREEN:
+            max_words_per_screen = SPLIT_MAX_WORDS_PER_SCREEN
+
         line_breaks: dict[int, int] = {}
+        chunk_font_scales: dict[int, float] = {}
         chunks = chunk_words(
             all_words,
             max_words=max_words_per_screen,
             max_chunk_duration=DEFAULT_MAX_CHUNK_DURATION,
         )
-        overflow_metrics = self._estimate_chunk_overflow(chunks)
         overflow_strategy = "default"
+
+        if self.spec.canvas.layout == "split":
+            chunks, line_breaks, overflow_strategy = self._prepare_split_render_chunks(chunks)
+            chunk_font_scales = self._resolve_split_chunk_font_scales(chunks, line_breaks=line_breaks)
+            overflow_metrics = self._estimate_chunk_overflow(
+                chunks,
+                line_breaks=line_breaks,
+                font_scales=chunk_font_scales,
+            )
+            return chunks, {
+                **overflow_metrics,
+                "overflow_strategy": overflow_strategy,
+                "avg_words_per_chunk": round(average_chunk_words(chunks), 4),
+                "max_chunk_duration": round(max((get_chunk_duration(chunk) for chunk in chunks), default=0.0), 4),
+                "chunk_count": len(chunks),
+                "font_clamp_count": len(chunk_font_scales),
+            }, line_breaks, chunk_font_scales
+
+        overflow_metrics = self._estimate_chunk_overflow(chunks)
 
         if overflow_metrics["subtitle_overflow_detected"]:
             retry_chunks = chunk_words(
@@ -332,13 +585,25 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             overflow_metrics = retry_metrics
             overflow_strategy = "conservative_line_break"
 
+        if overflow_metrics["subtitle_overflow_detected"]:
+            chunk_font_scales = self._resolve_single_chunk_font_scales(chunks, line_breaks=line_breaks)
+            if chunk_font_scales:
+                retry_metrics = self._estimate_chunk_overflow(
+                    chunks,
+                    line_breaks=line_breaks,
+                    font_scales=chunk_font_scales,
+                )
+                overflow_metrics = retry_metrics
+                overflow_strategy = self._promote_overflow_strategy(overflow_strategy, "single_font_clamp")
+
         return chunks, {
             **overflow_metrics,
             "overflow_strategy": overflow_strategy,
             "avg_words_per_chunk": round(average_chunk_words(chunks), 4),
             "max_chunk_duration": round(max((get_chunk_duration(chunk) for chunk in chunks), default=0.0), 4),
             "chunk_count": len(chunks),
-        }, line_breaks
+            "font_clamp_count": len(chunk_font_scales),
+        }, line_breaks, chunk_font_scales
 
     @staticmethod
     def _escape_ass_text(text: str) -> str:
@@ -381,27 +646,32 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if not all_words:
             all_words = self._flatten_render_words(segments)
             all_words = collect_valid_words([{"words": all_words}]) if all_words else []
-        chunks, render_metrics, line_breaks = self._prepare_render_chunks(
+        chunks, render_metrics, line_breaks, chunk_font_scales = self._prepare_render_chunks(
             all_words,
             max_words_per_screen=max_words_per_screen,
         )
         chunk_prefix = self._calculate_chunk_prefix_tags()
+        dialogue_intervals: list[tuple[float, float]] = []
 
         for index, chunk in enumerate(chunks):
             if not chunk:
                 continue
 
             chunk_start_sec = float(chunk[0]["start"])
-            chunk_end_sec = max(float(chunk[-1]["end"]), max(float(word.get("segment_end", chunk[-1]["end"])) for word in chunk))
+            chunk_end_sec = float(chunk[-1]["end"])
             if index + 1 < len(chunks) and chunks[index + 1]:
                 next_chunk_start = float(chunks[index + 1][0]["start"])
                 gap = next_chunk_start - chunk_end_sec
-                if 0 <= gap < 0.18:
+                if 0 <= gap < SMALL_GAP_BRIDGE_THRESHOLD:
                     chunk_end_sec = next_chunk_start
 
             chunk_start_ass = self._format_time_ass(chunk_start_sec)
             chunk_end_ass = self._format_time_ass(chunk_end_sec)
             line_break_after = line_breaks.get(index)
+            chunk_font_scale = chunk_font_scales.get(index, 1.0)
+            chunk_font_size = None
+            if chunk_font_scale < 0.9999:
+                chunk_font_size = max(28, round(float(self.spec.font_size) * chunk_font_scale))
 
             word_fragments: list[str] = [chunk_prefix]
             for word_index, word in enumerate(chunk):
@@ -410,10 +680,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 word_end = float(word["end"])
                 anim_tags = self._calculate_word_animation_tags(word_start, word_end, chunk_start_sec)
                 primary_color = self.style.primary_color
+                font_tag = fr"\fs{chunk_font_size}" if chunk_font_size is not None else ""
                 if self.spec.blur > 0:
-                    reset_tag = fr"{{\r\blur{self.spec.blur}\c{primary_color}}}"
+                    reset_tag = fr"{{\r{font_tag}\blur{self.spec.blur}\c{primary_color}}}"
                 else:
-                    reset_tag = fr"{{\r\c{primary_color}}}"
+                    reset_tag = fr"{{\r{font_tag}\c{primary_color}}}"
                 word_fragments.append(f"{reset_tag}{anim_tags}{word_text}")
                 if line_break_after is not None and word_index == line_break_after:
                     word_fragments.append(r"\N")
@@ -422,9 +693,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             ass_lines.append(
                 f"Dialogue: 0,{chunk_start_ass},{chunk_end_ass},Main,,0,0,0,,{dialogue_text}\n"
             )
+            dialogue_intervals.append((chunk_start_sec, chunk_end_sec))
 
         if not ass_lines:
             raise RuntimeError("ASS generation produced no dialogue events")
+
+        simultaneous_overlap_count, max_simultaneous_events = self._count_simultaneous_event_overlaps(dialogue_intervals)
+        if simultaneous_overlap_count > 0:
+            raise RuntimeError("ASS generation produced overlapping dialogue events")
 
         ass_content = self._generate_ass_header() + "".join(ass_lines)
         output_path = Path(output_ass_path)
@@ -432,9 +708,19 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if not output_path.exists() or output_path.stat().st_size <= 0:
             raise RuntimeError(f"ASS output was not created: {output_ass_path}")
 
+        chunk_dump = build_chunk_payload(chunks)
+        for index, chunk_payload in enumerate(chunk_dump):
+            if index in line_breaks:
+                chunk_payload["line_break_after"] = line_breaks[index]
+            if index in chunk_font_scales:
+                chunk_payload["font_scale"] = chunk_font_scales[index]
+
         self.last_render_report = {
+            **self._build_base_render_report(),
             **render_metrics,
-            "chunk_dump": build_chunk_payload(chunks),
+            "simultaneous_event_overlap_count": simultaneous_overlap_count,
+            "max_simultaneous_events": max_simultaneous_events,
+            "chunk_dump": chunk_dump,
         }
         logger.success(f"NLP Akilli ASS dosyasi olusturuldu: {output_ass_path}")
         return str(output_path)
@@ -461,6 +747,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         cancel_event: threading.Event | None = None,
     ) -> None:
         logger.info(f"Akilli altyazilar isleniyor -> {output_video}")
+        require_nvenc = os.getenv("REQUIRE_NVENC_FOR_BURN") == "1"
 
         ass_abs = os.path.abspath(ass_file).replace("\\", "/")
         escaped_ass_abs = self._escape_filter_path(ass_abs)
@@ -507,12 +794,43 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             cancel_event=cancel_event,
         )
         if result.returncode == 0:
+            self.last_render_report.update(
+                {
+                    "burn_encoder": "h264_nvenc",
+                    "nvenc_fallback_used": False,
+                    "nvenc_required": require_nvenc,
+                }
+            )
             logger.success("Altyazi işlendi (NVENC), video hazır.")
             return
 
         stderr = result.stderr.decode("utf-8", errors="replace")
-        if "cuda" in stderr.lower() or "nvenc" in stderr.lower() or "hwaccel" in stderr.lower():
-            logger.warning("CUDA/NVENC kullanilamadi, CPU fallback deneniyor...")
+        stderr_tail = self._tail_text(stderr)
+        failure_reason = self._summarize_nvenc_failure(stderr)
+        forensic = self._probe_video_forensics(input_video)
+        self.last_render_report.update(
+            {
+                **forensic,
+                "burn_encoder": "h264_nvenc",
+                "nvenc_fallback_used": False,
+                "nvenc_required": require_nvenc,
+                "nvenc_failure_reason": failure_reason,
+                "nvenc_failure_stderr_tail": stderr_tail,
+            }
+        )
+        logger.warning(
+            "NVENC burn basarisiz, encoder fallback karari veriliyor. reason={} input={} codec={} size={}x{} fps={} stderr_tail={}",
+            failure_reason,
+            input_video,
+            forensic.get("burn_input_codec"),
+            forensic.get("burn_input_width"),
+            forensic.get("burn_input_height"),
+            forensic.get("burn_input_fps"),
+            stderr_tail,
+        )
+        if require_nvenc:
+            raise RuntimeError(f"NVENC zorunlu ama burn basarisiz: {stderr_tail}")
+        if self._looks_like_nvenc_failure(stderr):
             cpu_result = self._run_command_with_cancel(
                 cmd_cpu,
                 timeout=600,
@@ -521,8 +839,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             if cpu_result.returncode != 0:
                 cpu_stderr = cpu_result.stderr.decode("utf-8", errors="replace")
                 raise RuntimeError(f"CPU fallback ile altyazi burn basarisiz: {cpu_stderr[-300:]}")
+            self.last_render_report.update(
+                {
+                    "burn_encoder": "libx264",
+                    "nvenc_fallback_used": True,
+                }
+            )
             logger.success("Altyazi işlendi (CPU), video hazır.")
             return
 
-        logger.error(f"FFmpeg error: {stderr[-1000:]}")
+        logger.error(f"FFmpeg error: {stderr_tail}")
         raise subprocess.CalledProcessError(result.returncode, cmd_nvenc, result.stdout, result.stderr)

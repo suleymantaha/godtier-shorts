@@ -1,25 +1,43 @@
 import { useEffect, useState } from 'react';
 
+import { createAppError, isAppError, type AppError } from '../../api/errors';
 import { fetchProtectedMediaBlob, fetchProtectedVideoSource, shouldUseDirectVideoSource } from './lazyVideo/helpers';
 
 export function useResolvedMediaSource(src?: string): string | undefined {
+  return useResolvedMediaState(src).resolvedSrc;
+}
+
+export function useResolvedMediaState(src?: string): { error: AppError | null; resolvedSrc: string | undefined } {
   const [resolvedSource, setResolvedSource] = useState<{ blobSrc: string; src: string } | null>(null);
+  const [error, setError] = useState<AppError | null>(null);
 
   useEffect(() => {
-    if (!src || shouldUseDirectVideoSource(src)) {
+    if (!src) {
+      setError(null);
+      setResolvedSource(null);
+      return;
+    }
+
+    if (shouldUseDirectVideoSource(src)) {
+      setError(null);
       return;
     }
 
     let revokeUrl: string | null = null;
     const abortController = new AbortController();
+    setError(null);
 
     void fetchProtectedVideoSource(src, abortController.signal)
       .then((nextBlobSrc) => {
         revokeUrl = nextBlobSrc;
         setResolvedSource({ blobSrc: nextBlobSrc, src });
       })
-      .catch(() => {
-        // Keep the previous blob state keyed by source; stale entries are ignored below.
+      .catch((nextError: unknown) => {
+        setError(
+          isAppError(nextError)
+            ? nextError
+            : createAppError('server_unavailable', 'Video kaynagi yuklenemedi.'),
+        );
       });
 
     return () => {
@@ -31,12 +49,18 @@ export function useResolvedMediaSource(src?: string): string | undefined {
   }, [src]);
 
   if (!src) {
-    return undefined;
+    return {
+      error: null,
+      resolvedSrc: undefined,
+    };
   }
 
-  return shouldUseDirectVideoSource(src)
-    ? src
-    : (resolvedSource?.src === src ? resolvedSource.blobSrc : undefined);
+  return {
+    error,
+    resolvedSrc: shouldUseDirectVideoSource(src)
+      ? src
+      : (resolvedSource?.src === src ? resolvedSource.blobSrc : undefined),
+  };
 }
 
 export async function downloadMediaSource(src: string, filename?: string): Promise<void> {

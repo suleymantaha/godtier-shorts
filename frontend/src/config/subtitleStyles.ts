@@ -1,7 +1,9 @@
 import type { CSSProperties } from 'react';
 
 export type SubtitleLayout = 'single' | 'split';
+export type RequestedSubtitleLayout = 'auto' | SubtitleLayout;
 export type SubtitleSurface = 'overlay' | 'preview';
+export type SubtitleSafeAreaProfile = 'default' | 'lower_third_safe';
 export type PreviewAnimationType = 'fade' | 'none' | 'pop' | 'shake' | 'slide_up' | 'typewriter';
 export type SubtitleAnimationType = 'default' | PreviewAnimationType;
 export type PreviewScreenTheme = 'cinematic' | 'glass' | 'minimal' | 'neon' | 'studio' | 'terminal';
@@ -499,16 +501,29 @@ export function resolveSubtitleStyle(
 export function getSubtitleBoxStyle(
   layout: SubtitleLayout = 'single',
   surface: SubtitleSurface = 'overlay',
+  safeAreaProfile: SubtitleSafeAreaProfile = 'default',
 ): CSSProperties {
   const horizontalInset = surface === 'preview' ? '9%' : '8%';
   const horizontalPadding = surface === 'preview' ? '0.35rem' : '1rem';
+  const splitHorizontalPadding = surface === 'preview' ? '0.5rem' : '1.25rem';
 
   if (layout === 'split') {
     return {
       left: horizontalInset,
       right: horizontalInset,
       top: surface === 'preview' ? '45%' : '45%',
-      minHeight: surface === 'preview' ? '9%' : '10%',
+      minHeight: surface === 'preview' ? '9.5%' : '10.5%',
+      paddingLeft: splitHorizontalPadding,
+      paddingRight: splitHorizontalPadding,
+    };
+  }
+
+  if (safeAreaProfile === 'lower_third_safe') {
+    return {
+      left: horizontalInset,
+      right: horizontalInset,
+      bottom: surface === 'preview' ? '10.5%' : '22%',
+      minHeight: surface === 'preview' ? '11%' : '14%',
       paddingLeft: horizontalPadding,
       paddingRight: horizontalPadding,
     };
@@ -522,4 +537,8 @@ export function getSubtitleBoxStyle(
     paddingLeft: horizontalPadding,
     paddingRight: horizontalPadding,
   };
+}
+
+export function resolvePreviewLayout(layout?: RequestedSubtitleLayout | string | null): SubtitleLayout {
+  return layout === 'split' ? 'split' : 'single';
 }

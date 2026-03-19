@@ -18,11 +18,22 @@ def test_create_subtitle_renderer_uses_named_style_preset_and_canvas(monkeypatch
             return "resolved-style"
 
     class FakeSubtitleRenderer:
-        def __init__(self, style: str, *, canvas_width: int, canvas_height: int, layout: str):
+        def __init__(
+            self,
+            style: str,
+            *,
+            canvas_width: int,
+            canvas_height: int,
+            layout: str,
+            safe_area_profile: str,
+            lower_third_detection: dict[str, object] | None,
+        ):
             observed["style"] = style
             observed["canvas_width"] = canvas_width
             observed["canvas_height"] = canvas_height
             observed["layout"] = layout
+            observed["safe_area_profile"] = safe_area_profile
+            observed["lower_third_detection"] = lower_third_detection
 
     monkeypatch.setattr(workflow_runtime, "StyleManager", FakeStyleManager)
     monkeypatch.setattr(workflow_runtime, "SubtitleRenderer", FakeSubtitleRenderer)
@@ -33,6 +44,8 @@ def test_create_subtitle_renderer_uses_named_style_preset_and_canvas(monkeypatch
         canvas_width=720,
         canvas_height=1280,
         layout="split",
+        safe_area_profile="lower_third_safe",
+        lower_third_detection={"lower_third_collision_detected": True, "lower_third_band_height_ratio": 0.11},
     )
 
     assert isinstance(renderer, FakeSubtitleRenderer)
@@ -43,6 +56,8 @@ def test_create_subtitle_renderer_uses_named_style_preset_and_canvas(monkeypatch
         "canvas_width": 720,
         "canvas_height": 1280,
         "layout": "split",
+        "safe_area_profile": "lower_third_safe",
+        "lower_third_detection": {"lower_third_collision_detected": True, "lower_third_band_height_ratio": 0.11},
     }
 
 
@@ -51,6 +66,9 @@ def test_resolve_subtitle_render_plan_short_uses_video_processor_layout() -> Non
         def resolve_layout_for_segment(self, **kwargs) -> tuple[str, str | None]:
             assert kwargs["requested_layout"] == "split"
             return "single", "split_not_stable"
+
+        def _extract_probe_frame(self, *_args, **_kwargs):
+            return None
 
     plan = workflow_runtime.resolve_subtitle_render_plan(
         video_processor=FakeVideoProcessor(),
@@ -67,6 +85,7 @@ def test_resolve_subtitle_render_plan_short_uses_video_processor_layout() -> Non
     assert plan.requested_layout == "split"
     assert plan.resolved_layout == "single"
     assert plan.layout_fallback_reason == "split_not_stable"
+    assert plan.safe_area_profile == "default"
 
 
 def test_resolve_subtitle_render_plan_non_short_probes_canvas(monkeypatch) -> None:
@@ -75,6 +94,9 @@ def test_resolve_subtitle_render_plan_non_short_probes_canvas(monkeypatch) -> No
     class FakeVideoProcessor:
         def resolve_layout_for_segment(self, **kwargs) -> tuple[str, str | None]:
             raise AssertionError("should not be called for cut_as_short=False")
+
+        def _extract_probe_frame(self, *_args, **_kwargs):
+            return None
 
     plan = workflow_runtime.resolve_subtitle_render_plan(
         video_processor=FakeVideoProcessor(),
@@ -90,6 +112,37 @@ def test_resolve_subtitle_render_plan_non_short_probes_canvas(monkeypatch) -> No
     assert plan.canvas_height == 1080
     assert plan.resolved_layout == "single"
     assert plan.layout_fallback_reason == "split_requires_short_canvas"
+    assert plan.safe_area_profile == "default"
+
+
+def test_resolve_subtitle_render_plan_uses_lower_third_safe_area_when_detected(monkeypatch) -> None:
+    monkeypatch.setattr(
+        workflow_runtime,
+        "_resolve_safe_area_detection",
+        lambda **_kwargs: {
+            "safe_area_profile": "lower_third_safe",
+            "lower_third_collision_detected": True,
+            "lower_third_band_height_ratio": 0.14,
+        },
+    )
+
+    class FakeVideoProcessor:
+        def resolve_layout_for_segment(self, **_kwargs) -> tuple[str, str | None]:
+            return "single", None
+
+    plan = workflow_runtime.resolve_subtitle_render_plan(
+        video_processor=FakeVideoProcessor(),
+        source_video="master.mp4",
+        start_t=5.0,
+        end_t=35.0,
+        requested_layout="auto",
+        cut_as_short=True,
+        manual_center_x=None,
+    )
+
+    assert plan.safe_area_profile == "lower_third_safe"
+    assert plan.lower_third_collision_detected is True
+    assert plan.lower_third_band_height_ratio == 0.14
 
 
 def test_probe_video_canvas_uses_ffprobe(monkeypatch) -> None:

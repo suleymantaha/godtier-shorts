@@ -13,6 +13,7 @@ from backend.services.viral_llm_adapters import ViralLLMAdapter, create_adapter,
 from backend.services.viral_analyzer_core import (
     build_fallback_segments,
     build_metadata_prompt,
+    normalize_viral_segments,
     build_segment_prompt,
     build_transcript_text,
     clip_words,
@@ -22,8 +23,6 @@ from backend.services.viral_analyzer_core import (
 )
 
 load_dotenv()
-
-
 class ViralSegment(BaseModel):
     start_time: float = Field(description="Viral kısmın başlangıç saniyesi")
     end_time: float = Field(description="Viral kısmın bitiş saniyesi")
@@ -31,12 +30,8 @@ class ViralSegment(BaseModel):
     ui_title: str = Field(description="Dashboard'da görünecek ilgi çekici başlık")
     social_caption: str = Field(description="TikTok/Shorts açıklaması ve hashtagler")
     viral_score: int = Field(description="1-100 arası puan")
-
-
 class ViralAnalysisResult(BaseModel):
     segments: list[ViralSegment]
-
-
 class ViralAnalyzer:
     def __init__(self, engine: str = "cloud"):
         self.engine = (engine or "cloud").strip().lower()
@@ -46,7 +41,6 @@ class ViralAnalyzer:
     @staticmethod
     def _clip_words(text: str, limit: int) -> str:
         return clip_words(text, limit)
-
     @staticmethod
     def _normalize_hook(text: str) -> str:
         return normalize_hook(text)
@@ -74,7 +68,6 @@ class ViralAnalyzer:
     @staticmethod
     def _parse_llm_json_response(content: str) -> dict | None:
         return parse_llm_json_response(content)
-
     def _build_cloud_client(self) -> OpenAI | None:
         api_key = os.environ.get("OPENROUTER_API_KEY")
         if not api_key:
@@ -98,7 +91,6 @@ class ViralAnalyzer:
     @staticmethod
     def _extract_message_content(message: object) -> str:
         return extract_message_content(message)
-
     @staticmethod
     def _status_callback(ui_callback: Optional[Callable]) -> Callable[[str, int], None]:
         def _status(message: str, progress: int) -> None:
@@ -117,7 +109,6 @@ class ViralAnalyzer:
 
     def _engine_label(self) -> str:
         return engine_label(self.engine)
-
     def _resolve_client(self) -> OpenAI | None:
         if self.engine == "cloud":
             return self._build_cloud_client()
@@ -136,7 +127,6 @@ class ViralAnalyzer:
     def _persist_segments(result: dict) -> None:
         with open(str(VIRAL_SEGMENTS), "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=4)
-
     def _fallback_result(
         self,
         transcript_data: list[dict],
@@ -239,11 +229,26 @@ class ViralAnalyzer:
             if result is None:
                 logger.error("❌ LLM çıktısında 'segments' anahtarı bulunamadı!")
                 return None
+            normalized_result = normalize_viral_segments(
+                result,
+                transcript_data,
+                limit=num_clips,
+                duration_min=duration_min,
+                duration_max=duration_max,
+            )
+            if not normalized_result or not normalized_result.get("segments"):
+                logger.warning("⚠️ LLM sonucu süre kontratını karşılamadı, fallback analiz kullanılacak.")
+                return self._fallback_result(
+                    transcript_data,
+                    fallback_kw=fallback_kw,
+                    check_cancelled=check_cancelled,
+                    persist=True,
+                )
 
             check_cancelled()
-            self._persist_segments(result)
-            logger.success(f"✅ Analiz tamamlandı ({len(result['segments'])} segment).")
-            return result
+            self._persist_segments(normalized_result)
+            logger.success(f"✅ Analiz tamamlandı ({len(normalized_result['segments'])} segment).")
+            return normalized_result
         except Exception as exc:
             logger.error(f"❌ Analiz Hatası: {exc}")
             status(f"{engine_label} analiz hatasi alindi, fallback analiz kullaniliyor...", 56)
@@ -316,9 +321,23 @@ class ViralAnalyzer:
             result = self._call_llm(client, adapter, prompt, include_reasoning=False)
             if result is None:
                 return None
+            normalized_result = normalize_viral_segments(
+                result,
+                transcript_data,
+                limit=limit,
+                duration_min=duration_min,
+                duration_max=duration_max,
+            )
+            if not normalized_result or not normalized_result.get("segments"):
+                return self._fallback_result(
+                    transcript_data,
+                    fallback_kw=fallback_kw,
+                    check_cancelled=check_cancelled,
+                    persist=False,
+                )
 
-            logger.success(f"✅ Segment analizi tamamlandı ({len(result['segments'])} segment).")
-            return result
+            logger.success(f"✅ Segment analizi tamamlandı ({len(normalized_result['segments'])} segment).")
+            return normalized_result
         except Exception as exc:
             logger.error(f"❌ Segment Analiz Hatası: {exc}")
             return self._fallback_result(

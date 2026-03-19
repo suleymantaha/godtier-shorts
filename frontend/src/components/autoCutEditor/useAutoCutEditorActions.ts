@@ -7,7 +7,7 @@ import {
   type SyntheticEvent,
 } from 'react';
 
-import type { StyleName, SubtitleAnimationType } from '../../config/subtitleStyles';
+import type { RequestedSubtitleLayout, StyleName, SubtitleAnimationType } from '../../config/subtitleStyles';
 import { editorApi } from '../../api/client';
 import {
   buildAutoCutUploadPayload,
@@ -22,6 +22,7 @@ interface AutoCutEditorActionParams {
   endTime: number;
   fetchJobs: () => Promise<void>;
   fileInputRef: RefObject<HTMLInputElement | null>;
+  layout: RequestedSubtitleLayout;
   markers: number[];
   numClips: number;
   selectedFile: File | null;
@@ -56,7 +57,7 @@ type AutoCutFileSelectionParams = Pick<
 
 type AutoCutRenderSubmissionParams = Pick<
   AutoCutEditorActionParams,
-  'animationType' | 'cutAsShort' | 'duration' | 'endTime' | 'fetchJobs' | 'markers' | 'numClips' | 'selectedFile' | 'setCurrentJobId' | 'setIsSubmitting' | 'setPendingOutputUrl' | 'setProjectId' | 'setRequestError' | 'skipSubtitles' | 'startTime' | 'style'
+  'animationType' | 'cutAsShort' | 'duration' | 'endTime' | 'fetchJobs' | 'layout' | 'markers' | 'numClips' | 'selectedFile' | 'setCurrentJobId' | 'setIsSubmitting' | 'setPendingOutputUrl' | 'setProjectId' | 'setRequestError' | 'skipSubtitles' | 'startTime' | 'style'
 >;
 
 function toggleVideoPlayback(video: HTMLVideoElement | null) {
@@ -129,6 +130,7 @@ async function submitAutoCutRender({
   duration,
   endTime,
   fetchJobs,
+  layout,
   markers,
   numClips,
   selectedFile,
@@ -145,6 +147,7 @@ async function submitAutoCutRender({
   | 'duration'
   | 'endTime'
   | 'fetchJobs'
+  | 'layout'
   | 'markers'
   | 'numClips'
   | 'selectedFile'
@@ -164,6 +167,7 @@ async function submitAutoCutRender({
     cutAsShort,
     duration,
     endTime,
+    layout,
     markers,
     numClips,
     skipSubtitles,
@@ -282,6 +286,7 @@ function useAutoCutRenderSubmission({
   duration,
   endTime,
   fetchJobs,
+  layout,
   markers,
   numClips,
   selectedFile,
@@ -316,6 +321,7 @@ function useAutoCutRenderSubmission({
         duration,
         endTime,
         fetchJobs,
+        layout,
         markers,
         numClips,
         selectedFile,
@@ -332,7 +338,7 @@ function useAutoCutRenderSubmission({
     } finally {
       setIsSubmitting(false);
     }
-  }, [animationType, cutAsShort, duration, endTime, fetchJobs, markers, numClips, selectedFile, setCurrentJobId, setIsSubmitting, setPendingOutputUrl, setProjectId, setRequestError, skipSubtitles, startTime, style]);
+  }, [animationType, cutAsShort, duration, endTime, fetchJobs, layout, markers, numClips, selectedFile, setCurrentJobId, setIsSubmitting, setPendingOutputUrl, setProjectId, setRequestError, skipSubtitles, startTime, style]);
 
   return { handleRender };
 }

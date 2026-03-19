@@ -13,6 +13,19 @@ class SubtitleRenderer:
         logger.info(f"🎬 Kinetik Altyazı Motoru Başlatıldı. Aktif Stil: {style.name}")
         self.style = style
 
+    @staticmethod
+    def _is_nvenc_error(stderr_text: str) -> bool:
+        lowered = stderr_text.lower()
+        patterns = (
+            "nvenc",
+            "cuda",
+            "hwaccel",
+            "cannot load libnvidia-encode",
+            "no nvenc capable devices found",
+            "frame dimension less than the minimum supported value",
+        )
+        return any(pattern in lowered for pattern in patterns)
+
     def _format_time_ass(self, seconds: float) -> str:
         """Saniyeyi ASS dosyasının istediği H:MM:SS.cs formatına çevirir (Örn: 1:23:45.67)"""
         hours = int(seconds // 3600)
@@ -118,10 +131,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         # FFmpeg'in ass filtresi yolları okurken Windows/Linux uyuşmazlığı yapabilir, mutlak yol alalım.
         ass_file_abs = os.path.abspath(ass_file).replace("\\", "/")
         
-        # NVENC ve libass ile yüksek performanslı render
-        ffmpeg_cmd =[
+        # NVENC encode deneriz; sorun olursa CPU fallback kullanırız.
+        cmd_nvenc = [
             "ffmpeg", "-y",
-            "-hwaccel", "cuda", # CUDA ile decode
             "-i", input_video,
             "-vf", f"ass='{ass_file_abs}'", # Altyazı filtresi
             "-c:v", "h264_nvenc", # NVENC ile encode (Işık hızı)
@@ -130,13 +142,34 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             "-c:a", "copy", # Sesi elleme aynen aktar
             output_video
         ]
+        cmd_cpu = [
+            "ffmpeg", "-y",
+            "-i", input_video,
+            "-vf", f"ass='{ass_file_abs}'",
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", "23",
+            "-c:a", "copy",
+            output_video
+        ]
         
         try:
-            subprocess.run(ffmpeg_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            subprocess.run(cmd_nvenc, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
             logger.success("🎉 İŞLEM BİTTİ! Viral videon sosyal medyaya yüklenmeye hazır.")
         except subprocess.CalledProcessError as e:
-            logger.error(f"❌ FFmpeg Render Hatası: {e.stderr.decode('utf-8')}")
-            raise
+            stderr_text = e.stderr.decode("utf-8", errors="replace")
+            if not self._is_nvenc_error(stderr_text):
+                logger.error(f"❌ FFmpeg Render Hatası: {stderr_text}")
+                raise
+
+            logger.warning("⚠️ NVENC kullanılamadı, CPU fallback (libx264) deneniyor...")
+            try:
+                subprocess.run(cmd_cpu, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                logger.success("🎉 İŞLEM BİTTİ! Video CPU fallback ile hazırlandı.")
+            except subprocess.CalledProcessError as cpu_error:
+                cpu_stderr = cpu_error.stderr.decode("utf-8", errors="replace")
+                logger.error(f"❌ CPU fallback de başarısız oldu: {cpu_stderr}")
+                raise
 
 # --- SİSTEMİ TEST ETME ---
 if __name__ == "__main__":

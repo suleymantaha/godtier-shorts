@@ -7,9 +7,12 @@ import time
 from dataclasses import dataclass
 from typing import Callable, Optional
 
+import cv2
+import numpy as np
 from loguru import logger
 
 from backend.config import MASTER_VIDEO, OUTPUTS_DIR, ProjectPaths
+from backend.core.render_contracts import ensure_valid_requested_layout
 from backend.services.ownership import build_owner_scoped_project_id
 from backend.services.subtitle_renderer import SubtitleRenderer
 from backend.services.subtitle_styles import (
@@ -29,6 +32,9 @@ class SubtitleRenderPlan:
     requested_layout: str
     resolved_layout: str
     layout_fallback_reason: str | None = None
+    safe_area_profile: str = "default"
+    lower_third_collision_detected: bool = False
+    lower_third_band_height_ratio: float = 0.0
 
 
 def create_subtitle_renderer(
@@ -38,6 +44,8 @@ def create_subtitle_renderer(
     canvas_width: int = LOGICAL_CANVAS_WIDTH,
     canvas_height: int = LOGICAL_CANVAS_HEIGHT,
     layout: str = "single",
+    safe_area_profile: str = "default",
+    lower_third_detection: dict[str, object] | None = None,
 ) -> SubtitleRenderer:
     """Build a subtitle renderer from a named style preset."""
     return SubtitleRenderer(
@@ -45,6 +53,8 @@ def create_subtitle_renderer(
         canvas_width=canvas_width,
         canvas_height=canvas_height,
         layout=layout,
+        safe_area_profile=safe_area_profile,
+        lower_third_detection=lower_third_detection,
     )
 
 
@@ -59,7 +69,7 @@ def resolve_subtitle_render_plan(
     manual_center_x: float | None = None,
 ) -> SubtitleRenderPlan:
     """Resolve final canvas size and effective layout before ASS generation."""
-    normalized_layout = StyleManager.ensure_valid_layout(requested_layout)
+    normalized_layout = ensure_valid_requested_layout(requested_layout)
 
     if cut_as_short:
         resolved_layout, fallback_reason = video_processor.resolve_layout_for_segment(
@@ -69,23 +79,41 @@ def resolve_subtitle_render_plan(
             requested_layout=normalized_layout,
             manual_center_x=manual_center_x,
         )
+        safe_area_detection = _resolve_safe_area_detection(
+            video_processor=video_processor,
+            source_video=source_video,
+            start_t=start_t,
+            end_t=end_t,
+            resolved_layout=resolved_layout,
+        )
         return SubtitleRenderPlan(
             canvas_width=LOGICAL_CANVAS_WIDTH,
             canvas_height=LOGICAL_CANVAS_HEIGHT,
             requested_layout=normalized_layout,
             resolved_layout=resolved_layout,
             layout_fallback_reason=fallback_reason,
+            safe_area_profile=str(safe_area_detection["safe_area_profile"]),
+            lower_third_collision_detected=bool(safe_area_detection["lower_third_collision_detected"]),
+            lower_third_band_height_ratio=float(safe_area_detection["lower_third_band_height_ratio"]),
         )
 
     canvas_width, canvas_height = probe_video_canvas(source_video)
-    resolved_layout = normalized_layout
+    resolved_layout = "single" if normalized_layout == "auto" else normalized_layout
     fallback_reason: str | None = None
-    if normalized_layout == "split":
+    if resolved_layout == "split":
         if canvas_width == LOGICAL_CANVAS_WIDTH and canvas_height == LOGICAL_CANVAS_HEIGHT:
             resolved_layout = "split"
         else:
             resolved_layout = "single"
             fallback_reason = "split_requires_short_canvas"
+
+    safe_area_detection = _resolve_safe_area_detection(
+        video_processor=video_processor,
+        source_video=source_video,
+        start_t=start_t,
+        end_t=end_t,
+        resolved_layout=resolved_layout,
+    )
 
     return SubtitleRenderPlan(
         canvas_width=canvas_width,
@@ -93,6 +121,9 @@ def resolve_subtitle_render_plan(
         requested_layout=normalized_layout,
         resolved_layout=resolved_layout,
         layout_fallback_reason=fallback_reason,
+        safe_area_profile=str(safe_area_detection["safe_area_profile"]),
+        lower_third_collision_detected=bool(safe_area_detection["lower_third_collision_detected"]),
+        lower_third_band_height_ratio=float(safe_area_detection["lower_third_band_height_ratio"]),
     )
 
 
@@ -159,3 +190,110 @@ def resolve_output_video_path(clip_name: str, project_id: Optional[str]) -> str:
 
 def _default_timestamp_provider() -> int:
     return int(time.time())
+
+
+LOWER_THIRD_SAFE_AREA_PROFILE = "lower_third_safe"
+LOWER_THIRD_PROBE_SAMPLE_COUNT = 5
+LOWER_THIRD_PROBE_WINDOW_SECONDS = 2.5
+
+
+def _resolve_safe_area_detection(
+    *,
+    video_processor: VideoProcessor,
+    source_video: str,
+    start_t: float,
+    end_t: float,
+    resolved_layout: str,
+) -> dict[str, object]:
+    if resolved_layout != "single":
+        return {
+            "safe_area_profile": "default",
+            "lower_third_collision_detected": False,
+            "lower_third_band_height_ratio": 0.0,
+        }
+
+    duration = max(0.3, end_t - start_t)
+    window = min(duration, LOWER_THIRD_PROBE_WINDOW_SECONDS)
+    frames: list[np.ndarray] = []
+    for sample_index in range(LOWER_THIRD_PROBE_SAMPLE_COUNT):
+        ratio = 0.0 if LOWER_THIRD_PROBE_SAMPLE_COUNT == 1 else sample_index / (LOWER_THIRD_PROBE_SAMPLE_COUNT - 1)
+        sample_time = start_t + (window * ratio)
+        frame = video_processor._extract_probe_frame(source_video, sample_time)
+        if frame is not None and frame.size > 0:
+            frames.append(frame)
+    return _detect_lower_third_collision(frames)
+
+
+def _detect_lower_third_collision(frames: list[np.ndarray]) -> dict[str, object]:
+    if len(frames) < 2:
+        return {
+            "safe_area_profile": "default",
+            "lower_third_collision_detected": False,
+            "lower_third_band_height_ratio": 0.0,
+        }
+
+    base_height, base_width = frames[0].shape[:2]
+    if base_height <= 0 or base_width <= 0:
+        return {
+            "safe_area_profile": "default",
+            "lower_third_collision_detected": False,
+            "lower_third_band_height_ratio": 0.0,
+        }
+
+    normalized_frames = [
+        frame if frame.shape[:2] == (base_height, base_width) else cv2.resize(frame, (base_width, base_height))
+        for frame in frames
+    ]
+    gray_frames = [cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) for frame in normalized_frames]
+    hsv_frames = [cv2.cvtColor(frame, cv2.COLOR_BGR2HSV) for frame in normalized_frames]
+
+    bottom_start = int(round(base_height * 0.74))
+    center_start = int(round(base_height * 0.44))
+    center_end = int(round(base_height * 0.68))
+    if bottom_start >= base_height or center_start >= center_end:
+        return {
+            "safe_area_profile": "default",
+            "lower_third_collision_detected": False,
+            "lower_third_band_height_ratio": 0.0,
+        }
+
+    bottom_motion_samples: list[float] = []
+    center_motion_samples: list[float] = []
+    for previous, current in zip(gray_frames, gray_frames[1:]):
+        bottom_motion_samples.append(float(np.mean(cv2.absdiff(previous[bottom_start:], current[bottom_start:]))))
+        center_motion_samples.append(float(np.mean(cv2.absdiff(previous[center_start:center_end], current[center_start:center_end]))))
+
+    median_gray = np.median(np.stack(gray_frames, axis=0), axis=0).astype(np.uint8)
+    median_hsv = np.median(np.stack(hsv_frames, axis=0), axis=0).astype(np.uint8)
+    bottom_roi_gray = median_gray[bottom_start:]
+    bottom_roi_hsv = median_hsv[bottom_start:]
+    edges = cv2.Canny(bottom_roi_gray, 60, 150)
+    edge_density = float(np.mean(edges > 0))
+    bottom_saturation = float(np.mean(bottom_roi_hsv[:, :, 1]))
+    bottom_brightness = float(np.mean(bottom_roi_gray))
+    bottom_motion = float(np.mean(bottom_motion_samples)) if bottom_motion_samples else 0.0
+    center_motion = float(np.mean(center_motion_samples)) if center_motion_samples else 0.0
+
+    stable_bottom = bottom_motion <= max(10.0, center_motion * 0.58)
+    graphic_signal = edge_density >= 0.055 or bottom_saturation >= 46.0 or bottom_brightness <= 82.0
+    detected = stable_bottom and graphic_signal
+    if not detected:
+        return {
+            "safe_area_profile": "default",
+            "lower_third_collision_detected": False,
+            "lower_third_band_height_ratio": 0.0,
+        }
+
+    band_height_ratio = 0.14 if edge_density >= 0.09 or bottom_saturation >= 70.0 else 0.11
+    logger.info(
+        "Lower-third güvenli alan profili secildi. motion_bottom={:.2f} motion_center={:.2f} edge_density={:.3f} saturation={:.1f}",
+        bottom_motion,
+        center_motion,
+        edge_density,
+        bottom_saturation,
+    )
+    return {
+        "safe_area_profile": LOWER_THIRD_SAFE_AREA_PROFILE,
+        "lower_third_collision_detected": True,
+        "lower_third_band_height_ratio": round(band_height_ratio, 4),
+    }

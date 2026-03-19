@@ -1,4 +1,4 @@
 interface:
   display_name: "GodTier Shorts"
   short_description: "GodTier Shorts repo workflow"
-  default_prompt: "Use $godtier-shorts to work on this repo's pipeline, subtitle, auth, or workflow code safely."
+  default_prompt: "Use $godtier-shorts for repo-grounded work in /home/arch/godtier-shorts: validate runtime/auth prerequisites, preserve backend/frontend subtitle-style and timing parity, prefer scripts/verify.sh and scripts/check_* gates, respect project ownership/path isolation, and for multi-agent work use a leader-to-specialist delegation flow with explicit scope and validation."

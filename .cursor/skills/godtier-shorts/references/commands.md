@@ -32,6 +32,16 @@ Use the smallest command set that proves the change.
   - Orchestrator facade size and method budgets.
 - `pytest backend/tests/test_subtitle_styles.py -q`
   - Subtitle preset regression coverage.
+- `pytest backend/tests/test_subtitle_timing.py -q`
+  - Boundary snap, word coverage, and chunk duration rules.
+- `pytest backend/tests/test_workflow_helpers.py -q`
+  - Debug artifact persistence and helper behavior.
+- `pytest backend/tests/test_render_quality.py -q`
+  - Render quality score and transcript-quality merge rules.
+- `pytest backend/tests/test_render_benchmark.py -q`
+  - Determinism benchmark helper and script smoke coverage.
+- `pytest backend/tests/test_clip_transcript_routes.py -q`
+  - Clip transcript/detail metadata and recovery behavior.
 
 ## Frontend
 
@@ -40,6 +50,8 @@ Use the smallest command set that proves the change.
 - `bash -lc "cd frontend && npm run build"`
 - `bash -lc "cd frontend && npm run test -- src/test/config/subtitleStyles.test.ts src/test/components/SubtitlePreview.test.tsx --reporter=dot"`
   - Targeted subtitle preview and config coverage.
+- `bash -lc "cd frontend && npm run test -- src/test/components/VideoOverlay.test.tsx src/test/components/SubtitleEditor.clip.test.tsx --reporter=dot"`
+  - Targeted clip preview parity and quality-summary coverage.
 
 ## Helper Scripts
 
@@ -47,3 +59,10 @@ Use the smallest command set that proves the change.
   - Generates or burns subtitle outputs against a real project transcript.
 - `python scripts/reburn_clip.py --project ID --clip NAME [--layout split] [--style HORMOZI]`
   - Fast CLI path for reburn checks.
+- `python scripts/benchmark_render_stability.py --project ID --clip NAME [--runs 3 --samples 5]`
+  - Determinism ve throughput benchmark'ı üretir; raporu `workspace/logs/render_benchmarks/` altına yazar.
+
+## Debug Artifacts
+
+- `DEBUG_RENDER_ARTIFACTS=1`
+  - Render sırasında proje içine `debug/<clip_stem>/` bundle'ı yazar ve clip metadata altında `render_metadata.debug_artifacts` alanını doldurur.

@@ -84,6 +84,11 @@ class ReburnWorkflow:
             canvas_width=render_plan.canvas_width,
             canvas_height=render_plan.canvas_height,
             layout=render_plan.resolved_layout,
+            safe_area_profile=render_plan.safe_area_profile,
+            lower_third_detection={
+                "lower_third_collision_detected": render_plan.lower_third_collision_detected,
+                "lower_third_band_height_ratio": render_plan.lower_third_band_height_ratio,
+            },
         )
         normalized_transcript = self.ctx._normalize_transcript_payload(transcript)
         base_transcript_quality = analyze_transcript_segments(normalized_transcript)

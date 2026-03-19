@@ -30,8 +30,9 @@ export const useWebSocket = (enabled = true) => {
   const isUnmounted = useRef(false);
   const backendAuthStatus = useAuthRuntimeStore((state) => state.backendAuthStatus);
   const canUseProtectedRequests = useAuthRuntimeStore((state) => state.canUseProtectedRequests);
-  const { updateJobProgress, fetchJobs, setWsStatus } = useJobStore();
+  const { updateJobProgress, markClipReady, fetchJobs, setWsStatus } = useJobStore();
   const updateJobProgressRef = useLatestRef(updateJobProgress);
+  const markClipReadyRef = useLatestRef(markClipReady);
   const fetchJobsRef = useLatestRef(fetchJobs);
   const setWsStatusRef = useLatestRef(setWsStatus);
   const canConnect = enabled && canUseProtectedRequests && backendAuthStatus === 'fresh';
@@ -80,6 +81,17 @@ export const useWebSocket = (enabled = true) => {
           progressMessage.progress,
           progressMessage.status,
         );
+
+        if (progressMessage.event_type === 'clip_ready' && progressMessage.clip_name) {
+          markClipReadyRef.current({
+            clipName: progressMessage.clip_name,
+            job_id: progressMessage.job_id,
+            message: progressMessage.message,
+            progress: progressMessage.progress,
+            projectId: progressMessage.project_id,
+            uiTitle: progressMessage.ui_title,
+          });
+        }
       };
 
       ws.current.onerror = () => {
@@ -132,5 +144,5 @@ export const useWebSocket = (enabled = true) => {
         reconnectTimeoutId.current = null;
       }
     };
-  }, [canConnect, fetchJobsRef, setWsStatusRef, updateJobProgressRef]);
+  }, [canConnect, fetchJobsRef, markClipReadyRef, setWsStatusRef, updateJobProgressRef]);
 };

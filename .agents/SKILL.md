@@ -14,16 +14,20 @@ Use this skill to stay aligned with the repo's existing workflows, file layout, 
   - API app: `backend/api/server.py`
   - Orchestrator facade: `backend/core/orchestrator.py`
   - Workflow modules: `backend/core/workflows_*.py`
+  - Shared workflow helpers: `backend/core/workflow_helpers.py`
+  - Render quality helpers: `backend/core/render_quality.py`
+  - Subtitle timing logic: `backend/core/subtitle_timing.py`
   - Subtitle renderer: `backend/services/subtitle_renderer.py`
   - Subtitle presets: `backend/services/subtitle_styles.py`
   - Frontend subtitle config: `frontend/src/config/subtitleStyles.ts`
+  - Frontend subtitle timing parity: `frontend/src/utils/subtitleTiming.ts`
 - Assume the pinned toolchain: Python `3.13`, Node `22`, npm `10`.
 
 ## Workflow
 
 1. Identify the surface area before editing: workflow, subtitle style, frontend parity, auth/WebSocket, social publishing, runtime config, or workspace project files.
 2. Read the matching reference file from `references/`.
-3. Preserve backend/frontend parity for shared names, payloads, and message shapes.
+3. Preserve backend/frontend parity for shared names, payloads, message shapes, and subtitle timing behavior.
 4. Run the smallest relevant checks first, then run broader verification before finishing.
 5. Report any checks you could not run.
 
@@ -45,8 +49,13 @@ Use this skill to stay aligned with the repo's existing workflows, file layout, 
 - Keep WebSocket auth compatible with both bearer subprotocol auth and the `?token=` fallback unless the task explicitly changes that contract.
 - Keep static bearer token auth, Clerk validation, and social encryption startup checks aligned when touching auth or startup code.
 - Preserve `workspace/projects/<project_id>/` layout and existing output conventions unless the task is an intentional migration.
+- Clip quality fields live under clip-level `render_metadata`; keep `/api/clips` and `Clip` list payloads lightweight.
+- Debug bundles live under `workspace/projects/<project_id>/debug/<clip_stem>/` and are gated by `DEBUG_RENDER_ARTIFACTS=1`.
+- Preserve additive metadata semantics: omit unknown/unmeasured fields instead of writing `null` for new quality/debug keys.
 - Prefer existing scripts in `scripts/` over one-off commands for reburn, subtitle checks, toolchain validation, and full verification.
+- Use `scripts/benchmark_render_stability.py` when debugging determinism, throughput, or render reproducibility.
 - Do not collapse workflow modules back into monolithic files; preserve facade and export boundaries.
+- Keep compatibility aliases if tests or external callers monkeypatch workflow-module symbols directly.
 
 ## Deliverables
 

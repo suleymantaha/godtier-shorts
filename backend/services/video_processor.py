@@ -24,6 +24,7 @@ from loguru import logger
 from ultralytics import YOLO
 
 from backend.config import LOGS_DIR, TEMP_DIR, YOLO_MODEL_PATH
+from backend.core.render_contracts import ensure_valid_requested_layout
 from backend.core.render_quality import extract_media_stream_metrics, probe_media
 from backend.services.subtitle_styles import (
     LOGICAL_CANVAS_HEIGHT,
@@ -37,8 +38,16 @@ MIN_TRACK_ACCEPT_SCORE = 0.30
 MISSING_TRACK_GRACE_FRAMES = 8
 REACQUIRE_CONFIRMATION_FRAMES = 3
 CONTROLLED_RETURN_FRAMES = 5
-CONFIRMED_PAN_RATIO = 0.02
-CONTROLLED_RETURN_PAN_RATIO = 0.03
+SINGLE_DEADZONE_RATIO = 0.012
+SINGLE_MAX_STEP_RATIO = 0.012
+SINGLE_EMA_ALPHA = 0.22
+SPLIT_DEADZONE_RATIO = 0.02
+SPLIT_MAX_STEP_RATIO = 0.006
+SPLIT_EMA_ALPHA = 0.16
+SPLIT_CONTROLLED_RETURN_PAN_RATIO = 0.015
+SPLIT_SUSTAINED_MOVEMENT_FRAMES = 3
+SPLIT_FALLBACK_DEADZONE_RATIO = 0.06
+SPLIT_FALLBACK_SUSTAINED_FRAMES = 4
 SAME_ID_REACQUIRE_CENTER_RATIO = 0.08
 DIFF_ID_REACQUIRE_CENTER_RATIO = 0.12
 SPLIT_SAMPLE_WINDOWS = 16
@@ -46,8 +55,16 @@ SPLIT_REQUIRED_POSITIVE_WINDOWS = 10
 SPLIT_MIN_SEPARATION_RATIO = 0.18
 TRACKER_CONFIG = "bytetrack.yaml"
 DETECTION_LONG_EDGE = 960
+CPU_TRACKING_STRIDE = 3
 HARD_CUT_THRESHOLD = 0.75
 SOFT_CUT_THRESHOLD = 0.55
+OPENING_VISIBILITY_WINDOW_SECONDS = 1.5
+OPENING_MAX_SHIFT_SECONDS = 3.0
+OPENING_VISIBILITY_OK_SECONDS = 0.5
+OPENING_SAMPLE_COUNT = 6
+STARTUP_SETTLE_JUMP_THRESHOLD_PX = 4.0
+SPLIT_JITTER_DEGRADED_THRESHOLD_PX = 12.0
+STARTUP_SETTLE_DEGRADED_MS = 250.0
 
 
 def _is_nvenc_error(stderr: str) -> bool:
@@ -90,6 +107,9 @@ class DetectionCandidate:
     area: float
     confidence: float
     aspect_ratio: float
+    visibility_score: float = 0.0
+    motion_score: float = 0.0
+    mouth_motion_score: float = 0.0
 
 
 @dataclass
@@ -107,11 +127,14 @@ class TrackSlotState:
     lost_streak: int = 0
     continuity_multiplier: float = 1.0
     last_mode: str = "fallback"
+    sustained_movement_frames: int = 0
 
 
 @dataclass
 class TrackingDiagnostics:
     mode: str = "tracked"
+    fps: float = 30.0
+    layout: str = "single"
     total_frames: int = 0
     fallback_frames: int = 0
     confirmed_track_frames: int = 0
@@ -123,6 +146,8 @@ class TrackingDiagnostics:
     shot_cut_resets: int = 0
     max_track_lost_streak: int = 0
     total_center_jump_px: float = 0.0
+    jump_samples: list[float] = field(default_factory=list)
+    predict_fallback_active: bool = False
     timeline: list[dict] = field(default_factory=list)
 
     def register_mode(self, mode: str) -> None:
@@ -138,15 +163,28 @@ class TrackingDiagnostics:
         elif mode == "fallback":
             self.fallback_frames += 1
 
+    def register_center_jump(self, jump_px: float) -> None:
+        jump = max(0.0, float(jump_px))
+        self.total_center_jump_px += jump
+        self.jump_samples.append(jump)
+
     def to_quality(self) -> dict:
         avg_center_jump = self.total_center_jump_px / self.total_frames if self.total_frames > 0 else 0.0
         fallback_ratio = self.fallback_frames / self.total_frames if self.total_frames > 0 else 0.0
+        p95_center_jump = self._percentile(self.jump_samples, 95)
+        startup_settle_ms = self._compute_startup_settle_ms(self.jump_samples, self.fps)
         status = "good"
         if self.mode == "manual":
             status = "good"
         elif fallback_ratio >= 0.5:
             status = "fallback"
-        elif fallback_ratio >= 0.12 or self.shot_cut_resets > 0 or self.active_track_id_switches > 1:
+        elif (
+            fallback_ratio >= 0.12
+            or self.shot_cut_resets > 0
+            or self.active_track_id_switches > 1
+            or (self.layout == "split" and p95_center_jump > SPLIT_JITTER_DEGRADED_THRESHOLD_PX)
+            or (self.layout == "split" and startup_settle_ms > STARTUP_SETTLE_DEGRADED_MS)
+        ):
             status = "degraded"
         return {
             "status": status,
@@ -154,6 +192,9 @@ class TrackingDiagnostics:
             "total_frames": self.total_frames,
             "fallback_frames": self.fallback_frames,
             "avg_center_jump_px": round(avg_center_jump, 3),
+            "p95_center_jump_px": round(p95_center_jump, 3),
+            "startup_settle_ms": round(startup_settle_ms, 3),
+            "predict_fallback_active": bool(self.predict_fallback_active),
             "confirmed_track_frames": self.confirmed_track_frames,
             "grace_hold_frames": self.grace_hold_frames,
             "controlled_return_frames": self.controlled_return_frames,
@@ -165,7 +206,12 @@ class TrackingDiagnostics:
         }
 
     @staticmethod
-    def merge(diag_a: "TrackingDiagnostics", diag_b: "TrackingDiagnostics") -> dict:
+    def merge(
+        diag_a: "TrackingDiagnostics",
+        diag_b: "TrackingDiagnostics",
+        *,
+        panel_swap_count: int = 0,
+    ) -> dict:
         quality_a = diag_a.to_quality()
         quality_b = diag_b.to_quality()
         total_frames = int(quality_a.get("total_frames", 0)) + int(quality_b.get("total_frames", 0))
@@ -179,12 +225,26 @@ class TrackingDiagnostics:
             str(quality_b.get("status", "good")),
             key=lambda value: status_order.get(value, 0),
         )
+        primary_p95 = float(quality_a.get("p95_center_jump_px", 0.0) or 0.0)
+        secondary_p95 = float(quality_b.get("p95_center_jump_px", 0.0) or 0.0)
+        startup_settle_ms = max(
+            float(quality_a.get("startup_settle_ms", 0.0) or 0.0),
+            float(quality_b.get("startup_settle_ms", 0.0) or 0.0),
+        )
+        if panel_swap_count > 0 or primary_p95 > SPLIT_JITTER_DEGRADED_THRESHOLD_PX or secondary_p95 > SPLIT_JITTER_DEGRADED_THRESHOLD_PX or startup_settle_ms > STARTUP_SETTLE_DEGRADED_MS:
+            merged_status = max(merged_status, "degraded", key=lambda value: status_order.get(value, 0))
         return {
             "status": merged_status,
             "mode": "tracked",
             "total_frames": total_frames,
             "fallback_frames": int(quality_a.get("fallback_frames", 0)) + int(quality_b.get("fallback_frames", 0)),
             "avg_center_jump_px": round(avg_center_jump, 3),
+            "primary_p95_center_jump_px": round(primary_p95, 3),
+            "secondary_p95_center_jump_px": round(secondary_p95, 3),
+            "startup_settle_ms": round(startup_settle_ms, 3),
+            "panel_swap_count": int(panel_swap_count),
+            "predict_fallback_active": bool(quality_a.get("predict_fallback_active")) or bool(quality_b.get("predict_fallback_active")),
+            "split_motion_policy": "stable",
             "confirmed_track_frames": int(quality_a.get("confirmed_track_frames", 0)) + int(quality_b.get("confirmed_track_frames", 0)),
             "grace_hold_frames": int(quality_a.get("grace_hold_frames", 0)) + int(quality_b.get("grace_hold_frames", 0)),
             "controlled_return_frames": int(quality_a.get("controlled_return_frames", 0)) + int(quality_b.get("controlled_return_frames", 0)),
@@ -194,6 +254,26 @@ class TrackingDiagnostics:
             "shot_cut_resets": max(int(quality_a.get("shot_cut_resets", 0)), int(quality_b.get("shot_cut_resets", 0))),
             "max_track_lost_streak": max(int(quality_a.get("max_track_lost_streak", 0)), int(quality_b.get("max_track_lost_streak", 0))),
         }
+
+    @staticmethod
+    def _percentile(values: list[float], percentile: float) -> float:
+        if not values:
+            return 0.0
+        return float(np.percentile(np.asarray(values, dtype=np.float32), percentile))
+
+    @staticmethod
+    def _compute_startup_settle_ms(jump_samples: list[float], fps: float) -> float:
+        if not jump_samples or fps <= 0:
+            return 0.0
+        startup_window_frames = min(len(jump_samples), max(1, int(round(fps * 0.5))))
+        significant_frames = [
+            frame_index + 1
+            for frame_index, jump in enumerate(jump_samples[:startup_window_frames])
+            if jump > STARTUP_SETTLE_JUMP_THRESHOLD_PX
+        ]
+        if not significant_frames:
+            return 0.0
+        return (max(significant_frames) / fps) * 1000.0
 
 
 logger.add(
@@ -252,6 +332,7 @@ class VideoProcessor:
         self._model_path = model_version or str(YOLO_MODEL_PATH)
         self._device = device
         self.model: YOLO | None = None
+        self._tracker_available = True
         logger.info("🎥 Video Processor hazirlandi (YOLO lazy-load, cihaz: {}).", device.upper())
 
     def _ensure_model_loaded(self) -> None:
@@ -261,6 +342,8 @@ class VideoProcessor:
         logger.info("🔄 YOLO modeli yukleniyor: {}", self._model_path)
         self.model = YOLO(self._model_path)
         if self._device == "cuda" and not torch.cuda.is_available():
+            if os.getenv("REQUIRE_CUDA_FOR_APP", "").strip().lower() in {"1", "true", "yes", "on"}:
+                raise RuntimeError("CUDA zorunlu ama torch.cuda kullanilabilir degil")
             logger.warning("⚠️ CUDA istendi ama GPU yok. CPU'ya geciliyor.")
             self._device = "cpu"
         self.model.to(self._device)
@@ -281,6 +364,98 @@ class VideoProcessor:
         if self._device == "cuda" and torch.cuda.is_available():
             torch.cuda.empty_cache()
         logger.info("🧹 VideoProcessor GPU cleanup tamamlandi.")
+
+    def _prefer_nvenc(self) -> bool:
+        return self._device == "cuda" and torch.cuda.is_available()
+
+    @staticmethod
+    def _build_h264_encoder_args(*, prefer_nvenc: bool) -> list[str]:
+        if prefer_nvenc:
+            return [
+                "-c:v",
+                "h264_nvenc",
+                "-preset",
+                "p6",
+                "-b:v",
+                "8M",
+            ]
+        return [
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "23",
+        ]
+
+    def _tracking_stride(self) -> int:
+        return CPU_TRACKING_STRIDE if self._device != "cuda" or not self._tracker_available else 1
+
+    def _build_segment_cut_command(
+        self,
+        *,
+        input_video: str,
+        start_time: float,
+        duration: float,
+        source_fps: float,
+        output_filename: str,
+        has_audio: bool,
+        prefer_nvenc: bool,
+    ) -> list[str]:
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-ss",
+            str(start_time),
+            "-i",
+            input_video,
+            "-t",
+            str(duration),
+            "-vsync",
+            "cfr",
+            "-r",
+            f"{source_fps:.6f}",
+            *self._build_h264_encoder_args(prefer_nvenc=prefer_nvenc),
+        ]
+        if has_audio:
+            cmd.extend(["-c:a", "aac", "-b:a", "192k"])
+        else:
+            cmd.append("-an")
+        cmd.append(output_filename)
+        return cmd
+
+    def _extract_probe_frame(self, input_video: str, sample_time: float) -> np.ndarray | None:
+        cmd = [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-ss",
+            f"{sample_time:.3f}",
+            "-i",
+            input_video,
+            "-frames:v",
+            "1",
+            "-f",
+            "image2pipe",
+            "-vcodec",
+            "png",
+            "-",
+        ]
+        completed = subprocess.run(
+            cmd,
+            capture_output=True,
+            check=False,
+            timeout=20,
+        )
+        if completed.returncode != 0 or not completed.stdout:
+            return None
+        frame_buffer = np.frombuffer(completed.stdout, dtype=np.uint8)
+        if frame_buffer.size == 0:
+            return None
+        frame = cv2.imdecode(frame_buffer, cv2.IMREAD_COLOR)
+        if frame is None or frame.size == 0:
+            return None
+        return frame
 
     @staticmethod
     def lerp(a: float, b: float, t: float) -> float:
@@ -304,18 +479,87 @@ class VideoProcessor:
         resized = cv2.resize(frame, (int(round(frame_width * scale)), int(round(frame_height * scale))))
         return resized, frame_width / resized.shape[1], frame_height / resized.shape[0]
 
-    def _track_people(self, frame: np.ndarray) -> list[DetectionCandidate]:
+    @staticmethod
+    def _compute_visibility_score(
+        box: tuple[float, float, float, float],
+        *,
+        frame_width: int,
+        frame_height: int,
+    ) -> float:
+        x1, y1, x2, y2 = box
+        width = max(1.0, x2 - x1)
+        height = max(1.0, y2 - y1)
+        height_ratio = height / max(frame_height, 1)
+        width_ratio = width / max(frame_width, 1)
+        clipped_penalty = 0.0
+        if x1 <= 2 or x2 >= frame_width - 2:
+            clipped_penalty += 0.15
+        if y1 <= 2 or y2 >= frame_height - 2:
+            clipped_penalty += 0.15
+        size_score = _clamp01((height_ratio * 0.8) + (width_ratio * 0.2))
+        return _clamp01(size_score - clipped_penalty)
+
+    @staticmethod
+    def _compute_motion_scores(
+        current_frame: np.ndarray,
+        previous_frame: np.ndarray | None,
+        box: tuple[float, float, float, float],
+    ) -> tuple[float, float]:
+        if previous_frame is None:
+            return 0.0, 0.0
+
+        frame_height, frame_width = current_frame.shape[:2]
+        x1, y1, x2, y2 = [int(round(value)) for value in box]
+        x1 = max(0, min(frame_width - 1, x1))
+        x2 = max(x1 + 1, min(frame_width, x2))
+        y1 = max(0, min(frame_height - 1, y1))
+        y2 = max(y1 + 1, min(frame_height, y2))
+
+        current_crop = current_frame[y1:y2, x1:x2]
+        previous_crop = previous_frame[y1:y2, x1:x2]
+        if current_crop.size == 0 or previous_crop.size == 0:
+            return 0.0, 0.0
+
+        current_gray = cv2.cvtColor(current_crop, cv2.COLOR_BGR2GRAY)
+        previous_gray = cv2.cvtColor(previous_crop, cv2.COLOR_BGR2GRAY)
+        body_diff = float(np.mean(cv2.absdiff(current_gray, previous_gray)) / 255.0)
+
+        crop_height, crop_width = current_gray.shape[:2]
+        mouth_y1 = int(round(crop_height * 0.42))
+        mouth_y2 = int(round(crop_height * 0.78))
+        mouth_x1 = int(round(crop_width * 0.18))
+        mouth_x2 = int(round(crop_width * 0.82))
+        current_mouth = current_gray[mouth_y1:mouth_y2, mouth_x1:mouth_x2]
+        previous_mouth = previous_gray[mouth_y1:mouth_y2, mouth_x1:mouth_x2]
+        if current_mouth.size == 0 or previous_mouth.size == 0:
+            mouth_diff = 0.0
+        else:
+            mouth_diff = float(np.mean(cv2.absdiff(current_mouth, previous_mouth)) / 255.0)
+
+        return _clamp01(body_diff * 6.0), _clamp01(mouth_diff * 10.0)
+
+    def _track_people(self, frame: np.ndarray, previous_frame: np.ndarray | None = None) -> list[DetectionCandidate]:
         if self.model is None:
             return []
+        frame_height, frame_width = frame.shape[:2]
         resized, scale_x, scale_y = self._resize_for_detection(frame)
-        results = self.model.track(
-            resized,
-            persist=True,
-            tracker=TRACKER_CONFIG,
-            classes=[0],
-            verbose=False,
-            conf=MIN_DETECTION_CONFIDENCE,
-        )
+        if not self._tracker_available:
+            return self._predict_people(frame)
+        try:
+            results = self.model.track(
+                resized,
+                persist=True,
+                tracker=TRACKER_CONFIG,
+                classes=[0],
+                verbose=False,
+                conf=MIN_DETECTION_CONFIDENCE,
+            )
+        except ModuleNotFoundError as exc:
+            if exc.name == "lap":
+                logger.warning("Ultralytics tracker bagimliligi eksik (lap). predict fallback kullanilacak.")
+                self._tracker_available = False
+                return self._predict_people(frame)
+            raise
         det_boxes = results[0].boxes
         if det_boxes is None or len(det_boxes) == 0:
             return []
@@ -335,6 +579,8 @@ class VideoProcessor:
             width = max(1.0, x2 - x1)
             height = max(1.0, y2 - y1)
             track_id = None if np.isnan(ids[index]) else int(ids[index])
+            visibility_score = self._compute_visibility_score((x1, y1, x2, y2), frame_width=frame_width, frame_height=frame_height)
+            motion_score, mouth_motion_score = self._compute_motion_scores(frame, previous_frame, (x1, y1, x2, y2))
             candidates.append(
                 DetectionCandidate(
                     track_id=track_id,
@@ -343,6 +589,9 @@ class VideoProcessor:
                     area=width * height,
                     confidence=confidence,
                     aspect_ratio=width / height,
+                    visibility_score=visibility_score,
+                    motion_score=motion_score,
+                    mouth_motion_score=mouth_motion_score,
                 )
             )
         return candidates
@@ -350,6 +599,7 @@ class VideoProcessor:
     def _predict_people(self, frame: np.ndarray) -> list[DetectionCandidate]:
         if self.model is None:
             return []
+        frame_height, frame_width = frame.shape[:2]
         resized, scale_x, scale_y = self._resize_for_detection(frame)
         results = self.model.predict(
             resized,
@@ -373,6 +623,7 @@ class VideoProcessor:
             y2 = float(box[3]) * scale_y
             width = max(1.0, x2 - x1)
             height = max(1.0, y2 - y1)
+            visibility_score = self._compute_visibility_score((x1, y1, x2, y2), frame_width=frame_width, frame_height=frame_height)
             candidates.append(
                 DetectionCandidate(
                     track_id=index,
@@ -381,6 +632,7 @@ class VideoProcessor:
                     area=width * height,
                     confidence=confidence,
                     aspect_ratio=width / height,
+                    visibility_score=visibility_score,
                 )
             )
         return candidates
@@ -447,6 +699,8 @@ class VideoProcessor:
             (0.45 * _clamp01(continuity))
             + (0.25 * normalized_area)
             + (0.15 * confidence)
+            + (0.08 * _clamp01(candidate.visibility_score))
+            + (0.12 * _clamp01((candidate.motion_score * 0.4) + (candidate.mouth_motion_score * 0.6)))
             - (0.10 * center_distance_penalty)
             - (0.05 * aspect_ratio_penalty)
         )
@@ -475,11 +729,83 @@ class VideoProcessor:
         return candidate.center_x
 
     @staticmethod
-    def _move_towards(current: float, target: float, *, max_step_px: float, smoothness: float) -> float:
-        if abs(target - current) <= max_step_px:
-            return target
-        stepped = current + np.sign(target - current) * max_step_px
-        return float((current * (1.0 - smoothness)) + (stepped * smoothness))
+    def _move_towards(current: float, target: float, *, max_step_px: float, ema_alpha: float) -> float:
+        delta = float(target) - float(current)
+        if abs(delta) <= 0.001:
+            return float(current)
+        proposed_step = delta * float(ema_alpha)
+        clamped_step = float(np.clip(proposed_step, -max_step_px, max_step_px))
+        return float(current + clamped_step)
+
+    @staticmethod
+    def _movement_profile(
+        *,
+        layout: str,
+        mode: str,
+        frame_width: int,
+        tracker_weak: bool,
+    ) -> tuple[float, float, float, int]:
+        if layout == "split":
+            if mode == "controlled_return":
+                return (
+                    frame_width * SPLIT_DEADZONE_RATIO,
+                    frame_width * SPLIT_CONTROLLED_RETURN_PAN_RATIO,
+                    SPLIT_EMA_ALPHA,
+                    1,
+                )
+            deadzone_ratio = SPLIT_FALLBACK_DEADZONE_RATIO if tracker_weak else SPLIT_DEADZONE_RATIO
+            sustained_frames = SPLIT_FALLBACK_SUSTAINED_FRAMES if tracker_weak else SPLIT_SUSTAINED_MOVEMENT_FRAMES
+            return (
+                frame_width * deadzone_ratio,
+                frame_width * SPLIT_MAX_STEP_RATIO,
+                SPLIT_EMA_ALPHA,
+                sustained_frames,
+            )
+        return (
+            frame_width * SINGLE_DEADZONE_RATIO,
+            frame_width * SINGLE_MAX_STEP_RATIO,
+            SINGLE_EMA_ALPHA,
+            1,
+        )
+
+    def _stabilize_tracking_center(
+        self,
+        *,
+        state: TrackSlotState,
+        target_cx: float,
+        frame_width: int,
+        layout: str,
+        mode: str,
+        tracker_weak: bool,
+    ) -> tuple[float, bool, bool, int]:
+        deadzone_px, max_step_px, ema_alpha, sustained_required = self._movement_profile(
+            layout=layout,
+            mode=mode,
+            frame_width=frame_width,
+            tracker_weak=tracker_weak,
+        )
+        delta = float(target_cx) - float(state.current_cx)
+        deadzone_hit = abs(delta) <= deadzone_px
+        if deadzone_hit:
+            state.sustained_movement_frames = 0
+            return float(state.current_cx), True, True, 0
+
+        if layout == "split" and mode != "controlled_return":
+            state.sustained_movement_frames += 1
+            if state.sustained_movement_frames < sustained_required:
+                return float(state.current_cx), True, False, state.sustained_movement_frames
+        else:
+            state.sustained_movement_frames = 0
+
+        next_center = self._move_towards(
+            state.current_cx,
+            target_cx,
+            max_step_px=max_step_px,
+            ema_alpha=ema_alpha,
+        )
+        if abs(next_center - state.current_cx) < 0.25:
+            next_center = float(state.current_cx)
+        return next_center, False, False, state.sustained_movement_frames
 
     def _process_tracking_slot(
         self,
@@ -490,7 +816,7 @@ class VideoProcessor:
         frame_height: int,
         panel_center: float,
         diagnostics: TrackingDiagnostics,
-        smoothness: float,
+        layout: str,
         frame_index: int,
         cut_confidence: float,
     ) -> float:
@@ -586,15 +912,17 @@ class VideoProcessor:
             )
             mode = "tracked"
 
-        pan_ratio = CONTROLLED_RETURN_PAN_RATIO if mode == "controlled_return" else CONFIRMED_PAN_RATIO
         previous_cx = state.current_cx
-        state.current_cx = self._move_towards(
-            state.current_cx,
-            target_cx,
-            max_step_px=frame_width * pan_ratio,
-            smoothness=max(0.55, smoothness),
+        tracker_weak = self._device != "cuda" or not self._tracker_available
+        state.current_cx, movement_suppressed, deadzone_hit, sustained_frames = self._stabilize_tracking_center(
+            state=state,
+            target_cx=target_cx,
+            frame_width=frame_width,
+            layout=layout,
+            mode=mode,
+            tracker_weak=tracker_weak,
         )
-        diagnostics.total_center_jump_px += abs(state.current_cx - previous_cx)
+        diagnostics.register_center_jump(abs(state.current_cx - previous_cx))
         diagnostics.register_mode(mode)
         state.last_mode = mode
         if os.getenv("DEBUG_RENDER_ARTIFACTS") == "1":
@@ -605,8 +933,12 @@ class VideoProcessor:
                     "mode": mode,
                     "track_id": state.confirmed_track_id,
                     "center_x": round(state.current_cx, 3),
+                    "target_center_x": round(float(target_cx), 3),
                     "cut_confidence": round(cut_confidence, 4),
                     "candidate_count": len(candidates),
+                    "movement_suppressed": bool(movement_suppressed),
+                    "deadzone_hit": bool(deadzone_hit),
+                    "sustained_frames": int(sustained_frames),
                 }
             )
         return state.current_cx
@@ -615,8 +947,15 @@ class VideoProcessor:
     def _build_tracking_debug(diagnostics: TrackingDiagnostics) -> dict | None:
         if os.getenv("DEBUG_RENDER_ARTIFACTS") != "1":
             return None
+        quality_summary = diagnostics.to_quality()
         return {
             "timeline": diagnostics.timeline,
+            "summary": {
+                "avg_center_jump_px": quality_summary.get("avg_center_jump_px", 0.0),
+                "p95_center_jump_px": quality_summary.get("p95_center_jump_px", 0.0),
+                "startup_settle_ms": quality_summary.get("startup_settle_ms", 0.0),
+                "predict_fallback_active": quality_summary.get("predict_fallback_active", False),
+            },
         }
 
     @staticmethod
@@ -667,7 +1006,7 @@ class VideoProcessor:
             label = f"id={candidate.track_id if candidate.track_id is not None else 'na'} conf={candidate.confidence:.2f}"
             cv2.putText(
                 annotated,
-                label,
+                f"{label} act={candidate.mouth_motion_score:.2f}",
                 (x1, max(18, y1 - 8)),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.45,
@@ -741,6 +1080,7 @@ class VideoProcessor:
         smoothness: float = 0.1,
         manual_center_x: float | None = None,
         layout: str = "single",
+        initial_slot_centers: tuple[float, float] | None = None,
         cancel_event: threading.Event | None = None,
         require_audio: bool = False,
     ) -> dict:
@@ -757,6 +1097,7 @@ class VideoProcessor:
         source_fps = float(source_metrics.get("fps") or 30.0)
         if source_fps <= 0:
             source_fps = 30.0
+        prefer_nvenc = self._prefer_nvenc()
 
         job_uuid = uuid.uuid4().hex[:8]
         temp_cut = str(TEMP_DIR / f"cut_{job_uuid}.mp4")
@@ -765,38 +1106,37 @@ class VideoProcessor:
         debug_overlay_ready = False
 
         cut_timeout = self._compute_ffmpeg_timeout(duration, start_time=start_time, minimum=300)
-        cut_cmd = [
-            "ffmpeg",
-            "-y",
-            "-ss",
-            str(start_time),
-            "-i",
-            input_video,
-            "-t",
-            str(duration),
-            "-vsync",
-            "cfr",
-            "-r",
-            f"{source_fps:.6f}",
-            "-c:v",
-            "h264_nvenc",
-            "-preset",
-            "p6",
-            "-b:v",
-            "8M",
-        ]
-        if source_metrics["has_audio"]:
-            cut_cmd.extend(["-c:a", "aac", "-b:a", "192k"])
-        else:
-            cut_cmd.append("-an")
-        cut_cmd.append(temp_cut)
-
         try:
+            cut_cmd = self._build_segment_cut_command(
+                input_video=input_video,
+                start_time=start_time,
+                duration=duration,
+                source_fps=source_fps,
+                output_filename=temp_cut,
+                has_audio=bool(source_metrics["has_audio"]),
+                prefer_nvenc=prefer_nvenc,
+            )
             result = self._run_command_with_cancel(
                 cut_cmd,
                 timeout=cut_timeout,
                 cancel_event=cancel_event,
             )
+            if result.returncode != 0 and prefer_nvenc and _is_nvenc_error(result.stderr or ""):
+                prefer_nvenc = False
+                cut_cmd = self._build_segment_cut_command(
+                    input_video=input_video,
+                    start_time=start_time,
+                    duration=duration,
+                    source_fps=source_fps,
+                    output_filename=temp_cut,
+                    has_audio=bool(source_metrics["has_audio"]),
+                    prefer_nvenc=False,
+                )
+                result = self._run_command_with_cancel(
+                    cut_cmd,
+                    timeout=cut_timeout,
+                    cancel_event=cancel_event,
+                )
             if result.returncode != 0:
                 raise RuntimeError(f"Video kesilemedi: {(result.stderr or '')[-300:]}")
 
@@ -811,15 +1151,29 @@ class VideoProcessor:
             split_panel_h = SPLIT_PANEL_HEIGHT
             split_gutter_h = SPLIT_GUTTER_HEIGHT
 
-            primary_diagnostics = TrackingDiagnostics(mode="tracked")
-            secondary_diagnostics = TrackingDiagnostics(mode="tracked")
-            primary_slot = TrackSlotState("primary", orig_w / 2)
-            secondary_slot = TrackSlotState("secondary", orig_w / 2)
+            initial_primary_cx = orig_w / 2.0
+            initial_secondary_cx = orig_w / 2.0
+            if layout == "split" and initial_slot_centers is not None:
+                initial_primary_cx = float(initial_slot_centers[0])
+                initial_secondary_cx = float(initial_slot_centers[1])
+            elif layout == "split":
+                initial_primary_cx = orig_w * 0.33
+                initial_secondary_cx = orig_w * 0.67
+
+            primary_diagnostics = TrackingDiagnostics(mode="tracked", fps=float(orig_fps), layout=layout)
+            secondary_diagnostics = TrackingDiagnostics(mode="tracked", fps=float(orig_fps), layout=layout)
+            primary_diagnostics.predict_fallback_active = not self._tracker_available
+            secondary_diagnostics.predict_fallback_active = not self._tracker_available
+            primary_slot = TrackSlotState("primary", initial_primary_cx)
+            secondary_slot = TrackSlotState("secondary", initial_secondary_cx)
             ffmpeg_proc: subprocess.Popen[bytes] | None = None
             debug_writer: cv2.VideoWriter | None = None
             frame_count = 0
             previous_frame: np.ndarray | None = None
+            cached_candidates: list[DetectionCandidate] = []
             debug_status = "complete" if self._debug_artifacts_enabled() else None
+            split_panel_swap_count = 0
+            last_confirmed_pair: tuple[int | None, int | None] | None = None
 
             try:
                 ffmpeg_proc = subprocess.Popen(
@@ -844,12 +1198,7 @@ class VideoProcessor:
                         "cfr",
                         "-r",
                         str(orig_fps),
-                        "-c:v",
-                        "h264_nvenc",
-                        "-preset",
-                        "p6",
-                        "-b:v",
-                        "8M",
+                        *self._build_h264_encoder_args(prefer_nvenc=prefer_nvenc),
                         "-pix_fmt",
                         "yuv420p",
                         temp_video_only,
@@ -877,6 +1226,7 @@ class VideoProcessor:
                         break
                     frame_count += 1
                     cut_confidence, _hist_corr, _luma_diff = self._compute_cut_confidence(previous_frame, frame)
+                    motion_reference = previous_frame
                     previous_frame = frame
 
                     if cut_confidence >= HARD_CUT_THRESHOLD:
@@ -904,9 +1254,30 @@ class VideoProcessor:
                         primary_diagnostics.register_mode("tracked")
                         candidates = []
                     else:
-                        candidates = self._track_people(frame)
+                        stride = self._tracking_stride()
+                        should_refresh_candidates = (
+                            frame_count == 1
+                            or not cached_candidates
+                            or (frame_count - 1) % stride == 0
+                            or cut_confidence >= SOFT_CUT_THRESHOLD
+                        )
+                        if should_refresh_candidates:
+                            cached_candidates = self._track_people(frame, motion_reference)
+                        primary_diagnostics.predict_fallback_active = primary_diagnostics.predict_fallback_active or (not self._tracker_available)
+                        secondary_diagnostics.predict_fallback_active = secondary_diagnostics.predict_fallback_active or (not self._tracker_available)
+                        candidates = list(cached_candidates)
                         candidates = sorted(candidates, key=lambda candidate: candidate.center_x)
                         if layout == "split":
+                            if (
+                                manual_center_x is None
+                                and primary_slot.confirmed_track_id is None
+                                and secondary_slot.confirmed_track_id is None
+                                and len(candidates) >= 2
+                            ):
+                                bootstrap_candidates = sorted(candidates[:2], key=lambda candidate: candidate.center_x)
+                                self._confirm_candidate(primary_slot, primary_diagnostics, bootstrap_candidates[0], switched=False)
+                                self._confirm_candidate(secondary_slot, secondary_diagnostics, bootstrap_candidates[1], switched=False)
+
                             first_center = self._process_tracking_slot(
                                 state=primary_slot,
                                 candidates=candidates,
@@ -914,7 +1285,7 @@ class VideoProcessor:
                                 frame_height=orig_h,
                                 panel_center=orig_w * 0.33,
                                 diagnostics=primary_diagnostics,
-                                smoothness=smoothness,
+                                layout=layout,
                                 frame_index=frame_count,
                                 cut_confidence=cut_confidence,
                             )
@@ -930,11 +1301,21 @@ class VideoProcessor:
                                 frame_height=orig_h,
                                 panel_center=orig_w * 0.67,
                                 diagnostics=secondary_diagnostics,
-                                smoothness=smoothness,
+                                layout=layout,
                                 frame_index=frame_count,
                                 cut_confidence=cut_confidence,
                             )
-                            current_cx1, current_cx2 = sorted([first_center, second_center])
+                            current_cx1, current_cx2 = first_center, second_center
+                            current_pair = (primary_slot.confirmed_track_id, secondary_slot.confirmed_track_id)
+                            if (
+                                last_confirmed_pair is not None
+                                and all(track_id is not None for track_id in last_confirmed_pair)
+                                and all(track_id is not None for track_id in current_pair)
+                                and current_pair == (last_confirmed_pair[1], last_confirmed_pair[0])
+                            ):
+                                split_panel_swap_count += 1
+                            if any(track_id is not None for track_id in current_pair):
+                                last_confirmed_pair = current_pair
                         else:
                             current_cx1 = self._process_tracking_slot(
                                 state=primary_slot,
@@ -943,7 +1324,7 @@ class VideoProcessor:
                                 frame_height=orig_h,
                                 panel_center=orig_w / 2.0,
                                 diagnostics=primary_diagnostics,
-                                smoothness=smoothness,
+                                layout=layout,
                                 frame_index=frame_count,
                                 cut_confidence=cut_confidence,
                             )
@@ -1112,7 +1493,11 @@ class VideoProcessor:
                 raise RuntimeError(f"Merged output drift too high: {debug_timing['merged_output_drift_ms']}ms")
 
             if layout == "split" and manual_center_x is None:
-                tracking_quality = TrackingDiagnostics.merge(primary_diagnostics, secondary_diagnostics)
+                tracking_quality = TrackingDiagnostics.merge(
+                    primary_diagnostics,
+                    secondary_diagnostics,
+                    panel_swap_count=split_panel_swap_count,
+                )
                 debug_tracking = {
                     "primary": self._build_tracking_debug(primary_diagnostics),
                     "secondary": self._build_tracking_debug(secondary_diagnostics),
@@ -1189,42 +1574,109 @@ class VideoProcessor:
         requested_layout: str,
         manual_center_x: float | None = None,
     ) -> tuple[str, str | None]:
-        if requested_layout != "split":
-            return "single" if requested_layout == "single" else requested_layout, None
+        normalized_layout = ensure_valid_requested_layout(requested_layout)
+        if normalized_layout == "single":
+            return "single", None
         if manual_center_x is not None:
             return "single", "split_not_stable"
 
         self._ensure_model_loaded()
-        cap = cv2.VideoCapture(input_video)
-        if not cap.isOpened():
-            return "single", "split_not_stable"
 
         duration = max(0.2, end_time - start_time)
         frame_results: list[tuple[int, list[float], int, int]] = []
-        try:
-            for index in range(SPLIT_SAMPLE_WINDOWS):
-                ratio = 0.0 if SPLIT_SAMPLE_WINDOWS == 1 else index / (SPLIT_SAMPLE_WINDOWS - 1)
-                sample_time = start_time + (duration * ratio)
-                cap.set(cv2.CAP_PROP_POS_MSEC, sample_time * 1000)
-                ok, frame = cap.read()
-                if not ok:
-                    continue
-                frame_width = int(frame.shape[1]) if frame.ndim >= 2 else 0
-                centers = self._detect_person_centers(frame)
-                frame_results.append((frame_width, centers, index, SPLIT_SAMPLE_WINDOWS))
-        finally:
-            cap.release()
+        for index in range(SPLIT_SAMPLE_WINDOWS):
+            ratio = 0.0 if SPLIT_SAMPLE_WINDOWS == 1 else index / (SPLIT_SAMPLE_WINDOWS - 1)
+            sample_time = start_time + (duration * ratio)
+            frame = self._extract_probe_frame(input_video, sample_time)
+            if frame is None:
+                continue
+            frame_width = int(frame.shape[1]) if frame.ndim >= 2 else 0
+            centers = self._detect_person_centers(frame)
+            frame_results.append((frame_width, centers, index, SPLIT_SAMPLE_WINDOWS))
 
         if self._is_split_layout_stable(frame_results):
             return "split", None
-        return "single", "split_not_stable"
+        return ("single", "split_not_stable") if normalized_layout == "split" else ("single", None)
 
     def _detect_person_centers(self, frame: np.ndarray) -> list[float]:
         candidates = self._predict_people(frame)
         if not candidates:
             return []
-        ranked = sorted(candidates, key=lambda candidate: candidate.area, reverse=True)[:2]
+        ranked = sorted(candidates, key=lambda candidate: (candidate.visibility_score, candidate.area), reverse=True)[:2]
         return sorted(candidate.center_x for candidate in ranked)
+
+    def analyze_opening_shot(
+        self,
+        *,
+        input_video: str,
+        start_time: float,
+        end_time: float,
+        resolved_layout: str,
+        manual_center_x: float | None = None,
+    ) -> dict[str, object]:
+        if manual_center_x is not None:
+            return {
+                "layout_validation_status": "manual",
+                "opening_visibility_delay_ms": 0.0,
+                "suggested_start_time": float(start_time),
+            }
+
+        self._ensure_model_loaded()
+        duration = max(0.2, end_time - start_time)
+        window = min(OPENING_VISIBILITY_WINDOW_SECONDS, duration)
+        earliest_visible_offset: float | None = None
+        split_initial_centers: tuple[float, float] | None = None
+        sampled_any_frame = False
+        for sample_index in range(OPENING_SAMPLE_COUNT):
+            ratio = 0.0 if OPENING_SAMPLE_COUNT == 1 else sample_index / (OPENING_SAMPLE_COUNT - 1)
+            sample_time = start_time + (window * ratio)
+            frame = self._extract_probe_frame(input_video, sample_time)
+            if frame is None:
+                continue
+            sampled_any_frame = True
+            candidates = sorted(
+                self._predict_people(frame),
+                key=lambda candidate: (candidate.visibility_score, candidate.area),
+                reverse=True,
+            )
+            visible = False
+            if resolved_layout == "split":
+                centers = sorted(candidate.center_x for candidate in candidates[:2])
+                if len(centers) >= 2:
+                    visible = abs(centers[1] - centers[0]) >= frame.shape[1] * SPLIT_MIN_SEPARATION_RATIO
+                    if visible:
+                        split_initial_centers = (float(centers[0]), float(centers[1]))
+            else:
+                visible = len(candidates) > 0
+            if visible:
+                earliest_visible_offset = max(0.0, sample_time - start_time)
+                break
+
+        if not sampled_any_frame:
+            return {
+                "layout_validation_status": "probe_failed",
+                "opening_visibility_delay_ms": 0.0,
+                "suggested_start_time": float(start_time),
+            }
+
+        if earliest_visible_offset is None:
+            return {
+                "layout_validation_status": "opening_subject_missing",
+                "opening_visibility_delay_ms": round(window * 1000, 3),
+                "suggested_start_time": float(min(end_time, start_time + min(window, OPENING_MAX_SHIFT_SECONDS))),
+            }
+
+        suggested_start = float(start_time)
+        status = "ok"
+        if earliest_visible_offset > OPENING_VISIBILITY_OK_SECONDS:
+            status = "opening_subject_delayed"
+            suggested_start = float(min(end_time, start_time + min(earliest_visible_offset, OPENING_MAX_SHIFT_SECONDS)))
+        return {
+            "layout_validation_status": status,
+            "opening_visibility_delay_ms": round(earliest_visible_offset * 1000, 3),
+            "suggested_start_time": suggested_start,
+            **({"initial_slot_centers": [round(split_initial_centers[0], 3), round(split_initial_centers[1], 3)]} if split_initial_centers is not None else {}),
+        }
 
     @staticmethod
     def _is_split_layout_stable(frame_results: list[tuple]) -> bool:

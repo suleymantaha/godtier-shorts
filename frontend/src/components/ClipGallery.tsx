@@ -2,11 +2,13 @@ import type { Clip } from '../types';
 import { ShareComposerModal } from './ShareComposerModal';
 import { useClipGalleryController } from './clipGallery/useClipGalleryController';
 import {
+    AuthBlockedState,
     DeleteClipModal,
     EmptyState,
     ErrorState,
     GalleryHeader,
     LoadingState,
+    ProcessingState,
     ReadyState,
 } from './clipGallery/sections';
 
@@ -28,6 +30,7 @@ export const ClipGallery = ({ onEditClip }: ClipGalleryProps) => {
         isDeleting,
         loadedCount,
         pageSizeLimit,
+        productionInProgress,
         projectFilter,
         projectOptions,
         setProjectFilter,
@@ -46,6 +49,7 @@ export const ClipGallery = ({ onEditClip }: ClipGalleryProps) => {
                 hasMore={hasMore}
                 loadedCount={loadedCount}
                 pageSizeLimit={pageSizeLimit}
+                productionInProgress={productionInProgress}
                 projectFilter={projectFilter}
                 projectOptions={projectOptions}
                 setProjectFilter={setProjectFilter}
@@ -55,6 +59,8 @@ export const ClipGallery = ({ onEditClip }: ClipGalleryProps) => {
                 visibleCount={visibleCount}
             />
             {state === 'loading' && <LoadingState />}
+            {state === 'processing' && <ProcessingState />}
+            {state === 'auth_blocked' && <AuthBlockedState errorMsg={errorMsg} onRetry={handleRetry} />}
             {state === 'error' && <ErrorState errorMsg={errorMsg} onRetry={handleRetry} />}
             {state === 'empty' && <EmptyState />}
             {state === 'ready' && (

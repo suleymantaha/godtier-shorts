@@ -1,14 +1,17 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { EyeOff, MonitorPlay, Smartphone, Subtitles } from 'lucide-react';
 
 import {
   type PreviewScreenTheme,
+  type SubtitleSafeAreaProfile,
   type SubtitleAnimationType,
   type SubtitleLayout,
   getSubtitleBoxStyle,
+  resolveSubtitleStyle,
 } from '../config/subtitleStyles';
 import { useResolvedMediaSource } from './ui/protectedMedia';
 import { PREVIEW_WORDS, getPreviewBandStyle, getPreviewWordStyle, getSubtitlePreviewModel } from './subtitlePreview/helpers';
+import { getSubtitleChunkLines, planSubtitleChunkForDisplay, type SubtitleChunk } from '../utils/subtitleTiming';
 
 interface SubtitlePreviewProps {
   animationType?: SubtitleAnimationType;
@@ -17,6 +20,7 @@ interface SubtitlePreviewProps {
   layout?: SubtitleLayout;
   showLegend?: boolean;
   size?: 'compact' | 'default' | 'tall';
+  safeAreaProfile?: SubtitleSafeAreaProfile;
   styleName: string;
   videoSrc?: string;
   variant?: 'card' | 'device';
@@ -30,12 +34,38 @@ export function SubtitlePreview({
   layout = 'single',
   showLegend = true,
   size = 'default',
+  safeAreaProfile = 'default',
   videoSrc,
   variant = 'card',
 }: SubtitlePreviewProps) {
+  const resolvedStyle = useMemo(
+    () => resolveSubtitleStyle(styleName, animationType),
+    [animationType, styleName],
+  );
   const preview = getSubtitlePreviewModel(styleName, cutAsShort, animationType);
   const resolvedVideoSrc = useResolvedMediaSource(videoSrc);
   const [activeWordIndex, setActiveWordIndex] = useState(0);
+  const previewChunk = useMemo<SubtitleChunk>(() => {
+    const words = PREVIEW_WORDS.map((word, index) => ({
+      word,
+      start: index * 0.24,
+      end: (index + 1) * 0.24,
+    }));
+    const plan = planSubtitleChunkForDisplay(words, {
+      layout,
+      fontSizeRem: Number.parseFloat(resolvedStyle.inline.fontSize) || 2.4,
+      fontWeight: resolvedStyle.inline.fontWeight,
+    });
+    return {
+      text: PREVIEW_WORDS.join(' '),
+      start: 0,
+      end: PREVIEW_WORDS.length * 0.24,
+      words,
+      lineBreakAfter: plan.lineBreakAfter ?? null,
+      fontScale: plan.fontScale,
+      overflowStrategy: plan.overflowStrategy,
+    };
+  }, [layout, resolvedStyle.inline.fontSize, resolvedStyle.inline.fontWeight]);
 
   useEffect(() => {
     const resetId = window.setTimeout(() => {
@@ -63,7 +93,9 @@ export function SubtitlePreview({
         disabled={disabled}
         layout={layout}
         preview={preview}
+        previewChunk={previewChunk}
         resolvedVideoSrc={resolvedVideoSrc}
+        safeAreaProfile={safeAreaProfile}
         size={size}
         variant={variant}
       />
@@ -143,7 +175,9 @@ function EnabledPreview({
   disabled,
   layout,
   preview,
+  previewChunk,
   resolvedVideoSrc,
+  safeAreaProfile,
   size,
   variant,
 }: {
@@ -151,12 +185,14 @@ function EnabledPreview({
   disabled: boolean;
   layout: SubtitleLayout;
   preview: ReturnType<typeof getSubtitlePreviewModel>;
+  previewChunk: SubtitleChunk;
   resolvedVideoSrc?: string;
+  safeAreaProfile: SubtitleSafeAreaProfile;
   size: 'compact' | 'default' | 'tall';
   variant: 'card' | 'device';
 }) {
   const boxStyle: CSSProperties = {
-    ...getSubtitleBoxStyle(layout, 'preview'),
+    ...getSubtitleBoxStyle(layout, 'preview', safeAreaProfile),
     position: 'absolute',
   };
   const shellClassName = preview.shellType === 'phone'
@@ -200,7 +236,7 @@ function EnabledPreview({
           {!disabled ? (
             <div className="absolute inset-0">
               <div className="absolute flex items-end justify-center" style={boxStyle}>
-                <PreviewSubtitleBand activeWordIndex={activeWordIndex} preview={preview} />
+                <PreviewSubtitleBand activeWordIndex={activeWordIndex} preview={preview} previewChunk={previewChunk} />
               </div>
             </div>
           ) : null}
@@ -284,9 +320,11 @@ function PreviewBackdrop({
 function PreviewSubtitleBand({
   activeWordIndex,
   preview,
+  previewChunk,
 }: {
   activeWordIndex: number;
   preview: ReturnType<typeof getSubtitlePreviewModel>;
+  previewChunk: SubtitleChunk;
 }) {
   const mode = preview.bandVariant;
   const containerClassName = 'relative w-full max-w-full text-center';
@@ -296,6 +334,10 @@ function PreviewSubtitleBand({
     ...getBandContentStyle(preview),
   };
   const bandMotionStyle = getPreviewBandStyle(preview);
+  const chunkLines = getSubtitleChunkLines(previewChunk);
+  const lineClassName = preview.shellType === 'phone'
+    ? 'flex w-full items-center justify-center gap-x-1 gap-y-0.5'
+    : 'flex w-full items-center justify-center gap-x-2 gap-y-1.5';
 
   return (
     <div
@@ -306,19 +348,59 @@ function PreviewSubtitleBand({
       style={bandMotionStyle}
     >
       <div className={contentClassName} style={contentStyle}>
-        {PREVIEW_WORDS.map((word, index) => (
-          <span
-            key={word}
-            data-active={index === activeWordIndex ? 'true' : 'false'}
-            data-testid={`subtitle-preview-word-${index}`}
-            style={getPreviewWordStyle(index, activeWordIndex, preview)}
+        {chunkLines.map((line, lineIndex) => (
+          <div
+            key={`preview-line-${lineIndex}`}
+            className={lineClassName}
+            data-testid={`subtitle-preview-line-${lineIndex}`}
           >
-            {word}
-          </span>
+            {line.map((word, index) => {
+              const wordIndex = chunkLines
+                .slice(0, lineIndex)
+                .reduce((sum, candidate) => sum + candidate.length, 0) + index;
+              return (
+                <span
+                  key={`${word.start}-${word.word}`}
+                  data-active={wordIndex === activeWordIndex ? 'true' : 'false'}
+                  data-testid={`subtitle-preview-word-${wordIndex}`}
+                  style={scalePreviewWordStyle(
+                    getPreviewWordStyle(wordIndex, activeWordIndex, preview),
+                    previewChunk.fontScale,
+                  )}
+                >
+                  {word.word}
+                </span>
+              );
+            })}
+          </div>
         ))}
       </div>
     </div>
   );
+}
+
+function scalePreviewWordStyle(style: CSSProperties, fontScale?: number): CSSProperties {
+  if (!fontScale || fontScale >= 0.9999) {
+    return style;
+  }
+  const fontSize = style.fontSize;
+  if (typeof fontSize === 'number') {
+    return {
+      ...style,
+      fontSize: +(fontSize * fontScale).toFixed(2),
+    };
+  }
+  if (typeof fontSize === 'string') {
+    const parsed = Number.parseFloat(fontSize);
+    if (Number.isFinite(parsed)) {
+      const unit = fontSize.replace(String(parsed), '') || 'px';
+      return {
+        ...style,
+        fontSize: `${(parsed * fontScale).toFixed(3)}${unit}`,
+      };
+    }
+  }
+  return style;
 }
 
 function getBandContentClassName(preview: ReturnType<typeof getSubtitlePreviewModel>) {

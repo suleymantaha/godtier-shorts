@@ -17,8 +17,10 @@ from backend.core.workflow_context import OrchestratorContext
 from backend.core.workflow_helpers import (
     TempArtifactManager,
     persist_debug_artifacts,
+    publish_clip_ready_event,
     run_blocking,
     run_cut_points_workflow,
+    write_json_atomic,
 )
 from backend.services.subtitle_renderer import SubtitleRenderer
 class ManualClipWorkflow:
@@ -34,7 +36,7 @@ class ManualClipWorkflow:
         animation_type: str = "default",
         project_id: Optional[str] = None,
         center_x: Optional[float] = None,
-        layout: str = "single",
+        layout: str = "auto",
         output_name: Optional[str] = None,
         skip_subtitles: bool = False,
         cut_as_short: bool = True,
@@ -108,6 +110,11 @@ class ManualClipWorkflow:
                     canvas_width=render_plan.canvas_width,
                     canvas_height=render_plan.canvas_height,
                     layout=render_plan.resolved_layout,
+                    safe_area_profile=render_plan.safe_area_profile,
+                    lower_third_detection={
+                        "lower_third_collision_detected": render_plan.lower_third_collision_detected,
+                        "lower_third_band_height_ratio": render_plan.lower_third_band_height_ratio,
+                    },
                 )
                 subtitle_engine.generate_ass_file(shifted_json, ass_file, max_words_per_screen=3)
 
@@ -122,6 +129,7 @@ class ManualClipWorkflow:
                 subtitle_engine,
                 render_plan.resolved_layout,
                 center_x,
+                None,
                 cut_as_short,
                 False,
             )
@@ -151,41 +159,43 @@ class ManualClipWorkflow:
                 snap_report=None,
                 debug_timing=debug_timing if isinstance(debug_timing, dict) else None,
             )
-            with open(meta_path, "w", encoding="utf-8") as f:
-                json.dump(
-                    self.ctx._build_clip_metadata(
-                        shifted_segments,
-                        viral_metadata=None,
-                        render_metadata={
-                            "mode": "manual_auto" if center_x is None else "manual_custom_crop",
-                            "project_id": self.ctx.project.root.name,
-                            "clip_name": clip_filename,
-                            "start_time": start_t,
-                            "end_time": end_t,
-                            "crop_mode": "auto" if center_x is None else "manual",
-                            "center_x": center_x,
-                            "layout": layout,
-                            "resolved_layout": render_plan.resolved_layout,
-                            "layout_fallback_reason": render_plan.layout_fallback_reason,
-                            "style_name": style_name,
-                            "animation_type": animation_type,
-                            "resolved_animation_type": resolved_style.animation_type,
-                            "cut_as_short": cut_as_short,
-                            "tracking_quality": tracking_quality,
-                            "transcript_quality": transcript_quality,
-                            "debug_timing": debug_timing,
-                            "debug_tracking": render_report.get("debug_tracking") if isinstance(render_report, dict) else None,
-                            "debug_environment": debug_environment,
-                            "render_quality_score": render_quality_score,
-                            "audio_validation": render_report.get("audio_validation") if isinstance(render_report, dict) else None,
-                            "subtitle_layout_quality": subtitle_layout_quality,
-                            **({"debug_artifacts": debug_artifacts} if debug_artifacts else {}),
-                        },
-                    ),
-                    f,
-                    ensure_ascii=False,
-                    indent=4,
-                )
+            clip_metadata = self.ctx._build_clip_metadata(
+                shifted_segments,
+                viral_metadata=None,
+                render_metadata={
+                    "mode": "manual_auto" if center_x is None else "manual_custom_crop",
+                    "project_id": self.ctx.project.root.name,
+                    "clip_name": clip_filename,
+                    "start_time": start_t,
+                    "end_time": end_t,
+                    "crop_mode": "auto" if center_x is None else "manual",
+                    "center_x": center_x,
+                    "layout": layout,
+                    "resolved_layout": render_plan.resolved_layout,
+                    "layout_fallback_reason": render_plan.layout_fallback_reason,
+                    "style_name": style_name,
+                    "animation_type": animation_type,
+                    "resolved_animation_type": resolved_style.animation_type,
+                    "cut_as_short": cut_as_short,
+                    "tracking_quality": tracking_quality,
+                    "transcript_quality": transcript_quality,
+                    "debug_timing": debug_timing,
+                    "debug_tracking": render_report.get("debug_tracking") if isinstance(render_report, dict) else None,
+                    "debug_environment": debug_environment,
+                    "render_quality_score": render_quality_score,
+                    "audio_validation": render_report.get("audio_validation") if isinstance(render_report, dict) else None,
+                    "subtitle_layout_quality": subtitle_layout_quality,
+                    **({"debug_artifacts": debug_artifacts} if debug_artifacts else {}),
+                },
+            )
+            write_json_atomic(meta_path, clip_metadata, indent=4)
+            publish_clip_ready_event(
+                subject=self.ctx.subject,
+                project_id=self.ctx.project.root.name,
+                clip_name=clip_filename,
+                message="Manuel klip hazır.",
+                progress=99,
+            )
 
         self.ctx._update_status(f"Manuel klip hazır: {final_output}", 100)
         return final_output
@@ -202,7 +212,7 @@ class CutPointsWorkflow:
         style_name: str = "HORMOZI",
         animation_type: str = "default",
         project_id: Optional[str] = None,
-        layout: str = "single",
+        layout: str = "auto",
         skip_subtitles: bool = False,
         cut_as_short: bool = True,
     ) -> list[str]:
