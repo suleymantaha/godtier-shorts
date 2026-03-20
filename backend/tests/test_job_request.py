@@ -5,7 +5,7 @@ JobRequest schema için unit testler.
 num_clips, auto_mode, duration_min, duration_max validasyonu.
 """
 import pytest
-from pydantic import ValidationError
+from pydantic_core import ValidationError
 
 from backend.models.schemas import JobRequest
 
@@ -21,6 +21,18 @@ def test_job_request_accepts_new_fields():
     assert req.auto_mode is True
     assert req.duration_min is None
     assert req.duration_max is None
+    assert req.force_reanalyze is False
+    assert req.force_rerender is False
+
+
+def test_job_request_accepts_force_flags() -> None:
+    req = JobRequest(
+        youtube_url="https://youtube.com/watch?v=test",
+        force_reanalyze=True,
+        force_rerender=True,
+    )
+    assert req.force_reanalyze is True
+    assert req.force_rerender is True
 
 
 def test_job_request_auto_mode_true_uses_defaults():

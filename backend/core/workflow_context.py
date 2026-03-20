@@ -6,6 +6,7 @@ import threading
 from typing import Any, Callable, Optional, Protocol
 
 from backend.config import ProjectPaths
+from backend.core.command_runner import CommandRunner
 from backend.services.subtitle_renderer import SubtitleRenderer
 from backend.services.video_processor import VideoProcessor
 
@@ -16,6 +17,7 @@ class OrchestratorContext(Protocol):
     project: Optional[ProjectPaths]
     subject: Optional[str]
     video_processor: VideoProcessor
+    command_runner: CommandRunner
 
     def _check_cancelled(self) -> None:
         ...

@@ -1,7 +1,9 @@
 import {
   JobFormAutoPilotSection,
+  JobFormCacheStatusSection,
   JobFormControlGridSection,
   JobFormErrorAlert,
+  JobFormInfoAlert,
   JobFormSourceSection,
   JobFormSubmitButton,
 } from './jobForm/sections';
@@ -52,6 +54,18 @@ export const JobForm = (props: JobFormProps = {}) => {
         onDurationMaxChange={controller.setDurationMax}
         onDurationMinChange={controller.setDurationMin}
       />
+      <JobFormCacheStatusSection
+        analysisCached={controller.cacheStatus.analysis_cached}
+        forceReanalyze={controller.forceReanalyze}
+        forceRerender={controller.forceRerender}
+        isCheckingCache={controller.isCheckingCache}
+        onForceReanalyzeChange={controller.setForceReanalyze}
+        onForceRerenderChange={controller.setForceRerender}
+        projectCached={controller.cacheStatus.project_cached}
+        renderCached={controller.cacheStatus.render_cached}
+        statusMessage={controller.cacheStatus.message}
+      />
+      <JobFormInfoAlert message={controller.infoMessage} />
       <JobFormErrorAlert error={controller.error} />
       <JobFormSubmitButton disabled={controller.isSubmitting || !controller.url} isSubmitting={controller.isSubmitting} />
     </form>

@@ -121,6 +121,7 @@ class ProjectPaths:
     def __init__(self, project_name: str):
         self.root = get_project_dir(project_name)  # sanitize_project_name içeride çağrılır
         self.manifest     = self.root / "project_manifest.json"
+        self.cache_index  = self.root / "project_cache.json"
         self.debug        = self.root / "debug"
         self.master_video = self.root / "master.mp4"
         self.master_audio = self.root / "master.wav"

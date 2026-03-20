@@ -56,6 +56,18 @@ interface AutoPilotSectionProps {
   onDurationMinChange: Dispatch<SetStateAction<number>>;
 }
 
+interface CacheStatusSectionProps {
+  analysisCached: boolean;
+  forceReanalyze: boolean;
+  forceRerender: boolean;
+  isCheckingCache: boolean;
+  onForceReanalyzeChange: Dispatch<SetStateAction<boolean>>;
+  onForceRerenderChange: Dispatch<SetStateAction<boolean>>;
+  projectCached: boolean;
+  renderCached: boolean;
+  statusMessage: string;
+}
+
 export function JobFormSourceSection({
   isSubmitting,
   onResolutionChange,
@@ -323,6 +335,88 @@ export function JobFormAutoPilotSection({
   );
 }
 
+export function JobFormCacheStatusSection({
+  analysisCached,
+  forceReanalyze,
+  forceRerender,
+  isCheckingCache,
+  onForceReanalyzeChange,
+  onForceRerenderChange,
+  projectCached,
+  renderCached,
+  statusMessage,
+}: CacheStatusSectionProps) {
+  if (!projectCached) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-3 rounded-2xl border border-primary/20 bg-primary/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <div className="text-sm font-medium uppercase tracking-widest text-primary holo-text">
+            BU VIDEO DAHA ONCE ISLENDI
+          </div>
+          <p className="text-sm text-primary/85">
+            Ayni video icin daha once olusturulmus sonuclar bulundu. Istersen mevcut sonuclari kullanabilir, istersen analizi veya videolari yenileyebilirsin.
+          </p>
+          <p className="text-xs font-mono text-primary/70">
+            {statusMessage}
+          </p>
+        </div>
+        <div className="text-[11px] font-mono text-primary/60">
+          {isCheckingCache ? 'Kontrol ediliyor...' : renderCached ? 'Hazir videolar bulundu' : analysisCached ? 'Hazir analiz bulundu' : 'Kayitli proje bulundu'}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <label className="flex items-center justify-between gap-3 rounded-xl border border-primary/15 bg-foreground/5 px-3 py-2">
+          <span className="min-w-0">
+            <span className="block text-sm font-medium text-foreground">Viral klip secimini yenile</span>
+            <span className="block text-[11px] font-mono text-muted-foreground">
+              Segmentleri yeniden secer ve videolari da yeniden olusturur.
+            </span>
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={forceReanalyze}
+            aria-label="Viral klip secimini yenile"
+            onClick={() => onForceReanalyzeChange((previous) => !previous)}
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${forceReanalyze ? 'bg-primary/25 border-primary/50' : 'bg-foreground/10 border-border'}`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-4 w-4 rounded-full shadow-sm transition-transform ${forceReanalyze ? 'translate-x-5 bg-primary' : 'translate-x-0.5 bg-foreground/60'}`}
+            />
+          </button>
+        </label>
+
+        <label className="flex items-center justify-between gap-3 rounded-xl border border-primary/15 bg-foreground/5 px-3 py-2">
+          <span className="min-w-0">
+            <span className="block text-sm font-medium text-foreground">Videolari yeniden olustur</span>
+            <span className="block text-[11px] font-mono text-muted-foreground">
+              Mevcut sonuclar varsa bile klipleri bastan render eder.
+            </span>
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={forceRerender}
+            aria-label="Videolari yeniden olustur"
+            onClick={() => onForceRerenderChange((previous) => !previous)}
+            disabled={forceReanalyze}
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${forceRerender ? 'bg-primary/25 border-primary/50' : 'bg-foreground/10 border-border'} ${forceReanalyze ? 'cursor-not-allowed opacity-60' : ''}`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-4 w-4 rounded-full shadow-sm transition-transform ${forceRerender ? 'translate-x-5 bg-primary' : 'translate-x-0.5 bg-foreground/60'}`}
+            />
+          </button>
+        </label>
+      </div>
+    </div>
+  );
+}
+
 export function JobFormErrorAlert({ error }: { error: string | null }) {
   if (!error) {
     return null;
@@ -332,6 +426,19 @@ export function JobFormErrorAlert({ error }: { error: string | null }) {
     <div role="alert" className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-xs font-mono text-red-400">
       <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
       {error}
+    </div>
+  );
+}
+
+export function JobFormInfoAlert({ message }: { message: string | null }) {
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 p-3 text-xs font-mono text-primary/90">
+      <Zap className="h-4 w-4 shrink-0" aria-hidden="true" />
+      {message}
     </div>
   );
 }

@@ -56,6 +56,8 @@ describe('jobForm helpers', () => {
       auto_mode: false,
       duration_max: 95,
       duration_min: 45,
+      force_reanalyze: false,
+      force_rerender: false,
       layout: 'auto',
       num_clips: 20,
       resolution: '1080p',

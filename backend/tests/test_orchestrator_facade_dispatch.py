@@ -66,6 +66,8 @@ def test_run_pipeline_async_dispatches_to_pipeline_workflow(monkeypatch) -> None
         "duration_min": 15.0,
         "duration_max": 45.0,
         "resolution": "720p",
+        "force_reanalyze": False,
+        "force_rerender": False,
     }
 
 

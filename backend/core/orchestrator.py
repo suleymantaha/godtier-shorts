@@ -177,6 +177,8 @@ class GodTierShortsCreator:
         duration_min: float = 120.0,
         duration_max: float = 180.0,
         resolution: str = "best",
+        force_reanalyze: bool = False,
+        force_rerender: bool = False,
     ) -> None:
         await PipelineWorkflow(self).run(
             youtube_url=youtube_url,
@@ -188,6 +190,8 @@ class GodTierShortsCreator:
             duration_min=duration_min,
             duration_max=duration_max,
             resolution=resolution,
+            force_reanalyze=force_reanalyze,
+            force_rerender=force_rerender,
         )
 
     def run_pipeline(
@@ -201,6 +205,8 @@ class GodTierShortsCreator:
         duration_min: float = 120.0,
         duration_max: float = 180.0,
         resolution: str = "best",
+        force_reanalyze: bool = False,
+        force_rerender: bool = False,
     ) -> None:
         self._run_in_new_loop(
             self.run_pipeline_async(
@@ -213,6 +219,8 @@ class GodTierShortsCreator:
                 duration_min,
                 duration_max,
                 resolution,
+                force_reanalyze,
+                force_rerender,
             )
         )
 

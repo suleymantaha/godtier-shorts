@@ -55,6 +55,22 @@ async def download_full_video_async(
     if rc != 0 or not os.path.exists(video_file):
         raise RuntimeError(f"Video indirilemedi: {url}\n{stderr}")
 
+    await extract_audio_async(
+        video_file=video_file,
+        audio_file=audio_file,
+        update_status=update_status,
+        command_runner=command_runner,
+    )
+    return video_file, audio_file
+
+
+async def extract_audio_async(
+    *,
+    video_file: str,
+    audio_file: str,
+    update_status: StatusUpdater,
+    command_runner: CommandRunner,
+) -> str:
     update_status("Video içinden ses ayrıştırılıyor...", 20)
     arc, _astout, astderr = await command_runner.run_async(
         [
@@ -78,8 +94,7 @@ async def download_full_video_async(
         stderr_tail = (astderr or "")[-300:]
         logger.error("Ses ayrıştırma hatası (stderr son 300 karakter): %s", stderr_tail)
         raise RuntimeError(f"Ses ayrıştırılamadı. ffmpeg stderr özeti: {stderr_tail}")
-
-    return video_file, audio_file
+    return audio_file
 
 
 def shift_timestamps(

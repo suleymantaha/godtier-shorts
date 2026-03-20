@@ -23,6 +23,8 @@ import type {
     ProjectTranscriptResponse,
     ProjectTranscriptRecoveryPayload,
     StartJobPayload,
+    StartJobResponse,
+    CacheStatusResponse,
     ManualJobPayload,
     ManualCutUploadResponse,
     ReburnPayload,
@@ -437,9 +439,16 @@ export const jobsApi = {
     list: () =>
         apiFetch<{ jobs: Job[] }>('/api/jobs'),
 
+    /** Girilen ayarlar için cache durumunu önceden kontrol et */
+    cacheStatus: (payload: StartJobPayload) =>
+        apiFetch<CacheStatusResponse>(
+            '/api/cache-status',
+            { method: 'POST', body: JSON.stringify(payload) },
+        ),
+
     /** Yeni bir iş başlat */
     start: (payload: StartJobPayload) =>
-        apiFetch<{ status: string; job_id: string; message: string; gpu_locked: boolean }>(
+        apiFetch<StartJobResponse>(
             '/api/start-job',
             { method: 'POST', body: JSON.stringify(payload) },
         ),

@@ -52,6 +52,8 @@ interface BuildStartJobPayloadInput {
   durationMax: number;
   durationMin: number;
   engine: string;
+  forceReanalyze?: boolean;
+  forceRerender?: boolean;
   layout: RequestedSubtitleLayout;
   numClips: number;
   resolution: string;
@@ -107,6 +109,8 @@ export function buildStartJobPayload({
   durationMax,
   durationMin,
   engine,
+  forceReanalyze = false,
+  forceRerender = false,
   layout,
   numClips,
   resolution,
@@ -122,6 +126,8 @@ export function buildStartJobPayload({
     auto_mode: autoMode,
     duration_max: resolvedDuration.max,
     duration_min: resolvedDuration.min,
+    force_reanalyze: forceReanalyze,
+    force_rerender: forceRerender,
     layout,
     num_clips: clampClipCount(numClips),
     resolution,

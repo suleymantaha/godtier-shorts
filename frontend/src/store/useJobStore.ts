@@ -35,6 +35,7 @@ interface JobState {
     /** Job tamamlandığında artar; ClipGallery yenileme tetikler */
     refreshClipsTrigger: number;
     fetchJobs: () => Promise<void>;
+    requestClipsRefresh: () => void;
     registerQueuedJob: (payload: RegisterQueuedJobPayload) => void;
     mergeJobTimelineEvent: (event: TimelineEventPayload) => void;
     markClipReady: (payload: ClipReadyEntry) => void;
@@ -279,6 +280,10 @@ export const useJobStore = create<JobState>((set) => ({
     },
 
     clearError: () => set({ lastError: null }),
+
+    requestClipsRefresh: () => set((state) => ({
+        refreshClipsTrigger: state.refreshClipsTrigger + 1,
+    })),
 
     registerQueuedJob: ({ job_id, message = DEFAULT_QUEUED_MESSAGE, style = '', url }) => set((state) => {
         const queuedEvent = buildQueuedTimelineEntry(job_id, message);

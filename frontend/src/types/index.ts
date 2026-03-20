@@ -269,6 +269,28 @@ export interface StartJobPayload {
     duration_max?: number;
     resolution?: string;
     layout?: RequestedSubtitleLayout;
+    force_reanalyze?: boolean;
+    force_rerender?: boolean;
+}
+
+export interface StartJobResponse {
+    status: 'queued' | 'cached';
+    job_id: string | null;
+    project_id?: string | null;
+    cache_hit?: boolean;
+    cache_scope?: 'none' | 'analysis' | 'full_render';
+    message: string;
+    gpu_locked: boolean;
+}
+
+export interface CacheStatusResponse {
+    project_id?: string | null;
+    project_cached: boolean;
+    analysis_cached: boolean;
+    render_cached: boolean;
+    cache_scope: 'none' | 'analysis' | 'full_render';
+    clip_count: number;
+    message: string;
 }
 
 export interface ManualJobPayload {
