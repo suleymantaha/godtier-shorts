@@ -81,6 +81,10 @@ async def run_gpu_job(job_id: str, request: JobRequest) -> None:
                     request.resolution,
                 )
                 _finalize_job(job_id, "completed", progress=100)
+                thread_safe_broadcast(
+                    {"message": "İşlem tamamlandı.", "progress": 100, "status": "completed"},
+                    job_id,
+                )
                 invalidate_clips_cache(reason=f"job_success:{job_id}")
                 logger.success(f"🔓 İşlem tamamlandı: {job_id}")
             except asyncio.CancelledError:
@@ -145,6 +149,13 @@ async def start_processing_job(
     task = asyncio.create_task(run_gpu_job(job_id, request))
     job_info["task_handle"] = task
     manager.jobs[job_id] = job_info
+    manager.seed_job_timeline(
+        job_id,
+        message="İşlem kuyruğa alındı. GPU müsait olduğunda başlayacak.",
+        progress=0,
+        status="queued",
+        source="api",
+    )
 
     return {
         "status":     "queued",

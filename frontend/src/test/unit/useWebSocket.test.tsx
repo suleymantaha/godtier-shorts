@@ -9,7 +9,7 @@ const authRuntimeState = {
 };
 
 const storeMock = {
-  updateJobProgress: vi.fn(),
+  mergeJobTimelineEvent: vi.fn(),
   markClipReady: vi.fn(),
   fetchJobs: vi.fn(),
   setWsStatus: vi.fn(),
@@ -91,10 +91,27 @@ describe('useWebSocket', () => {
     await act(async () => {});
     const ws = FakeWebSocket.instances[0];
     act(() => ws.onmessage?.({ data: JSON.stringify({ foo: 'bar' }) }));
-    expect(storeMock.updateJobProgress).not.toHaveBeenCalled();
+    expect(storeMock.mergeJobTimelineEvent).not.toHaveBeenCalled();
 
-    act(() => ws.onmessage?.({ data: JSON.stringify({ job_id: 'j1', message: 'ok', progress: 10 }) }));
-    expect(storeMock.updateJobProgress).toHaveBeenCalledWith('j1', 'ok', 10, undefined);
+    act(() => ws.onmessage?.({
+      data: JSON.stringify({
+        event_id: 'evt-1',
+        at: '2026-03-20T00:00:00.000Z',
+        job_id: 'j1',
+        message: 'ok',
+        progress: 10,
+        source: 'worker',
+      }),
+    }));
+    expect(storeMock.mergeJobTimelineEvent).toHaveBeenCalledWith({
+      at: '2026-03-20T00:00:00.000Z',
+      event_id: 'evt-1',
+      job_id: 'j1',
+      message: 'ok',
+      progress: 10,
+      source: 'worker',
+      status: undefined,
+    });
   });
 
   it('marks clip-ready signals when websocket payload announces a ready clip', async () => {
@@ -105,18 +122,30 @@ describe('useWebSocket', () => {
     act(() => ws.onmessage?.({
       data: JSON.stringify({
         event_type: 'clip_ready',
+        event_id: 'clip-ready-1',
+        at: '2026-03-20T00:00:01.000Z',
         job_id: 'manual_1',
         message: 'Klip hazir',
         progress: 91,
         status: 'processing',
+        source: 'clip_ready',
         project_id: 'proj-1',
         clip_name: 'clip-1.mp4',
         ui_title: 'Hook',
       }),
     }));
 
-    expect(storeMock.updateJobProgress).toHaveBeenCalledWith('manual_1', 'Klip hazir', 91, 'processing');
+    expect(storeMock.mergeJobTimelineEvent).toHaveBeenCalledWith({
+      at: '2026-03-20T00:00:01.000Z',
+      event_id: 'clip-ready-1',
+      job_id: 'manual_1',
+      message: 'Klip hazir',
+      progress: 91,
+      source: 'clip_ready',
+      status: 'processing',
+    });
     expect(storeMock.markClipReady).toHaveBeenCalledWith({
+      at: '2026-03-20T00:00:01.000Z',
       clipName: 'clip-1.mp4',
       job_id: 'manual_1',
       message: 'Klip hazir',

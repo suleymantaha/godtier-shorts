@@ -38,6 +38,7 @@ export const ClipGallery = ({ onEditClip }: ClipGalleryProps) => {
         setSortOrder,
         shareClip,
         sortOrder,
+        staleRefreshWarning,
         state,
         totalCount,
         visibleCount,
@@ -55,6 +56,7 @@ export const ClipGallery = ({ onEditClip }: ClipGalleryProps) => {
                 setProjectFilter={setProjectFilter}
                 setSortOrder={setSortOrder}
                 sortOrder={sortOrder}
+                staleRefreshWarning={staleRefreshWarning}
                 totalCount={totalCount}
                 visibleCount={visibleCount}
             />

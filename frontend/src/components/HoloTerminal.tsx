@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { AppErrorCode } from '../api/errors';
 import { useAuthRuntimeStore } from '../auth/runtime';
-import { useJobStore } from '../store/useJobStore';
+import { getFlattenedJobLogs, useJobStore } from '../store/useJobStore';
 import type { LogEntry, WsStatus } from '../types';
 import { Expand, ShieldCheck, Terminal, X } from 'lucide-react';
 
@@ -26,7 +26,7 @@ function resolveAuthStatusLabel(backendAuthStatus: 'fresh' | 'paused' | 'refresh
 
 function renderLogEntries(logs: LogEntry[]) {
     return logs.map((log, index) => (
-        <div key={`${log.timestamp}-${log.message}-${index}`} className="flex min-w-0 max-w-full items-start gap-3 overflow-hidden animate-in fade-in slide-in-from-left-2 duration-500">
+        <div key={`${log.id}-${index}`} className="flex min-w-0 max-w-full items-start gap-3 overflow-hidden animate-in fade-in slide-in-from-left-2 duration-500">
             <span className="shrink-0 text-muted-foreground whitespace-nowrap">[{log.timestamp}]</span>
             <span
                 className={`min-w-0 flex-1 overflow-hidden break-words whitespace-pre-wrap leading-relaxed ${log.progress === -1 ? 'text-red-400' : 'text-primary/80'}`}
@@ -37,27 +37,60 @@ function renderLogEntries(logs: LogEntry[]) {
     ));
 }
 
+function resolveEmptyState(
+    backendAuthStatus: 'fresh' | 'paused' | 'refreshing',
+    pauseReason: AppErrorCode | null,
+    wsStatus: WsStatus,
+    hasJobs: boolean,
+) {
+    if (backendAuthStatus === 'paused') {
+        return pauseReason === 'token_expired'
+            ? 'Auth refresh required before live logs can resume.'
+            : 'Protected requests are paused. Reconnect auth to resume live logs.';
+    }
+    if (wsStatus === 'connecting' || wsStatus === 'reconnecting') {
+        return 'Connecting to live progress stream...';
+    }
+    if (wsStatus === 'connected') {
+        return hasJobs ? 'Job timeline is syncing...' : 'No job logs yet.';
+    }
+    return 'Live progress stream is offline.';
+}
+
 export const HoloTerminal: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
-    const { jobs, logs, wsStatus } = useJobStore();
+    const { jobs, wsStatus } = useJobStore();
     const backendAuthStatus = useAuthRuntimeStore((state) => state.backendAuthStatus);
     const pauseReason = useAuthRuntimeStore((state) => state.pauseReason);
     const [isLogsExpanded, setIsLogsExpanded] = useState(false);
-    
-    // Most recent log/job determines progress and status
+
+    const effectiveWsStatus = backendAuthStatus === 'paused' ? 'disconnected' : wsStatus;
+    const logs = useMemo(() => getFlattenedJobLogs(jobs), [jobs]);
     const lastLog = logs[logs.length - 1];
-    const activeJob = jobs.find(j => j.status === 'processing');
-    
+    const activeJob = jobs.find((job) => job.status === 'processing') ?? jobs.find((job) => job.status === 'queued');
+
     const progress = activeJob ? activeJob.progress : (lastLog ? lastLog.progress : 0);
-    const status = activeJob ? activeJob.last_message : (lastLog ? lastLog.message : 'READY');
+    const status = activeJob
+        ? activeJob.last_message
+        : lastLog
+            ? lastLog.message
+            : backendAuthStatus === 'paused'
+                ? 'AUTH PAUSED'
+                : effectiveWsStatus === 'connecting' || effectiveWsStatus === 'reconnecting'
+                    ? 'CONNECTING'
+                    : 'READY';
     const authStatusLabel = resolveAuthStatusLabel(backendAuthStatus, pauseReason);
-    const wsStatusLabel = WS_STATUS_LABELS[wsStatus];
+    const wsStatusLabel = WS_STATUS_LABELS[effectiveWsStatus];
     const panelScrollRef = useRef<HTMLDivElement>(null);
     const expandedScrollRef = useRef<HTMLDivElement>(null);
     const visibleLogs = useMemo(() => (compact ? logs.slice(-3) : logs), [compact, logs]);
+    const emptyStateMessage = useMemo(
+        () => resolveEmptyState(backendAuthStatus, pauseReason, effectiveWsStatus, jobs.length > 0),
+        [backendAuthStatus, effectiveWsStatus, jobs.length, pauseReason],
+    );
 
-    const wsStatusTone = wsStatus === 'connected'
+    const wsStatusTone = effectiveWsStatus === 'connected'
         ? 'border-emerald-400/30 bg-emerald-500/15 text-emerald-100'
-        : wsStatus === 'disconnected'
+        : effectiveWsStatus === 'disconnected'
             ? 'border-red-400/30 bg-red-500/15 text-red-100'
             : 'border-yellow-400/30 bg-yellow-500/15 text-yellow-100';
     const authStatusTone = backendAuthStatus === 'fresh'
@@ -144,9 +177,9 @@ export const HoloTerminal: React.FC<{ compact?: boolean }> = ({ compact = false 
                     >
                         {renderLogEntries(visibleLogs)}
                         {visibleLogs.length === 0 && (
-                            <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-20 select-none">
+                                <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-20 select-none">
                                 <ShieldCheck className="w-12 h-12 mb-2" />
-                                <p>Waiting for system handshake...</p>
+                                <p>{emptyStateMessage}</p>
                             </div>
                         )}
                     </div>
@@ -214,7 +247,7 @@ export const HoloTerminal: React.FC<{ compact?: boolean }> = ({ compact = false 
                             {logs.length === 0 && (
                                 <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-20 select-none">
                                     <ShieldCheck className="w-12 h-12 mb-2" />
-                                    <p>Waiting for system handshake...</p>
+                                    <p>{emptyStateMessage}</p>
                                 </div>
                             )}
                         </div>

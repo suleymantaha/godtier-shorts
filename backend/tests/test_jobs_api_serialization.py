@@ -27,6 +27,17 @@ def test_jobs_endpoint_omits_runtime_task_objects(monkeypatch) -> None:
         "last_message": "running",
         "created_at": 123.0,
         "subject": auth.subject,
+        "timeline": [
+            {
+                "id": "job-1:queued",
+                "at": "2026-03-20T00:00:00+00:00",
+                "job_id": "job-1",
+                "status": "queued",
+                "progress": 0,
+                "message": "queued",
+                "source": "api",
+            },
+        ],
         "task": object(),
     }
 
@@ -38,3 +49,4 @@ def test_jobs_endpoint_omits_runtime_task_objects(monkeypatch) -> None:
     assert "jobs" in body and len(body["jobs"]) == 1
     assert body["jobs"][0]["job_id"] == "job-1"
     assert "task" not in body["jobs"][0]
+    assert body["jobs"][0]["timeline"][0]["id"] == "job-1:queued"

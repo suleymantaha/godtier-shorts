@@ -1,8 +1,8 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 
 import { API_BASE } from '../../config';
 import { useJobStore } from '../../store/useJobStore';
-import type { Job } from '../../types';
+import type { ClipReadyEntry, Job } from '../../types';
 import { getQueuePosition, isProjectBusy } from '../../utils/jobQueue';
 import { readStored } from '../../utils/storage';
 import { getClipUrl } from '../../utils/url';
@@ -28,23 +28,75 @@ function useCurrentJob(currentJobId: string | null, jobs: Job[]) {
   );
 }
 
-export function useAutoCutEditorController() {
+function buildGeneratedClipUrl(clip: Pick<ClipReadyEntry, 'clipName' | 'projectId'>) {
+  if (!clip.projectId) {
+    return null;
+  }
+
+  return `/api/projects/${clip.projectId}/shorts/${clip.clipName}`;
+}
+
+function buildGeneratedClips(
+  currentJob: Job | null,
+  currentJobId: string | null,
+  projectId: string | undefined,
+  clipReadyByJob: Record<string, ClipReadyEntry[]>,
+) {
+  if (currentJobId && clipReadyByJob[currentJobId]?.length) {
+    return clipReadyByJob[currentJobId];
+  }
+
+  if (currentJob?.clip_name) {
+    return [{
+      at: new Date((currentJob.created_at ?? Date.now() / 1000) * 1000).toISOString(),
+      clipName: currentJob.clip_name,
+      job_id: currentJob.job_id,
+      message: currentJob.last_message,
+      progress: currentJob.progress,
+      projectId: currentJob.project_id ?? projectId,
+      uiTitle: undefined,
+    }];
+  }
+
+  return [];
+}
+
+interface AutoCutControllerOptions {
+  onOpenLibrary?: () => void;
+}
+
+export function useAutoCutEditorController({ onOpenLibrary }: AutoCutControllerOptions = {}) {
   const initialSession = useMemo(() => readStoredAutoCutSession(), []);
-  const { jobs, fetchJobs } = useJobStore();
+  const { clipReadyByJob, jobs, fetchJobs } = useJobStore();
   const state = useAutoCutEditorState(initialSession);
   const currentJob = useCurrentJob(state.currentJobId, jobs);
+  const generatedClips = useMemo(
+    () => buildGeneratedClips(currentJob, state.currentJobId, state.projectId, clipReadyByJob),
+    [clipReadyByJob, currentJob, state.currentJobId, state.projectId],
+  );
+  const currentJobMissing = Boolean(state.currentJobId && !currentJob);
   const jobState = useMemo(() => deriveAutoCutJobState({
     currentJob,
     currentJobId: state.currentJobId,
+    currentJobMissing,
     isSubmitting: state.isSubmitting,
     pendingOutputUrl: state.pendingOutputUrl,
     requestError: state.requestError,
-  }), [currentJob, state.currentJobId, state.isSubmitting, state.pendingOutputUrl, state.requestError]);
+  }), [currentJob, currentJobMissing, state.currentJobId, state.isSubmitting, state.pendingOutputUrl, state.requestError]);
   const actions = useAutoCutEditorActions({ ...state, fetchJobs });
+  const handleOpenLibrary = useCallback(() => {
+    onOpenLibrary?.();
+  }, [onOpenLibrary]);
+  const firstGeneratedClipUrl = useMemo(() => {
+    const firstGeneratedClip = generatedClips[0];
+    return firstGeneratedClip ? buildGeneratedClipUrl(firstGeneratedClip) : null;
+  }, [generatedClips]);
+  const resolvedResultUrl = jobState.resultUrl ?? firstGeneratedClipUrl;
 
   useSyncActiveAutoCutJob({
     currentJobId: state.currentJobId,
     fetchJobs,
+    preserveResultOnMissing: Boolean(jobState.resultUrl || generatedClips.length > 0),
     setCurrentJobId: state.setCurrentJobId,
     setPendingOutputUrl: state.setPendingOutputUrl,
     setProjectId: state.setProjectId,
@@ -74,6 +126,8 @@ export function useAutoCutEditorController() {
     duration: state.duration,
     endTime: state.endTime,
     fileInputRef: state.fileInputRef,
+    generatedClips,
+    handleOpenLibrary,
     isPlaying: state.isPlaying,
     kesFeedback: state.kesFeedback,
     layout: state.layout,
@@ -81,7 +135,7 @@ export function useAutoCutEditorController() {
     numClips: state.numClips,
     projectId: state.projectId,
     queuePosition: state.currentJobId ? getQueuePosition(state.currentJobId, jobs) : null,
-    resultVideoSrc: jobState.resultUrl ? getClipUrl({ url: jobState.resultUrl }) : undefined,
+    resultVideoSrc: resolvedResultUrl ? getClipUrl({ url: resolvedResultUrl }) : undefined,
     selectedFile: state.selectedFile,
     setAnimationType: state.setAnimationType,
     setCutAsShort: state.setCutAsShort,

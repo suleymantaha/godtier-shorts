@@ -57,7 +57,12 @@ export function AutoCutEditorLayout({ controller }: AutoCutEditorLayoutProps) {
       <AutoCutPreviewCard controller={controller} />
       <AutoCutOptionsCard controller={controller} />
       <AutoCutJobStatusCard controller={controller} />
-      <AutoCutResultCard currentJob={controller.currentJob} resultVideoSrc={controller.resultVideoSrc} />
+      <AutoCutResultCard
+        currentJob={controller.currentJob}
+        generatedClips={controller.generatedClips}
+        handleOpenLibrary={controller.handleOpenLibrary}
+        resultVideoSrc={controller.resultVideoSrc}
+      />
       <AutoCutRenderCard controller={controller} />
     </div>
   );
@@ -483,6 +488,11 @@ function AutoCutJobStatusCard({ controller }: AutoCutEditorLayoutProps) {
           GPU kuyrugunda sira: {controller.queuePosition}
         </div>
       )}
+      {controller.generatedClips.length > 0 && (
+        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-3 text-xs text-emerald-100">
+          Hazir klipler: {controller.generatedClips.length}
+        </div>
+      )}
       {controller.errorMessage && (
         <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-3 text-xs text-red-300">
           <AlertCircle className="w-4 h-4 shrink-0" />
@@ -523,11 +533,14 @@ function AutoCutJobProgress({
 
 function AutoCutResultCard({
   currentJob,
+  generatedClips,
+  handleOpenLibrary,
   resultVideoSrc,
-}: Pick<AutoCutEditorController, 'currentJob' | 'resultVideoSrc'>) {
+}: Pick<AutoCutEditorController, 'currentJob' | 'generatedClips' | 'handleOpenLibrary' | 'resultVideoSrc'>) {
   const resolvedResultVideoSrc = useResolvedMediaSource(resultVideoSrc);
+  const clipCount = Math.max(currentJob?.num_clips ?? 0, generatedClips.length, 1);
 
-  if (!resultVideoSrc) {
+  if (!resultVideoSrc && generatedClips.length === 0) {
     return null;
   }
 
@@ -535,19 +548,50 @@ function AutoCutResultCard({
     <div className="glass-card p-5 space-y-4 border-green-500/20">
       <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-[0.2em] text-green-300">
         <CheckCircle2 className="w-4 h-4" />
-        {(currentJob?.num_clips ?? 1) > 1 ? `${currentJob?.num_clips ?? 0} Klip Uretildi` : 'Uretilen Klip'}
+        {clipCount > 1 ? `${clipCount} Klip Uretildi` : 'Uretilen Klip'}
       </div>
-      {(currentJob?.num_clips ?? 1) > 1 && (
-        <p className="text-[11px] text-muted-foreground">Tum klipler ClipGallery&apos;de goruntulenir. Ilk klip asagida.</p>
+      {clipCount > 1 && (
+        <p className="text-[11px] text-muted-foreground">Render tamamlandi. Tum klipler ClipGallery icinde indekslenir; ilk hazir klip asagida.</p>
       )}
-      <video src={resolvedResultVideoSrc} controls className="w-full rounded-xl bg-background/90" />
-      <button
-        type="button"
-        onClick={() => void openMediaSource(resolvedResultVideoSrc ?? resultVideoSrc)}
-        className="inline-flex items-center gap-2 rounded-lg border border-border bg-foreground/5 px-4 py-2 text-[11px] font-mono uppercase tracking-[0.2em] text-foreground/80 hover:bg-foreground/10"
-      >
-        Ciktiyi ac
-      </button>
+      {generatedClips.length > 0 && (
+        <div className="rounded-xl border border-border bg-foreground/5 px-4 py-3">
+          <div className="mb-2 text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">Hazir Klipler</div>
+          <div className="space-y-2">
+            {generatedClips.map((clip) => (
+              <div key={`${clip.job_id}:${clip.projectId ?? 'legacy'}:${clip.clipName}:${clip.at}`} className="flex items-center justify-between gap-3 text-xs">
+                <div className="min-w-0">
+                  <div className="truncate font-mono text-foreground/90">{clip.clipName}</div>
+                  {clip.uiTitle && <div className="truncate text-muted-foreground">{clip.uiTitle}</div>}
+                </div>
+                {clip.projectId && (
+                  <span className="shrink-0 rounded-full border border-primary/20 bg-primary/10 px-2 py-1 text-[10px] font-mono uppercase tracking-widest text-primary">
+                    {clip.projectId}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {resultVideoSrc && <video src={resolvedResultVideoSrc} controls className="w-full rounded-xl bg-background/90" />}
+      <div className="flex flex-wrap gap-3">
+        {resultVideoSrc && (
+          <button
+            type="button"
+            onClick={() => void openMediaSource(resolvedResultVideoSrc ?? resultVideoSrc)}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-foreground/5 px-4 py-2 text-[11px] font-mono uppercase tracking-[0.2em] text-foreground/80 hover:bg-foreground/10"
+          >
+            Ciktiyi ac
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={handleOpenLibrary}
+          className="inline-flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-4 py-2 text-[11px] font-mono uppercase tracking-[0.2em] text-primary hover:bg-primary/20"
+        >
+          Clip Library
+        </button>
+      </div>
     </div>
   );
 }

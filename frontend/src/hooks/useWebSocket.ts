@@ -30,8 +30,8 @@ export const useWebSocket = (enabled = true) => {
   const isUnmounted = useRef(false);
   const backendAuthStatus = useAuthRuntimeStore((state) => state.backendAuthStatus);
   const canUseProtectedRequests = useAuthRuntimeStore((state) => state.canUseProtectedRequests);
-  const { updateJobProgress, markClipReady, fetchJobs, setWsStatus } = useJobStore();
-  const updateJobProgressRef = useLatestRef(updateJobProgress);
+  const { mergeJobTimelineEvent, markClipReady, fetchJobs, setWsStatus } = useJobStore();
+  const mergeJobTimelineEventRef = useLatestRef(mergeJobTimelineEvent);
   const markClipReadyRef = useLatestRef(markClipReady);
   const fetchJobsRef = useLatestRef(fetchJobs);
   const setWsStatusRef = useLatestRef(setWsStatus);
@@ -75,15 +75,19 @@ export const useWebSocket = (enabled = true) => {
           return;
         }
 
-        updateJobProgressRef.current(
-          progressMessage.job_id,
-          progressMessage.message,
-          progressMessage.progress,
-          progressMessage.status,
-        );
+        mergeJobTimelineEventRef.current({
+          at: progressMessage.at,
+          event_id: progressMessage.event_id,
+          job_id: progressMessage.job_id,
+          message: progressMessage.message,
+          progress: progressMessage.progress,
+          source: progressMessage.source,
+          status: progressMessage.status,
+        });
 
         if (progressMessage.event_type === 'clip_ready' && progressMessage.clip_name) {
           markClipReadyRef.current({
+            at: progressMessage.at,
             clipName: progressMessage.clip_name,
             job_id: progressMessage.job_id,
             message: progressMessage.message,
@@ -144,5 +148,5 @@ export const useWebSocket = (enabled = true) => {
         reconnectTimeoutId.current = null;
       }
     };
-  }, [canConnect, fetchJobsRef, markClipReadyRef, setWsStatusRef, updateJobProgressRef]);
+  }, [canConnect, fetchJobsRef, markClipReadyRef, mergeJobTimelineEventRef, setWsStatusRef]);
 };

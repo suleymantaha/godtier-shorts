@@ -32,6 +32,7 @@ class ManualClipWorkflow:
         start_t: float,
         end_t: float,
         transcript_data: Optional[list],
+        job_id: str | None = None,
         style_name: str = "HORMOZI",
         animation_type: str = "default",
         project_id: Optional[str] = None,
@@ -191,6 +192,7 @@ class ManualClipWorkflow:
             write_json_atomic(meta_path, clip_metadata, indent=4)
             publish_clip_ready_event(
                 subject=self.ctx.subject,
+                job_id=job_id,
                 project_id=self.ctx.project.root.name,
                 clip_name=clip_filename,
                 message="Manuel klip hazır.",
@@ -209,6 +211,7 @@ class CutPointsWorkflow:
         self,
         cut_points: list[float],
         transcript_data: list,
+        job_id: str | None = None,
         style_name: str = "HORMOZI",
         animation_type: str = "default",
         project_id: Optional[str] = None,
@@ -220,6 +223,7 @@ class CutPointsWorkflow:
             self.ctx,
             cut_points=cut_points,
             transcript_data=transcript_data,
+            job_id=job_id,
             style_name=style_name,
             animation_type=animation_type,
             project_id=project_id,

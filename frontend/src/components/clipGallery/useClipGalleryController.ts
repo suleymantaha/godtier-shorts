@@ -34,6 +34,7 @@ export function useClipGalleryController() {
   const [projectFilter, setProjectFilter] = useState(ALL_PROJECTS_FILTER);
   const [sortOrder, setSortOrder] = useState<ClipSortOrder>('newest');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [staleRefreshWarning, setStaleRefreshWarning] = useState<string | null>(null);
   const [retryTick, setRetryTick] = useState(0);
   const clipReadySignal = useJobStore((store) => store.clipReadySignal);
   const refreshClipsTrigger = useJobStore((store) => store.refreshClipsTrigger);
@@ -80,6 +81,7 @@ export function useClipGalleryController() {
       setHasMore(Boolean(data.has_more));
       setState(resolveGalleryState(data.clips.length, hasActiveClipProducingJobs));
       setErrorMsg(null);
+      setStaleRefreshWarning(null);
       clearRetryTimer();
     } catch (error) {
       if (cancelledRef.current) {
@@ -98,7 +100,10 @@ export function useClipGalleryController() {
       if (!hasLoadedOnce.current) {
         setState('error');
         scheduleRetry();
+        return;
       }
+
+      setStaleRefreshWarning('Library refresh failed. Showing last synced clips.');
     }
   }, [canUseProtectedRequests, clearRetryTimer, hasActiveClipProducingJobs, scheduleRetry]);
 
@@ -139,6 +144,7 @@ export function useClipGalleryController() {
   }, [clips, projectFilter]);
 
   const handleRetry = useCallback(() => {
+    setStaleRefreshWarning(null);
     setState('loading');
     setRetryTick((tick) => tick + 1);
   }, []);
@@ -215,6 +221,7 @@ export function useClipGalleryController() {
     setSortOrder,
     shareClip,
     sortOrder,
+    staleRefreshWarning,
     state,
     productionInProgress: hasActiveClipProducingJobs && clips.length > 0,
     totalCount: total,

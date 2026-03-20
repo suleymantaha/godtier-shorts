@@ -40,6 +40,7 @@ export function GalleryHeader({
   setProjectFilter,
   setSortOrder,
   sortOrder,
+  staleRefreshWarning,
   totalCount,
   visibleCount,
 }: {
@@ -52,6 +53,7 @@ export function GalleryHeader({
   setProjectFilter: (value: string) => void;
   setSortOrder: (value: ClipSortOrder) => void;
   sortOrder: ClipSortOrder;
+  staleRefreshWarning: string | null;
   totalCount: number;
   visibleCount: number;
 }) {
@@ -82,6 +84,11 @@ export function GalleryHeader({
           <p className="text-[11px] font-mono uppercase tracking-widest text-amber-200/80">
             Only owner-scoped new outputs are indexed
           </p>
+          {staleRefreshWarning && (
+            <p className="text-[11px] font-mono uppercase tracking-widest text-red-200/80">
+              {staleRefreshWarning}
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 xl:min-w-[420px]">

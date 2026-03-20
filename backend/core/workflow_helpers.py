@@ -128,7 +128,7 @@ def publish_clip_ready_event(
     safe_progress = max(0, min(progress, 99))
     invalidate_clips_cache(reason=f"clip_ready:{project_id}/{clip_name}")
 
-    resolved_job_id = job_id
+    resolved_job_id = job_id if job_id in manager.jobs else None
     if resolved_job_id is None and subject:
         active_jobs = [
             (float(job.get("created_at") or 0.0), candidate_job_id)
@@ -151,9 +151,11 @@ def publish_clip_ready_event(
 
     if not resolved_job_id:
         logger.warning(
-            "Clip ready olayı job bulunamadığı için websocket'e yayınlanamadı: project_id={} clip_name={}",
+            "event=clip_ready_job_missing project_id={} clip_name={} subject={} requested_job_id={}",
             project_id,
             clip_name,
+            subject or "-",
+            job_id or "-",
         )
         return False
 
@@ -673,6 +675,7 @@ async def run_cut_points_workflow(
     *,
     cut_points: list[float],
     transcript_data: list,
+    job_id: str | None,
     style_name: str,
     animation_type: str,
     project_id: str | None,
@@ -704,6 +707,7 @@ async def run_cut_points_workflow(
             start_t=start_t,
             end_t=end_t,
             transcript_data=transcript_data,
+            job_id=job_id,
             style_name=style_name,
             animation_type=animation_type,
             project_id=project_id,
@@ -723,6 +727,7 @@ async def render_batch_segments(
     ctx,
     segments: list[dict],
     *,
+    job_id: str | None,
     transcript_data: list,
     master_video: str,
     style_name: str,
@@ -939,6 +944,7 @@ async def render_batch_segments(
             write_json_atomic(Path(final_output).with_suffix(".json"), clip_meta, indent=4)
             publish_clip_ready_event(
                 subject=ctx.subject,
+                job_id=job_id,
                 project_id=ctx.project.root.name,
                 clip_name=clip_filename,
                 message=f"Klip {clip_num}/{total} hazır.",

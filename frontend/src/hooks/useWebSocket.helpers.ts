@@ -1,4 +1,4 @@
-import type { Job, WsStatus } from '../types';
+import type { Job, JobTimelineSource, WsStatus } from '../types';
 
 export const MAX_WEBSOCKET_RETRY = 60;
 export const RETRY_DELAY_MS = 3000;
@@ -13,10 +13,13 @@ interface WsParseTelemetry {
 
 interface ProgressMessage {
   event_type: 'progress' | 'clip_ready';
+  event_id: string;
+  at: string;
   job_id: string;
   message: string;
   progress: number;
   status?: Job['status'];
+  source?: JobTimelineSource;
   project_id?: string;
   clip_name?: string;
   ui_title?: string;
@@ -100,10 +103,17 @@ export function parseProgressMessage(data: string): ProgressMessage | null {
     wsParseTelemetry.parsed += 1;
     return {
       event_type: parsed.event_type === 'clip_ready' ? 'clip_ready' : 'progress',
+      event_id: typeof parsed.event_id === 'string' && parsed.event_id
+        ? parsed.event_id
+        : `${parsed.job_id}:${typeof parsed.progress === 'number' ? parsed.progress : 'unknown'}:${Date.now()}`,
+      at: typeof parsed.at === 'string' && parsed.at ? parsed.at : new Date().toISOString(),
       job_id: parsed.job_id,
       message: parsed.message,
       progress: parsed.progress,
       status: parsed.status,
+      source: parsed.source === 'api' || parsed.source === 'worker' || parsed.source === 'websocket' || parsed.source === 'clip_ready'
+        ? parsed.source
+        : (parsed.event_type === 'clip_ready' ? 'clip_ready' : 'worker'),
       project_id: typeof parsed.project_id === 'string' ? parsed.project_id : undefined,
       clip_name: typeof parsed.clip_name === 'string' ? parsed.clip_name : undefined,
       ui_title: typeof parsed.ui_title === 'string' ? parsed.ui_title : undefined,

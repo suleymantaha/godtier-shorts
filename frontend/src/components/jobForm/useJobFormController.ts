@@ -32,7 +32,7 @@ export function useJobFormController({ onAnimationChange, onSkipSubtitlesChange,
   const [resolution, setResolution] = useState('best');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { fetchJobs } = useJobStore();
+  const { fetchJobs, registerQueuedJob } = useJobStore();
 
   const urlId = useId();
   const styleId = useId();
@@ -62,7 +62,13 @@ export function useJobFormController({ onAnimationChange, onSkipSubtitlesChange,
     setIsSubmitting(true);
     setError(null);
     try {
-      await jobsApi.start(buildStartJobPayload({ animationType, autoMode, durationMax, durationMin, engine, layout, numClips, resolution, skipSubtitles, style, url }));
+      const response = await jobsApi.start(buildStartJobPayload({ animationType, autoMode, durationMax, durationMin, engine, layout, numClips, resolution, skipSubtitles, style, url }));
+      registerQueuedJob({
+        job_id: response.job_id,
+        message: response.message,
+        style,
+        url,
+      });
       await fetchJobs();
       setUrl('');
     } catch (error) {

@@ -25,7 +25,9 @@ function createController(overrides: Partial<Record<string, unknown>> = {}) {
     endTime: 60,
     errorMessage: null,
     fileInputRef: { current: null },
+    generatedClips: [] as Array<{ clipName: string; projectId?: string; uiTitle?: string }>,
     handleFileSelect: vi.fn(),
+    handleOpenLibrary: vi.fn(),
     handleRender: vi.fn(),
     handleVideoLoadedMetadata: vi.fn(),
     isPlaying: false,
@@ -96,5 +98,34 @@ describe('AutoCutEditor page flow', () => {
     const previewBandWrapper = screen.getByTestId('subtitle-preview-band').parentElement as HTMLElement;
     expect(previewBandWrapper.style.top).toBe('45%');
     expect(previewBandWrapper.style.bottom).toBe('');
+  });
+
+  it('shows generated clips summary and forwards the library CTA', () => {
+    controllerState.value = createController({
+      currentJob: {
+        job_id: 'manualcut_1',
+        url: '/source.mp4',
+        style: 'HORMOZI',
+        status: 'completed',
+        progress: 100,
+        last_message: 'Tamamlandi',
+        created_at: 1,
+        num_clips: 2,
+      },
+      generatedClips: [
+        { clipName: 'clip-1.mp4', projectId: 'proj-1', uiTitle: 'Hook 1' },
+        { clipName: 'clip-2.mp4', projectId: 'proj-1', uiTitle: 'Hook 2' },
+      ],
+      resultVideoSrc: '/api/projects/proj-1/shorts/clip-1.mp4',
+    });
+
+    render(<AutoCutEditor onOpenLibrary={controllerState.value?.handleOpenLibrary as () => void} />);
+
+    expect(screen.getByText(/2 klip uretildi/i)).toBeInTheDocument();
+    expect(screen.getByText('clip-1.mp4')).toBeInTheDocument();
+    expect(screen.getByText('clip-2.mp4')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /clip library/i }));
+    expect(controllerState.value?.handleOpenLibrary).toHaveBeenCalledTimes(1);
   });
 });

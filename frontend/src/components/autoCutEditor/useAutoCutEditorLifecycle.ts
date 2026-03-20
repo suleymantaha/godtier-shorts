@@ -5,6 +5,7 @@ import { useJobStore } from '../../store/useJobStore';
 interface SyncActiveJobParams {
   currentJobId: string | null;
   fetchJobs: () => Promise<void>;
+  preserveResultOnMissing: boolean;
   setCurrentJobId: React.Dispatch<React.SetStateAction<string | null>>;
   setPendingOutputUrl: React.Dispatch<React.SetStateAction<string | null>>;
   setProjectId: React.Dispatch<React.SetStateAction<string | undefined>>;
@@ -26,6 +27,7 @@ interface PersistSessionParams {
 export function useSyncActiveAutoCutJob({
   currentJobId,
   fetchJobs,
+  preserveResultOnMissing,
   setCurrentJobId,
   setPendingOutputUrl,
   setProjectId,
@@ -40,15 +42,17 @@ export function useSyncActiveAutoCutJob({
 
       const jobExists = useJobStore.getState().jobs.some((job) => job.job_id === currentJobId);
       if (!jobExists) {
-        setCurrentJobId(null);
-        setProjectId(undefined);
-        setPendingOutputUrl(null);
         window.localStorage.removeItem(storageKey);
+        if (!preserveResultOnMissing) {
+          setCurrentJobId(null);
+          setProjectId(undefined);
+          setPendingOutputUrl(null);
+        }
       }
     };
 
     void syncJobs();
-  }, [currentJobId, fetchJobs, setCurrentJobId, setPendingOutputUrl, setProjectId, storageKey]);
+  }, [currentJobId, fetchJobs, preserveResultOnMissing, setCurrentJobId, setPendingOutputUrl, setProjectId, storageKey]);
 }
 
 export function usePersistAutoCutSession({

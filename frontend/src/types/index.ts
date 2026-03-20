@@ -5,13 +5,33 @@
  * Hem store hem de component'lar bu dosyadan import eder.
  */
 
-export interface LogEntry {
-    message: string;
+export type JobStatus = 'queued' | 'processing' | 'completed' | 'cancelled' | 'error' | 'empty';
+export type JobTimelineSource = 'api' | 'worker' | 'websocket' | 'clip_ready';
+
+export interface JobTimelineEntry {
+    id: string;
+    at: string;
+    job_id: string;
+    status: JobStatus;
     progress: number;
+    message: string;
+    source: JobTimelineSource;
+}
+
+export interface LogEntry extends JobTimelineEntry {
     timestamp: string;
 }
 
-export type JobStatus = 'queued' | 'processing' | 'completed' | 'cancelled' | 'error' | 'empty';
+export interface ClipReadyEntry {
+    at: string;
+    clipName: string;
+    job_id: string;
+    message: string;
+    progress: number;
+    projectId?: string;
+    uiTitle?: string;
+}
+
 export type SubtitleAnimationType = 'default' | 'pop' | 'shake' | 'slide_up' | 'fade' | 'typewriter' | 'none';
 export type RequestedSubtitleLayout = 'auto' | 'single' | 'split';
 
@@ -29,6 +49,7 @@ export interface Job {
     output_path?: string;
     error?: string;
     num_clips?: number;
+    timeline?: JobTimelineEntry[];
 }
 
 export interface Clip {

@@ -6,6 +6,7 @@ const TERMINAL_JOB_STATUSES = new Set<Job['status']>(['completed', 'cancelled', 
 export interface AutoCutJobStateInput {
   currentJob: Job | null;
   currentJobId: string | null;
+  currentJobMissing: boolean;
   isSubmitting: boolean;
   pendingOutputUrl: string | null;
   requestError: string | null;
@@ -51,6 +52,7 @@ export interface LoadedMetadataRange {
 export function deriveAutoCutJobState({
   currentJob,
   currentJobId,
+  currentJobMissing,
   isSubmitting,
   pendingOutputUrl,
   requestError,
@@ -59,8 +61,8 @@ export function deriveAutoCutJobState({
   return {
     errorMessage: resolveAutoCutErrorMessage(currentJob, requestError),
     hasTerminalJob,
-    processing: isSubmitting || (Boolean(currentJobId) && !hasTerminalJob),
-    resultUrl: resolveAutoCutResultUrl(currentJob, pendingOutputUrl),
+    processing: isSubmitting || (Boolean(currentJobId) && !currentJobMissing && !hasTerminalJob),
+    resultUrl: resolveAutoCutResultUrl(currentJob, pendingOutputUrl, { currentJobMissing, isSubmitting }),
   };
 }
 
@@ -141,9 +143,19 @@ function resolveAutoCutErrorMessage(currentJob: Job | null, requestError: string
   return currentJob.error ?? currentJob.last_message ?? 'Islem tamamlanamadi.';
 }
 
-function resolveAutoCutResultUrl(currentJob: Job | null, pendingOutputUrl: string | null) {
+function resolveAutoCutResultUrl(
+  currentJob: Job | null,
+  pendingOutputUrl: string | null,
+  {
+    currentJobMissing,
+    isSubmitting,
+  }: {
+    currentJobMissing: boolean;
+    isSubmitting: boolean;
+  },
+) {
   if (currentJob?.status !== 'completed') {
-    return null;
+    return currentJobMissing && !isSubmitting ? pendingOutputUrl : null;
   }
 
   if (currentJob.output_url) {

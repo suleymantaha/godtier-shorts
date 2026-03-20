@@ -301,6 +301,13 @@ async def process_batch_clips(
         "project_id": request.project_id,
         "subject": auth.subject,
     }
+    manager.seed_job_timeline(
+        job_id,
+        message="Toplu üretim kuyruğa alındı...",
+        progress=0,
+        status="queued",
+        source="api",
+    )
 
     async def _run() -> None:
         thread_safe_broadcast({"message": "GPU sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
@@ -322,12 +329,13 @@ async def process_batch_clips(
                 else:
                     transcript_data = []
 
-                await asyncio.to_thread(
+                output_paths = await asyncio.to_thread(
                     orchestrator.run_batch_manual_clips,
                     start_t=request.start_time,
                     end_t=request.end_time,
                     num_clips=request.num_clips,
                     transcript_data=transcript_data,
+                    job_id=job_id,
                     duration_min=resolved_duration_min,
                     duration_max=resolved_duration_max,
                     style_name=request.style_name,
@@ -335,6 +343,13 @@ async def process_batch_clips(
                     project_id=request.project_id,
                     layout=request.layout,
                 )
+                if output_paths:
+                    first_name = os.path.basename(output_paths[0])
+                    manager.jobs[job_id]["clip_name"] = first_name
+                    manager.jobs[job_id]["output_url"] = build_secure_clip_url(request.project_id, first_name) if request.project_id else None
+                    manager.jobs[job_id]["output_paths"] = output_paths
+                    manager.jobs[job_id]["output_path"] = output_paths[0]
+                    manager.jobs[job_id]["num_clips"] = len(output_paths)
                 finalize_job_success(job_id, "Toplu klip üretimi tamamlandı.")
             except (RuntimeError, ValueError, OSError) as exc:
                 mapped_error = JobExecutionError("Toplu üretim başarısız", details=str(exc))
@@ -343,7 +358,8 @@ async def process_batch_clips(
             finally:
                 await asyncio.to_thread(orchestrator.cleanup_gpu)
 
-    asyncio.create_task(_run())
+    task = asyncio.create_task(_run())
+    manager.jobs[job_id]["task"] = task
     return {"status": "started", "job_id": job_id}
 
 
@@ -427,6 +443,13 @@ async def manual_cut_upload(
         "layout": layout,
         "subject": auth.subject,
     }
+    manager.seed_job_timeline(
+        job_id,
+        message="Video alındı, otomatik kesim kuyruğa alındı...",
+        progress=0,
+        status="queued",
+        source="api",
+    )
 
     async def _run() -> None:
         thread_safe_broadcast({"message": "GPU sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
@@ -453,6 +476,7 @@ async def manual_cut_upload(
                         output_paths = await orchestrator.run_manual_clips_from_cut_points_async(
                             cut_points=pts,
                             transcript_data=transcript_data,
+                            job_id=job_id,
                             style_name=style_name,
                             animation_type=animation_type,
                             project_id=project_id,
@@ -481,6 +505,7 @@ async def manual_cut_upload(
                             end_t=request.end_time,
                             num_clips=num_clips,
                             transcript_data=transcript_data,
+                            job_id=job_id,
                             duration_min=resolved_duration_min,
                             duration_max=resolved_duration_max,
                             style_name=style_name,
@@ -510,6 +535,7 @@ async def manual_cut_upload(
                             start_t=request.start_time,
                             end_t=request.end_time,
                             transcript_data=None,
+                            job_id=job_id,
                             style_name=style_name,
                             animation_type=animation_type,
                             project_id=project_id,
@@ -636,6 +662,13 @@ async def recover_project_transcript(
         "project_id": request.project_id,
         "subject": auth.subject,
     }
+    manager.seed_job_timeline(
+        job_id,
+        message="Proje transkript kurtarma kuyruğa alındı...",
+        progress=0,
+        status="queued",
+        source="api",
+    )
 
     async def _run() -> None:
         thread_safe_broadcast({"message": "GPU sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
@@ -708,6 +741,13 @@ async def recover_clip_transcript(
         "recovery_strategy": selected_strategy,
         "subject": auth.subject,
     }
+    manager.seed_job_timeline(
+        job_id,
+        message="Klip transkripti kurtarma kuyruğa alındı...",
+        progress=0,
+        status="queued",
+        source="api",
+    )
 
     async def _run() -> None:
         thread_safe_broadcast({"message": "Kurtarma sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
@@ -782,6 +822,13 @@ async def process_manual_clip(
         "project_id": request.project_id,
         "subject": auth.subject,
     }
+    manager.seed_job_timeline(
+        job_id,
+        message="Manuel render kuyruğa alındı...",
+        progress=0,
+        status="queued",
+        source="api",
+    )
 
     async def _run() -> None:
         thread_safe_broadcast({"message": "GPU sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
@@ -843,6 +890,13 @@ async def reburn_clip(
         "project_id": request.project_id,
         "subject": auth.subject,
     }
+    manager.seed_job_timeline(
+        job_id,
+        message="Altyazı yeniden basım kuyruğa alındı...",
+        progress=0,
+        status="queued",
+        source="api",
+    )
 
     async def _run() -> None:
         thread_safe_broadcast({"message": "GPU sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)

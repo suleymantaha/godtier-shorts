@@ -30,6 +30,7 @@ describe('autoCutEditor job helpers', () => {
         status: 'completed',
       }),
       currentJobId: 'job_1',
+      currentJobMissing: false,
       isSubmitting: false,
       pendingOutputUrl: null,
       requestError: null,
@@ -48,6 +49,7 @@ describe('autoCutEditor job helpers', () => {
         status: 'error',
       }),
       currentJobId: 'job_1',
+      currentJobMissing: false,
       isSubmitting: false,
       pendingOutputUrl: null,
       requestError: 'Manual cut failed: 500',
@@ -55,6 +57,21 @@ describe('autoCutEditor job helpers', () => {
 
     expect(state.errorMessage).toBe('Manual cut failed: 500');
     expect(state.processing).toBe(false);
+  });
+
+  it('preserves the last known result url when a completed job disappears from sync', () => {
+    const state = deriveAutoCutJobState({
+      currentJob: null,
+      currentJobId: 'job_1',
+      currentJobMissing: true,
+      isSubmitting: false,
+      pendingOutputUrl: '/api/projects/proj_1/shorts/clip_1.mp4',
+      requestError: null,
+    });
+
+    expect(state.hasTerminalJob).toBe(false);
+    expect(state.processing).toBe(false);
+    expect(state.resultUrl).toBe('/api/projects/proj_1/shorts/clip_1.mp4');
   });
 
 });

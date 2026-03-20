@@ -63,7 +63,7 @@ def finalize_job_success(job_id: str, last_message: str) -> None:
         manager.jobs[job_id]["status"] = "completed"
         manager.jobs[job_id]["progress"] = 100
         manager.jobs[job_id]["last_message"] = last_message
-    thread_safe_broadcast({"message": last_message, "progress": 100}, job_id)
+    thread_safe_broadcast({"message": last_message, "progress": 100, "status": "completed"}, job_id)
     invalidate_clips_cache(reason=f"job_success:{job_id}")
 
 
@@ -74,7 +74,7 @@ def finalize_job_error(job_id: str, error: Exception) -> None:
         manager.jobs[job_id]["status"] = "error"
         manager.jobs[job_id]["error"] = str(error)
         manager.jobs[job_id]["last_message"] = message
-    thread_safe_broadcast({"message": message, "progress": -1}, job_id)
+    thread_safe_broadcast({"message": message, "progress": -1, "status": "error"}, job_id)
 
 
 ALLOWED_CONTAINERS = {"mp4", "mov", "m4a", "3gp", "3g2", "mj2"}
@@ -1157,6 +1157,13 @@ async def upload_local_video(
         "project_id": project_id,
         "subject": auth.subject,
     }
+    manager.seed_job_timeline(
+        job_id,
+        message="Video yüklendi, transkripsiyon bekliyor...",
+        progress=0,
+        status="queued",
+        source="api",
+    )
 
     async def _run() -> None:
         manager.jobs[job_id]["status"] = "queued"

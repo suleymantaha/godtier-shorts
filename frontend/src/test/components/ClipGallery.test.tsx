@@ -215,6 +215,7 @@ describe('ClipGallery', () => {
 
     act(() => {
       useJobStore.getState().markClipReady({
+        at: '2026-03-20T00:00:01.000Z',
         clipName: 'clip-ready.mp4',
         job_id: 'manual_123',
         message: 'Klip hazir',
@@ -225,6 +226,41 @@ describe('ClipGallery', () => {
     });
 
     expect(await screen.findByText('clip-ready.mp4')).toBeInTheDocument();
+  });
+
+  it('shows a stale refresh warning when a later clip refresh fails after initial load', async () => {
+    mockClipsResponse = {
+      clips: [{
+        name: 'clip-1.mp4',
+        project: 'project-1',
+        url: '/clips/clip-1.mp4',
+        has_transcript: true,
+        ui_title: 'Hot Take',
+        created_at: 123,
+      }],
+      total: 1,
+    };
+
+    const { ClipGallery } = await import('../../components/ClipGallery');
+    render(<ClipGallery />);
+    expect(await screen.findByText('clip-1.mp4')).toBeInTheDocument();
+
+    mockShouldReject = true;
+
+    act(() => {
+      useJobStore.getState().markClipReady({
+        at: '2026-03-20T00:00:03.000Z',
+        clipName: 'clip-2.mp4',
+        job_id: 'manual_123',
+        message: 'Klip hazir',
+        progress: 95,
+        projectId: 'project-1',
+        uiTitle: 'Second',
+      });
+    });
+
+    expect(await screen.findByText(/library refresh failed/i)).toBeInTheDocument();
+    expect(screen.getByText('clip-1.mp4')).toBeInTheDocument();
   });
 
   it('renders ready clips, supports sort/filter, and forwards edit actions', async () => {

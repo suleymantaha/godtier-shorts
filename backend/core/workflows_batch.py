@@ -32,6 +32,7 @@ class BatchClipWorkflow:
         end_t: float,
         num_clips: int,
         transcript_data: list,
+        job_id: str | None = None,
         duration_min: float = 120.0,
         duration_max: float = 180.0,
         style_name: str = "HORMOZI",
@@ -85,6 +86,7 @@ class BatchClipWorkflow:
         results = await render_batch_segments(
             self.ctx,
             segments,
+            job_id=job_id,
             transcript_data=transcript_data,
             master_video=master_video,
             style_name=style_name,

@@ -140,6 +140,7 @@ export function SignedInShell({
         handleAnimationChange={handleAnimationChange}
         handleSkipSubtitlesChange={handleSkipSubtitlesChange}
         handleStyleChange={handleStyleChange}
+        openConfig={openConfig}
         openClipSubtitleEditor={openClipSubtitleEditor}
         subtitleTargetClip={subtitleTargetClip}
         subtitlesDisabled={subtitlesDisabled}
@@ -287,6 +288,7 @@ function MainContent({
   handleAnimationChange,
   handleSkipSubtitlesChange,
   handleStyleChange,
+  openConfig,
   openClipSubtitleEditor,
   subtitleTargetClip,
   subtitlesDisabled,
@@ -299,6 +301,7 @@ function MainContent({
   handleAnimationChange: (animationType: SubtitleAnimationType) => void;
   handleSkipSubtitlesChange: (disabled: boolean) => void;
   handleStyleChange: (styleName: string) => void;
+  openConfig: () => void;
   openClipSubtitleEditor: (clip: Clip) => void;
   subtitleTargetClip: Clip | null;
   subtitlesDisabled: boolean;
@@ -309,7 +312,7 @@ function MainContent({
   }
 
   if (viewMode === 'manual') {
-    return <FullWidthWorkspace fallback="Auto Cut yukleniyor..."><AutoCutEditor /></FullWidthWorkspace>;
+    return <FullWidthWorkspace fallback="Auto Cut yukleniyor..."><AutoCutEditor onOpenLibrary={openConfig} /></FullWidthWorkspace>;
   }
 
   if (viewMode === 'subtitle') {
