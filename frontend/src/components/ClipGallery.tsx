@@ -1,5 +1,5 @@
 import type { Clip } from '../types';
-import { ShareComposerModal } from './ShareComposerModal';
+import { openSocialComposeWindow } from './shareComposer/helpers';
 import { useClipGalleryController } from './clipGallery/useClipGalleryController';
 import {
     AuthBlockedState,
@@ -41,9 +41,7 @@ export const ClipGallery = ({ onEditClip }: ClipGalleryProps) => {
         projectOptions,
         reclaimableProjects,
         setProjectFilter,
-        setShareClip,
         setSortOrder,
-        shareClip,
         sortOrder,
         staleRefreshWarning,
         state,
@@ -84,7 +82,7 @@ export const ClipGallery = ({ onEditClip }: ClipGalleryProps) => {
                     clips={clips}
                     onDeleteClip={handleRequestDelete}
                     onEditClip={onEditClip}
-                    onShareClip={setShareClip}
+                    onShareClip={openSocialComposeWindow}
                 />
             )}
             <DeleteClipModal
@@ -94,7 +92,6 @@ export const ClipGallery = ({ onEditClip }: ClipGalleryProps) => {
                 onClose={handleCloseDelete}
                 onConfirm={() => void handleConfirmDelete()}
             />
-            <ShareComposerModal open={Boolean(shareClip)} clip={shareClip} onClose={() => setShareClip(null)} />
         </div>
     );
 };

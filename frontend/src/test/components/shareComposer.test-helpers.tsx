@@ -37,32 +37,36 @@ export const shareComposerClip: Clip = {
   url: '/api/projects/proj_1/files/clip/clip_1.mp4',
 };
 
-function buildPlatforms(title: string, text: string, hashtags: string[]): Record<SocialPlatform, ShareDraftContent> {
+function buildPlatforms(title: string, text: string, hashtags: string[], hookText: string, ctaText: string): Record<SocialPlatform, ShareDraftContent> {
   return {
-    facebook_reels: { hashtags, text, title },
-    instagram_reels: { hashtags, text, title },
-    linkedin: { hashtags, text, title },
-    tiktok: { hashtags, text, title },
-    x: { hashtags, text, title },
-    youtube_shorts: { hashtags, text, title },
+    facebook_reels: { cta_text: ctaText, hashtags, hook_text: hookText, text, title },
+    instagram_reels: { cta_text: ctaText, hashtags, hook_text: hookText, text, title },
+    linkedin: { cta_text: ctaText, hashtags, hook_text: hookText, text, title },
+    tiktok: { cta_text: ctaText, hashtags, hook_text: hookText, text, title },
+    x: { cta_text: ctaText, hashtags, hook_text: hookText, text, title },
+    youtube_shorts: { cta_text: ctaText, hashtags, hook_text: hookText, text, title },
   };
 }
 
 export function createPrefillResponse({
   hasDrafts = false,
   hashtags = ['viral'],
+  hookText = 'HOOK',
   text = 'TEXT',
   title = 'TITLE',
+  ctaText = 'Follow for the next part.',
 }: {
+  ctaText?: string;
   hasDrafts?: boolean;
   hashtags?: string[];
+  hookText?: string;
   text?: string;
   title?: string;
 } = {}): SharePrefillResponse {
   return {
     clip_exists: true,
     clip_name: shareComposerClip.name,
-    platforms: buildPlatforms(title, text, hashtags),
+    platforms: buildPlatforms(title, text, hashtags, hookText, ctaText),
     project_id: shareComposerClip.project!,
     source: { has_clip_metadata: true, has_drafts: hasDrafts, viral_metadata: null },
   };

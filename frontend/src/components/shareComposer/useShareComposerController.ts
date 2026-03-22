@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetState
 
 import { tSafe } from '../../i18n';
 import { socialApi } from '../../api/client';
+import { resolveApiUrl } from '../../utils/url';
 import type { Clip, PublishJob, ShareDraftContent, SocialAccount, SocialConnectionMode, SocialPlatform } from '../../types';
 import {
   clearManagedConnectPending,
@@ -17,6 +18,7 @@ import {
   markManagedConnectPending,
   mergeDraftContent,
   nowPlusHourLocal,
+  openSocialComposeWindow,
   parseLocalDraftBuffer,
   readSocialOAuthStatusFromQuery,
   resolveProjectId,
@@ -100,7 +102,7 @@ async function fetchShareComposerData(projectId: string, clipName: string): Prom
     accounts: accountResp.accounts ?? [],
     connected: accountResp.connected,
     connectionMode: accountResp.connection_mode ?? 'managed',
-    connectUrl: accountResp.connect_url ?? null,
+    connectUrl: accountResp.connect_url ? resolveApiUrl(accountResp.connect_url) : null,
     contentByPlatform: mergeDraftContent(prefillResp.platforms, parsedBuffer.buffer),
     draftState: buildDraftState(prefillResp, parsedBuffer.buffer),
     jobs: jobsResp.jobs ?? [],
@@ -607,6 +609,20 @@ export function useShareComposerController({ clip, open }: UseShareComposerContr
     },
     projectId,
     publishing: state.publishing,
+    openSocialWorkspace: () => {
+      if (typeof window === 'undefined') {
+        return;
+      }
+      const params = new URLSearchParams({ tab: 'social' });
+      if (projectId && clip) {
+        params.set('project_id', projectId);
+        params.set('clip_name', clip.name);
+      }
+      window.open(`/?${params.toString()}`, '_blank', 'noopener,noreferrer');
+    },
+    openSocialComposePage: () => {
+      openSocialComposeWindow(clip);
+    },
     scheduleAt: state.scheduleAt,
     selectedAccountIds: state.selectedAccountIds,
     selectedPlatform: state.selectedPlatform,

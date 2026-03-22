@@ -1,7 +1,7 @@
 import type { Clip } from '../types';
 import { readStored } from '../utils/storage';
 
-export type AppViewMode = 'config' | 'manual' | 'subtitle';
+export type AppViewMode = 'config' | 'manual' | 'subtitle' | 'social' | 'social_compose';
 export type SubtitleSessionMode = 'project' | 'clip';
 export type SubtitleSessionJobKind = 'reburn' | 'clip_recovery' | 'project_transcript' | 'range_render' | 'unknown';
 
@@ -55,8 +55,9 @@ export function normalizeStoredClip(clip?: Clip | null): Clip | null {
 
 export function readAppState(): AppState {
   const parsed = readStored<StoredAppState>(APP_STATE_STORAGE_KEY, DEFAULT_APP_STATE);
+  const queryMode = readQueryViewMode();
   return {
-    viewMode: normalizeViewMode(parsed.viewMode),
+    viewMode: queryMode ?? normalizeViewMode(parsed.viewMode),
     editingClip: parsed.editingClip ?? null,
     subtitleTargetClip: normalizeStoredClip(parsed.subtitleTargetClip),
   };
@@ -107,11 +108,67 @@ export function clearSubtitleSessionSnapshot() {
 }
 
 function normalizeViewMode(viewMode?: string): AppViewMode {
-  if (viewMode === 'manual' || viewMode === 'subtitle') {
+  if (viewMode === 'manual' || viewMode === 'subtitle' || viewMode === 'social' || viewMode === 'social_compose') {
     return viewMode;
   }
 
   return 'config';
+}
+
+export function readQueryViewMode(search = typeof window !== 'undefined' ? window.location.search : ''): AppViewMode | null {
+  if (!search) {
+    return null;
+  }
+  const params = new URLSearchParams(search);
+  return normalizeQueryTab(params.get('tab'));
+}
+
+export function syncViewModeToUrl(viewMode: AppViewMode): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  const currentUrl = new URL(window.location.href);
+  const queryTab = queryTabForViewMode(viewMode);
+  if (queryTab) {
+    currentUrl.searchParams.set('tab', queryTab);
+  } else {
+    currentUrl.searchParams.delete('tab');
+  }
+  const nextQuery = currentUrl.searchParams.toString();
+  const nextUrl = `${currentUrl.pathname}${nextQuery ? `?${nextQuery}` : ''}${currentUrl.hash}`;
+  window.history.replaceState({}, '', nextUrl);
+}
+
+function queryTabForViewMode(viewMode: AppViewMode): string | null {
+  if (viewMode === 'manual') {
+    return 'manual';
+  }
+  if (viewMode === 'subtitle') {
+    return 'subtitle';
+  }
+  if (viewMode === 'social') {
+    return 'social';
+  }
+  if (viewMode === 'social_compose') {
+    return 'social-compose';
+  }
+  return null;
+}
+
+function normalizeQueryTab(tab: string | null): AppViewMode | null {
+  if (tab === 'manual') {
+    return 'manual';
+  }
+  if (tab === 'subtitle') {
+    return 'subtitle';
+  }
+  if (tab === 'social') {
+    return 'social';
+  }
+  if (tab === 'social-compose') {
+    return 'social_compose';
+  }
+  return null;
 }
 
 function normalizeSubtitleSessionJobKind(jobKind?: string): SubtitleSessionJobKind {

@@ -6,6 +6,7 @@ import {
   Moon,
   Scissors,
   Settings,
+  Share2,
   Subtitles,
   Sun,
   Twitter,
@@ -26,7 +27,7 @@ import { Select } from '../components/ui/Select';
 import type { SubtitleAnimationType } from '../config/subtitleStyles';
 import type { AppLocale } from '../i18n';
 import type { Clip, WsStatus } from '../types';
-import { AutoCutEditor, Editor, SubtitleEditor, ThreeCanvas } from './lazyComponents';
+import { AutoCutEditor, Editor, SocialComposePage, SocialWorkspace, SubtitleEditor, ThreeCanvas } from './lazyComponents';
 import type { AppViewMode } from './helpers';
 import type { ResilientAuthState, ResilientAuthStatus } from '../auth/useResilientAuth';
 
@@ -61,6 +62,7 @@ interface SignedInShellProps {
   openClipSubtitleEditor: (clip: Clip) => void;
   openConfig: () => void;
   openManual: () => void;
+  openSocial: () => void;
   openSubtitle: () => void;
   pauseReason: ResilientAuthState['pauseReason'];
   locale: AppLocale;
@@ -106,6 +108,7 @@ export function SignedInShell({
   openClipSubtitleEditor,
   openConfig,
   openManual,
+  openSocial,
   openSubtitle,
   pauseReason,
   locale,
@@ -126,6 +129,7 @@ export function SignedInShell({
         authStatus={authStatus}
         openConfig={openConfig}
         openManual={openManual}
+        openSocial={openSocial}
         openSubtitle={openSubtitle}
         locale={locale}
         setLocale={setLocale}
@@ -144,6 +148,7 @@ export function SignedInShell({
         handleStyleChange={handleStyleChange}
         openConfig={openConfig}
         openClipSubtitleEditor={openClipSubtitleEditor}
+        openSocial={openSocial}
         subtitleSessionNonce={subtitleSessionNonce}
         subtitleTargetClip={subtitleTargetClip}
         subtitlesDisabled={subtitlesDisabled}
@@ -165,6 +170,7 @@ function AppHeader({
   locale,
   openConfig,
   openManual,
+  openSocial,
   openSubtitle,
   setLocale,
   showUserMenu,
@@ -176,6 +182,7 @@ function AppHeader({
   locale: AppLocale;
   openConfig: () => void;
   openManual: () => void;
+  openSocial: () => void;
   openSubtitle: () => void;
   setLocale: (locale: AppLocale) => void;
   showUserMenu: boolean;
@@ -190,6 +197,7 @@ function AppHeader({
         <ViewNavigation
           openConfig={openConfig}
           openManual={openManual}
+          openSocial={openSocial}
           openSubtitle={openSubtitle}
           viewMode={viewMode}
         />
@@ -229,11 +237,13 @@ function BrandPanel() {
 function ViewNavigation({
   openConfig,
   openManual,
+  openSocial,
   openSubtitle,
   viewMode,
 }: {
   openConfig: () => void;
   openManual: () => void;
+  openSocial: () => void;
   openSubtitle: () => void;
   viewMode: AppViewMode;
 }) {
@@ -247,21 +257,23 @@ function ViewNavigation({
     { activeClass: 'bg-accent/20 text-foreground shadow-lg shadow-accent/10 border border-accent/30', icon: Settings, label: t('app.nav.configure'), mode: 'config' },
     { activeClass: 'bg-primary/20 text-foreground shadow-lg shadow-primary/10 border border-primary/30', icon: Scissors, label: t('app.nav.autoCut'), mode: 'manual' },
     { activeClass: 'bg-accent/20 text-foreground shadow-lg shadow-accent/10 border border-accent/30', icon: Subtitles, label: t('app.nav.subtitleEdit'), mode: 'subtitle' },
+    { activeClass: 'bg-secondary/20 text-foreground shadow-lg shadow-secondary/10 border border-secondary/30', icon: Share2, label: t('app.nav.social'), mode: 'social' },
   ];
-  const actions = {
-    config: openConfig,
-    manual: openManual,
-    subtitle: openSubtitle,
-  };
-
   return (
     <nav className="flex p-1 glass-card rounded-xl border-accent/20" aria-label={t('app.nav.ariaLabel')}>
       {navItems.map(({ activeClass, icon: Icon, label, mode }) => {
         const isActive = viewMode === mode;
+        const onClick = mode === 'config'
+          ? openConfig
+          : mode === 'manual'
+            ? openManual
+            : mode === 'subtitle'
+              ? openSubtitle
+              : openSocial;
         return (
           <button
             key={mode}
-            onClick={actions[mode]}
+            onClick={onClick}
             aria-current={isActive ? 'page' : undefined}
             className={resolveNavButtonClass(isActive, activeClass)}
           >
@@ -334,6 +346,7 @@ function MainContent({
   handleSkipSubtitlesChange,
   handleStyleChange,
   openConfig,
+  openSocial,
   openClipSubtitleEditor,
   subtitleSessionNonce,
   subtitleTargetClip,
@@ -348,6 +361,7 @@ function MainContent({
   handleSkipSubtitlesChange: (disabled: boolean) => void;
   handleStyleChange: (styleName: string) => void;
   openConfig: () => void;
+  openSocial: () => void;
   openClipSubtitleEditor: (clip: Clip) => void;
   subtitleSessionNonce: number;
   subtitleTargetClip: Clip | null;
@@ -376,6 +390,22 @@ function MainContent({
     );
   }
 
+  if (viewMode === 'social') {
+    return (
+      <FullWidthWorkspace fallback={t('app.social.loading')}>
+        <SocialWorkspace />
+      </FullWidthWorkspace>
+    );
+  }
+
+  if (viewMode === 'social_compose') {
+    return (
+      <FullWidthWorkspace fallback={t('app.social.loading')}>
+        <SocialComposePage />
+      </FullWidthWorkspace>
+    );
+  }
+
   return (
     <ConfigWorkspace
       currentAnimationType={currentAnimationType}
@@ -383,6 +413,7 @@ function MainContent({
       handleAnimationChange={handleAnimationChange}
       handleSkipSubtitlesChange={handleSkipSubtitlesChange}
       handleStyleChange={handleStyleChange}
+      openSocial={openSocial}
       openClipSubtitleEditor={openClipSubtitleEditor}
       subtitlesDisabled={subtitlesDisabled}
     />
@@ -444,6 +475,7 @@ function ConfigWorkspace({
   handleAnimationChange,
   handleSkipSubtitlesChange,
   handleStyleChange,
+  openSocial,
   openClipSubtitleEditor,
   subtitlesDisabled,
 }: {
@@ -452,6 +484,7 @@ function ConfigWorkspace({
   handleAnimationChange: (animationType: SubtitleAnimationType) => void;
   handleSkipSubtitlesChange: (disabled: boolean) => void;
   handleStyleChange: (styleName: string) => void;
+  openSocial: () => void;
   openClipSubtitleEditor: (clip: Clip) => void;
   subtitlesDisabled: boolean;
 }) {
@@ -488,6 +521,16 @@ function ConfigWorkspace({
       </div>
       <div className="min-w-0">
         <ClipGallery onEditClip={openClipSubtitleEditor} />
+      </div>
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={openSocial}
+          className="inline-flex items-center gap-2 rounded-lg border border-secondary/40 bg-secondary/10 px-4 py-2 text-xs font-mono uppercase tracking-[0.16em] text-secondary"
+        >
+          <Share2 className="w-3 h-3" />
+          {t('app.social.openWorkspace')}
+        </button>
       </div>
       <div className="min-w-0">
         <AccountDeletionCard />

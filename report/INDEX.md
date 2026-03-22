@@ -12,6 +12,8 @@ Bu dosya, keşif ve onboarding için kritik çıktıları tek yerde toplar.
 - [Ağaç Görünümü (depth=3)](./repo-tree-depth3-2026-03-17.txt)
 - [Durum Raporu (2026-03-20)](./DURUM_RAPORU_2026-03-20.md)
 - [Durum Raporu (2026-03-21)](./DURUM_RAPORU_2026-03-21.md)
+- [Social Suite Durum Raporu (2026-03-23)](./SOCIAL_SUITE_DURUM_RAPORU_2026-03-23.md)
+- [Social Composer UX Notları (2026-03-23)](./SOCIAL_COMPOSER_UX_NOTLARI_2026-03-23.md)
 - [Teknik Denetim Raporu (2026-03-20)](./TEKNIK_DENETIM_RAPORU_2026-03-20.md)
 - [Teknik Denetim Eki (2026-03-20)](./TEKNIK_DENETIM_EK_2026-03-20.md)
 - [SEO Yol Haritasi (2026-03-21)](./SEO_YOL_HARITASI_2026-03-21.md)

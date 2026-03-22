@@ -19,13 +19,13 @@ describe('ShareComposerModal publish', () => {
 
     await renderShareComposerModal();
 
-    expect(await screen.findByText(/sosyal paylaşım/i)).toBeInTheDocument();
+    expect(await screen.findByText(/social sharing/i)).toBeInTheDocument();
     await waitFor(() => expect(mockGetPrefill).toHaveBeenCalled());
 
     expect(screen.getByDisplayValue('TITLE')).toBeInTheDocument();
 
     await user.click(screen.getByRole('checkbox'));
-    await user.click(screen.getByRole('button', { name: /hemen paylaş/i }));
+    await user.click(screen.getByRole('button', { name: /publish now/i }));
 
     await waitFor(() => {
       expect(mockPublish).toHaveBeenCalledWith(

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useJobStore } from '../../store/useJobStore';
@@ -38,6 +38,7 @@ const mockClaimProjectOwnership = vi.fn();
 const mockOwnershipDiagnostics = vi.fn();
 const mockDeleteClip = vi.fn();
 const mockListClips = vi.fn();
+const windowOpenMock = vi.fn();
 const authRuntimeState = {
   backendIdentity: {
     authMode: 'clerk_jwt' as 'clerk_jwt' | 'static_token',
@@ -113,6 +114,8 @@ vi.mock('../../components/ui/LazyVideo', () => ({
 
 beforeEach(() => {
   vi.useRealTimers();
+  windowOpenMock.mockReset();
+  Object.defineProperty(window, 'open', { configurable: true, value: windowOpenMock });
   useJobStore.getState().reset();
   authRuntimeState.canUseProtectedRequests = true;
   authRuntimeState.backendIdentity = {
@@ -196,6 +199,38 @@ describe('ClipGallery loading and empty states', () => {
       'http://localhost:8000/clips/clip-1.mp4?t=123',
     );
     expect(mockListClips).toHaveBeenCalledWith(1, 200);
+  });
+
+  it('opens a dedicated social compose page when sharing a clip', async () => {
+    mockClipsResponse = {
+      clips: [{
+        name: 'clip-share.mp4',
+        project: 'project-1',
+        resolved_project_id: 'project-1',
+        transcript_status: 'ready',
+        url: '/clips/clip-share.mp4',
+        has_transcript: true,
+        ui_title: 'Share Me',
+        created_at: 456,
+        duration: 42,
+      }],
+      total: 1,
+    };
+
+    const { ClipGallery } = await import('../../components/ClipGallery');
+    render(<ClipGallery />);
+
+    expect(await screen.findByText('clip-share.mp4')).toBeInTheDocument();
+    const shareButtons = screen.getAllByRole('button', { name: /share/i, hidden: true });
+    fireEvent.click(shareButtons[shareButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(windowOpenMock).toHaveBeenCalledWith(
+        '/?tab=social-compose&clip_name=clip-share.mp4&clip_url=%2Fclips%2Fclip-share.mp4&clip_created_at=456&project_id=project-1&clip_title=Share+Me&clip_duration=42',
+        '_blank',
+        'noopener,noreferrer',
+      );
+    });
   });
 
   it('renders transcript processing and recovery-needed badges from transcript_status', async () => {

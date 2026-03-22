@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import App from '../App';
@@ -92,6 +92,7 @@ vi.mock('../components/Editor', () => ({
   ),
 }));
 vi.mock('../components/AutoCutEditor', () => ({ AutoCutEditor: () => <div>AutoCutEditor</div> }));
+vi.mock('../components/SocialWorkspace', () => ({ SocialWorkspace: () => <div>SocialWorkspace</div> }));
 vi.mock('../components/SubtitleEditor', () => ({
   SubtitleEditor: ({
     lockedToClip,
@@ -105,9 +106,11 @@ vi.mock('../components/ui/ConnectionChip', () => ({
   ConnectionChip: ({ status }: { status: string }) => <div>{`Connection:${status}`}</div>,
 }));
 
-beforeEach(() => {
+beforeEach(async () => {
   localStorage.clear();
+  window.history.replaceState({}, '', '/');
   document.documentElement.removeAttribute('data-theme');
+  await i18n.changeLanguage('en');
   toggleThemeMock.mockClear();
   useWebSocketMock.mockClear();
   resetJobStoreMock.mockClear();
@@ -200,6 +203,22 @@ describe('App navigation and workspace restoration', () => {
     });
   });
 
+  it('switches to the social page from the main navigation', async () => {
+    render(<App />);
+
+    const navigation = screen.getByRole('navigation', { name: /main navigation/i });
+    fireEvent.click(within(navigation).getByRole('button', { name: /^social$/i }));
+    expect(await screen.findByText('SocialWorkspace')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(JSON.parse(localStorage.getItem(APP_STATE_STORAGE_KEY) ?? '{}')).toEqual({
+        editingClip: null,
+        subtitleTargetClip: null,
+        viewMode: 'social',
+      });
+    });
+  });
+
   it('renders Turkish navigation and form labels in tr locale', async () => {
     await i18n.changeLanguage('tr');
 
@@ -208,6 +227,7 @@ describe('App navigation and workspace restoration', () => {
     expect(screen.getByRole('button', { name: 'YAPILANDIR' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'OTOMATİK KES' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'ALTYAZI DÜZENLE' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'SOSYAL' })).toBeInTheDocument();
   });
 });
 

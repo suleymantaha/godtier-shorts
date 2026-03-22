@@ -8,9 +8,7 @@ export function getClipUrl(
   clip: { url: string },
   options?: { cacheBust?: number | string | null | undefined },
 ): string {
-  const baseUrl = clip.url.startsWith('http')
-    ? clip.url
-    : `${API_BASE}${clip.url.startsWith('/') ? '' : '/'}${clip.url}`;
+  const baseUrl = resolveApiUrl(clip.url);
 
   const cacheBust = options?.cacheBust;
   if (cacheBust === null || cacheBust === undefined || cacheBust === '') {
@@ -19,4 +17,12 @@ export function getClipUrl(
 
   const separator = baseUrl.includes('?') ? '&' : '?';
   return `${baseUrl}${separator}t=${encodeURIComponent(String(cacheBust))}`;
+}
+
+export function resolveApiUrl(url: string): string {
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+
+  return `${API_BASE}${url.startsWith('/') ? '' : '/'}${url}`;
 }

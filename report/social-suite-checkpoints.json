@@ -1,0 +1,66 @@
+[
+  {
+    "checkpoint_id": "SOCIAL-V1-domain-shell",
+    "status": "completed",
+    "files": [
+      "backend/services/social/providers.py",
+      "backend/services/social/repository.py",
+      "frontend/src/app/helpers.ts",
+      "frontend/src/app/sections.tsx",
+      "frontend/src/components/SocialWorkspace.tsx"
+    ],
+    "tests_run": [
+      "python -m py_compile backend/api/routes/social.py backend/services/social/service.py backend/services/social/store.py backend/services/social/repository.py backend/services/social/providers.py backend/services/social/postiz.py",
+      "cd frontend && npm run build"
+    ],
+    "verify_gate": "partial-pass",
+    "notes": "Social sekmesi shell içine alındı ve ?tab=social bootstrap desteği eklendi."
+  },
+  {
+    "checkpoint_id": "SOCIAL-V1-data-backend",
+    "status": "completed",
+    "files": [
+      "backend/services/social/store.py",
+      "backend/api/routes/social.py",
+      "backend/services/social/postiz.py",
+      "backend/services/social/service.py"
+    ],
+    "tests_run": [
+      "pytest backend/tests/test_social_routes.py backend/tests/test_social_connections.py -q"
+    ],
+    "verify_gate": "pass",
+    "notes": "Yeni sosyal session/cache/analytics tabloları ve backend API yüzeyi eklendi."
+  },
+  {
+    "checkpoint_id": "SOCIAL-V1-frontend-workspace",
+    "status": "completed",
+    "files": [
+      "frontend/src/components/SocialWorkspace.tsx",
+      "frontend/src/api/client.ts",
+      "frontend/src/components/shareComposer/useShareComposerController.ts",
+      "frontend/src/components/shareComposer/sections.tsx",
+      "frontend/src/i18n/resources/en.ts",
+      "frontend/src/i18n/resources/tr.ts"
+    ],
+    "tests_run": [
+      "cd frontend && npm run test -- src/test/App.test.tsx src/test/components/SocialWorkspace.test.tsx",
+      "cd frontend && npm run build"
+    ],
+    "verify_gate": "pass",
+    "notes": "Native Social workspace ve share deep-link akışı devrede."
+  },
+  {
+    "checkpoint_id": "SOCIAL-V1-full-verify",
+    "status": "blocked",
+    "files": [
+      "frontend/src/components/HoloTerminal.tsx",
+      "frontend/src/components/clipGallery/sections.tsx",
+      "frontend/src/components/subtitleEditor/playback.ts"
+    ],
+    "tests_run": [
+      "bash scripts/verify.sh"
+    ],
+    "verify_gate": "failed",
+    "notes": "Repo genelindeki mevcut eslint hataları tam verify kapısını durduruyor."
+  }
+]

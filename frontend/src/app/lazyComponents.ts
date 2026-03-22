@@ -10,3 +10,9 @@ export const AutoCutEditor = lazy(() =>
 export const SubtitleEditor = lazy(() =>
   import('../components/SubtitleEditor').then((module) => ({ default: module.SubtitleEditor })),
 );
+export const SocialWorkspace = lazy(() =>
+  import('../components/SocialWorkspace').then((module) => ({ default: module.SocialWorkspace })),
+);
+export const SocialComposePage = lazy(() =>
+  import('../components/SocialComposePage').then((module) => ({ default: module.SocialComposePage })),
+);

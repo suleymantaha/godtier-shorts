@@ -23,7 +23,42 @@ export type SocialOAuthStatus = 'success' | 'error';
 const MANAGED_CONNECT_PENDING_PREFIX = 'social-postiz-managed-connect-pending';
 
 export function resolveProjectId(clip: Clip | null): string | null {
-  return clip?.project && clip.project !== 'legacy' ? clip.project : null;
+  if (!clip) {
+    return null;
+  }
+
+  const candidate = clip.project ?? clip.resolved_project_id ?? null;
+  return candidate && candidate !== 'legacy' ? candidate : null;
+}
+
+export function buildSocialComposeUrl(clip: Clip | null): string {
+  const params = new URLSearchParams({ tab: 'social-compose' });
+  const projectId = resolveProjectId(clip);
+
+  if (clip) {
+    params.set('clip_name', clip.name);
+    params.set('clip_url', clip.url);
+    params.set('clip_created_at', String(clip.created_at));
+    if (projectId) {
+      params.set('project_id', projectId);
+    }
+    if (clip.ui_title) {
+      params.set('clip_title', clip.ui_title);
+    }
+    if (typeof clip.duration === 'number' && Number.isFinite(clip.duration)) {
+      params.set('clip_duration', String(clip.duration));
+    }
+  }
+
+  return `/?${params.toString()}`;
+}
+
+export function openSocialComposeWindow(clip: Clip | null): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.open(buildSocialComposeUrl(clip), '_blank', 'noopener,noreferrer');
 }
 
 export function getShareComposerIdentityScope(): string {

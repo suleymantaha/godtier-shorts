@@ -426,11 +426,40 @@ export interface SocialAccountsResponse {
     workspace_id?: string;
 }
 
+export interface SocialProviderStatus {
+    platform: SocialPlatform;
+    title: string;
+    description: string;
+    integrations: string[];
+    analytics_supported: boolean;
+    connected: boolean;
+    account_count: number;
+    accounts: SocialAccount[];
+}
+
+export interface SocialProvidersResponse {
+    providers: SocialProviderStatus[];
+    connection_mode: SocialConnectionMode;
+}
+
+export interface SocialConnectionsResponse {
+    accounts: SocialAccount[];
+    providers: SocialProviderStatus[];
+    connected: boolean;
+}
+
+export interface SocialConnectionStartResponse {
+    status: 'oauth_required' | 'launch_ready';
+    session_id: string;
+    launch_url: string;
+}
+
 export interface ShareDraftContent {
     title: string;
     text: string;
     hashtags: string[];
     hook_text?: string;
+    cta_text?: string;
     viral_score?: number;
 }
 
@@ -463,6 +492,59 @@ export interface PublishJob {
     timeline?: Array<{ state: string; message: string; at: string }>;
     created_at: string;
     updated_at: string;
+}
+
+export interface SocialCalendarResponse {
+    items: PublishJob[];
+}
+
+export interface SocialQueueResponse {
+    jobs: PublishJob[];
+}
+
+export interface SocialAnalyticsOverview {
+    total_jobs: number;
+    published: number;
+    failed: number;
+    scheduled: number;
+    active: number;
+    approval_required: number;
+    connected_accounts: number;
+    platforms_connected: number;
+    generated_at: string;
+}
+
+export interface SocialPlatformAnalytics {
+    platform: string;
+    total_jobs: number;
+    published: number;
+    failed: number;
+    scheduled: number;
+    active: number;
+}
+
+export interface SocialAccountAnalytics {
+    account_id: string;
+    account_name: string;
+    platform: string;
+    total_jobs: number;
+    published: number;
+    failed: number;
+    scheduled: number;
+    active: number;
+}
+
+export interface SocialPostAnalytics {
+    project_id: string;
+    clip_name: string;
+    platform: string;
+    account_id: string;
+    account_name: string;
+    total_jobs: number;
+    published: number;
+    failed: number;
+    latest_state: string;
+    latest_at: string;
 }
 
 export interface AccountDeletionSummary {

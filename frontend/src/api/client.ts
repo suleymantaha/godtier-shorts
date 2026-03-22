@@ -32,7 +32,16 @@ import type {
     SharePrefillResponse,
     SocialAccount,
     SocialAccountsResponse,
+    SocialAnalyticsOverview,
+    SocialAccountAnalytics,
+    SocialCalendarResponse,
+    SocialConnectionStartResponse,
+    SocialConnectionsResponse,
+    SocialPlatformAnalytics,
+    SocialPostAnalytics,
     SocialPlatform,
+    SocialProvidersResponse,
+    SocialQueueResponse,
     PublishJob,
     AccountDeletionResponse,
     AuthWhoAmIResponse,
@@ -754,13 +763,35 @@ export const socialApi = {
     getAccounts: () =>
         apiFetch<SocialAccountsResponse>('/api/social/accounts'),
 
+    getProviders: () =>
+        apiFetch<SocialProvidersResponse>('/api/social/providers'),
+
+    getConnections: () =>
+        apiFetch<SocialConnectionsResponse>('/api/social/connections'),
+
+    startConnection: (payload: { platform: SocialPlatform; return_url?: string }) =>
+        apiFetch<SocialConnectionStartResponse>('/api/social/connections/start', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+        }),
+
+    syncConnections: () =>
+        apiFetch<SocialConnectionsResponse & { status: string }>('/api/social/connections/sync', {
+            method: 'POST',
+        }),
+
+    deleteConnection: (account_id: string) =>
+        apiFetch<{ status: string; account_id: string }>(`/api/social/connections/${encodeURIComponent(account_id)}`, {
+            method: 'DELETE',
+        }),
+
     getPrefill: (project_id: string, clip_name: string) =>
         apiFetch<SharePrefillResponse>(`/api/social/prefill?project_id=${encodeURIComponent(project_id)}&clip_name=${encodeURIComponent(clip_name)}`),
 
     saveDrafts: (
         project_id: string,
         clip_name: string,
-        platforms: Partial<Record<SocialPlatform, { title: string; text: string; hashtags: string[]; hook_text?: string; viral_score?: number }>>,
+        platforms: Partial<Record<SocialPlatform, { title: string; text: string; hashtags: string[]; hook_text?: string; cta_text?: string; viral_score?: number }>>,
     ) =>
         apiFetch<{ status: string }>('/api/social/drafts', {
             method: 'PUT',
@@ -783,7 +814,7 @@ export const socialApi = {
         timezone?: string;
         approval_required?: boolean;
         targets: { account_id: string; platform: SocialPlatform; provider?: string }[];
-        content_by_platform: Partial<Record<SocialPlatform, { title: string; text: string; hashtags: string[]; hook_text?: string; viral_score?: number }>>;
+        content_by_platform: Partial<Record<SocialPlatform, { title: string; text: string; hashtags: string[]; hook_text?: string; cta_text?: string; viral_score?: number }>>;
     }) =>
         apiFetch<{ status: string; jobs: Array<{ id: string; platform: SocialPlatform; account_id: string; state: string; scheduled_at?: string | null }>; errors?: Array<{ job_id: string; error: string }> }>('/api/social/publish', {
             method: 'POST',
@@ -799,6 +830,41 @@ export const socialApi = {
                 ].filter(Boolean).join('&')}`
                 : ''}`
         ),
+
+    getQueue: (params?: { platform?: SocialPlatform; state?: string }) =>
+        apiFetch<SocialQueueResponse>(
+            `/api/social/queue${params?.platform || params?.state
+                ? `?${[
+                    params?.platform ? `platform=${encodeURIComponent(params.platform)}` : '',
+                    params?.state ? `state=${encodeURIComponent(params.state)}` : '',
+                ].filter(Boolean).join('&')}`
+                : ''}`
+        ),
+
+    getCalendar: (params?: { platform?: SocialPlatform; include_past?: boolean }) =>
+        apiFetch<SocialCalendarResponse>(
+            `/api/social/calendar${params?.platform || params?.include_past
+                ? `?${[
+                    params?.platform ? `platform=${encodeURIComponent(params.platform)}` : '',
+                    params?.include_past ? 'include_past=1' : '',
+                ].filter(Boolean).join('&')}`
+                : ''}`
+        ),
+
+    updateCalendarItem: (job_id: string, payload: { scheduled_at: string; timezone?: string }) =>
+        apiFetch<{ status: string; job: PublishJob }>(`/api/social/calendar/${encodeURIComponent(job_id)}`, {
+            method: 'PATCH',
+            body: JSON.stringify(payload),
+        }),
+
+    getAnalyticsOverview: (refresh = false) =>
+        apiFetch<{ overview: SocialAnalyticsOverview; platforms: SocialPlatformAnalytics[] }>(`/api/social/analytics/overview${refresh ? '?refresh=1' : ''}`),
+
+    getAnalyticsAccounts: (refresh = false) =>
+        apiFetch<{ accounts: SocialAccountAnalytics[] }>(`/api/social/analytics/accounts${refresh ? '?refresh=1' : ''}`),
+
+    getAnalyticsPosts: (refresh = false) =>
+        apiFetch<{ posts: SocialPostAnalytics[] }>(`/api/social/analytics/posts${refresh ? '?refresh=1' : ''}`),
 
     approveJob: (job_id: string) =>
         apiFetch<{ status: string; job_id: string }>(`/api/social/publish-jobs/${encodeURIComponent(job_id)}/approve`, {

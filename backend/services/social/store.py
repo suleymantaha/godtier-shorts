@@ -56,6 +56,12 @@ class SocialStore:
                     provider TEXT NOT NULL,
                     encrypted_api_key TEXT NOT NULL,
                     workspace_id TEXT,
+                    token_source TEXT,
+                    token_obtained_at TEXT,
+                    last_validated_at TEXT,
+                    last_synced_at TEXT,
+                    revoked_at TEXT,
+                    scopes_json TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     PRIMARY KEY (subject, provider)
@@ -91,10 +97,61 @@ class SocialStore:
                     payload_json TEXT NOT NULL,
                     result_json TEXT,
                     provider_job_id TEXT,
+                    delivery_status TEXT,
+                    published_at TEXT,
+                    last_provider_sync_at TEXT,
+                    analytics_refreshed_at TEXT,
+                    calendar_bucket TEXT,
                     last_error TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     timeline_json TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS social_connection_sessions (
+                    id TEXT PRIMARY KEY,
+                    subject TEXT NOT NULL,
+                    platform TEXT NOT NULL,
+                    phase TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    return_url TEXT,
+                    launch_url TEXT,
+                    last_error TEXT,
+                    expires_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS social_account_cache (
+                    subject TEXT NOT NULL,
+                    account_id TEXT NOT NULL,
+                    platform TEXT NOT NULL,
+                    provider TEXT,
+                    name TEXT NOT NULL,
+                    username TEXT,
+                    avatar_url TEXT,
+                    disabled INTEGER NOT NULL DEFAULT 0,
+                    raw_json TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL,
+                    disconnected_at TEXT,
+                    PRIMARY KEY (subject, account_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS social_analytics_snapshots (
+                    subject TEXT NOT NULL,
+                    scope TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (subject, scope)
+                );
+
+                CREATE TABLE IF NOT EXISTS social_dashboard_cache (
+                    subject TEXT NOT NULL,
+                    cache_key TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (subject, cache_key)
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_social_publish_jobs_subject
@@ -102,15 +159,40 @@ class SocialStore:
 
                 CREATE INDEX IF NOT EXISTS idx_social_publish_jobs_state
                     ON social_publish_jobs(state, next_attempt_at);
+
+                CREATE INDEX IF NOT EXISTS idx_social_account_cache_subject_platform
+                    ON social_account_cache(subject, platform, disabled);
+
+                CREATE INDEX IF NOT EXISTS idx_social_connection_sessions_subject
+                    ON social_connection_sessions(subject, created_at DESC);
                 """
             )
             columns = {
                 row["name"]
                 for row in conn.execute("PRAGMA table_info(social_publish_jobs)").fetchall()
             }
+            credential_columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(social_credentials)").fetchall()
+            }
             if "provider_job_id" not in columns:
                 conn.execute("ALTER TABLE social_publish_jobs ADD COLUMN provider_job_id TEXT")
                 columns.add("provider_job_id")
+            if "delivery_status" not in columns:
+                conn.execute("ALTER TABLE social_publish_jobs ADD COLUMN delivery_status TEXT")
+                columns.add("delivery_status")
+            if "published_at" not in columns:
+                conn.execute("ALTER TABLE social_publish_jobs ADD COLUMN published_at TEXT")
+                columns.add("published_at")
+            if "last_provider_sync_at" not in columns:
+                conn.execute("ALTER TABLE social_publish_jobs ADD COLUMN last_provider_sync_at TEXT")
+                columns.add("last_provider_sync_at")
+            if "analytics_refreshed_at" not in columns:
+                conn.execute("ALTER TABLE social_publish_jobs ADD COLUMN analytics_refreshed_at TEXT")
+                columns.add("analytics_refreshed_at")
+            if "calendar_bucket" not in columns:
+                conn.execute("ALTER TABLE social_publish_jobs ADD COLUMN calendar_bucket TEXT")
+                columns.add("calendar_bucket")
             if "publer_job_id" in columns:
                 conn.execute(
                     """
@@ -119,6 +201,17 @@ class SocialStore:
                     WHERE provider_job_id IS NULL
                     """
                 )
+            for column_name, ddl in (
+                ("token_source", "ALTER TABLE social_credentials ADD COLUMN token_source TEXT"),
+                ("token_obtained_at", "ALTER TABLE social_credentials ADD COLUMN token_obtained_at TEXT"),
+                ("last_validated_at", "ALTER TABLE social_credentials ADD COLUMN last_validated_at TEXT"),
+                ("last_synced_at", "ALTER TABLE social_credentials ADD COLUMN last_synced_at TEXT"),
+                ("revoked_at", "ALTER TABLE social_credentials ADD COLUMN revoked_at TEXT"),
+                ("scopes_json", "ALTER TABLE social_credentials ADD COLUMN scopes_json TEXT"),
+            ):
+                if column_name not in credential_columns:
+                    conn.execute(ddl)
+                    credential_columns.add(column_name)
             conn.commit()
 
     def save_credential(self, subject: str, provider: str, encrypted_api_key: str, workspace_id: str | None) -> None:
@@ -126,15 +219,35 @@ class SocialStore:
         with self._lock, self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO social_credentials(subject, provider, encrypted_api_key, workspace_id, created_at, updated_at)
-                VALUES(?, ?, ?, ?, ?, ?)
+                INSERT INTO social_credentials(
+                    subject, provider, encrypted_api_key, workspace_id, token_source, token_obtained_at,
+                    last_validated_at, last_synced_at, revoked_at, scopes_json, created_at, updated_at
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(subject, provider)
                 DO UPDATE SET
                     encrypted_api_key=excluded.encrypted_api_key,
                     workspace_id=excluded.workspace_id,
+                    token_source=excluded.token_source,
+                    token_obtained_at=excluded.token_obtained_at,
+                    last_validated_at=excluded.last_validated_at,
+                    revoked_at=excluded.revoked_at,
                     updated_at=excluded.updated_at
                 """,
-                (subject, provider, encrypted_api_key, workspace_id, now, now),
+                (
+                    subject,
+                    provider,
+                    encrypted_api_key,
+                    workspace_id,
+                    "oauth_or_api_key",
+                    now,
+                    now,
+                    None,
+                    None,
+                    None,
+                    now,
+                    now,
+                ),
             )
             conn.commit()
 
@@ -151,6 +264,30 @@ class SocialStore:
             cur = conn.execute(
                 "DELETE FROM social_credentials WHERE subject = ? AND provider = ?",
                 (subject, provider),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
+    def touch_social_credential(
+        self,
+        subject: str,
+        *,
+        provider: str,
+        validated_at: str | None = None,
+        synced_at: str | None = None,
+        revoked_at: str | None = None,
+    ) -> bool:
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                """
+                UPDATE social_credentials
+                SET last_validated_at = COALESCE(?, last_validated_at),
+                    last_synced_at = COALESCE(?, last_synced_at),
+                    revoked_at = ?,
+                    updated_at = ?
+                WHERE subject = ? AND provider = ?
+                """,
+                (validated_at, synced_at, revoked_at, utcnow_iso(), subject, provider),
             )
             conn.commit()
             return cur.rowcount > 0
@@ -259,6 +396,11 @@ class SocialStore:
                     "payload_json": json.dumps(payload, ensure_ascii=False),
                     "result_json": None,
                     "provider_job_id": None,
+                    "delivery_status": "pending",
+                    "published_at": None,
+                    "last_provider_sync_at": None,
+                    "analytics_refreshed_at": None,
+                    "calendar_bucket": scheduled_at[:10] if scheduled_at else None,
                     "last_error": None,
                     "created_at": now,
                     "updated_at": now,
@@ -270,12 +412,14 @@ class SocialStore:
                         id, subject, provider, project_id, clip_name, platform, account_id, mode,
                         timezone, scheduled_at, approval_required, approved_at, state, attempts,
                         next_attempt_at, idempotency_key, payload_json, result_json, provider_job_id,
-                        last_error, created_at, updated_at, timeline_json
+                        delivery_status, published_at, last_provider_sync_at, analytics_refreshed_at,
+                        calendar_bucket, last_error, created_at, updated_at, timeline_json
                     ) VALUES (
                         :id, :subject, :provider, :project_id, :clip_name, :platform, :account_id, :mode,
                         :timezone, :scheduled_at, :approval_required, :approved_at, :state, :attempts,
                         :next_attempt_at, :idempotency_key, :payload_json, :result_json, :provider_job_id,
-                        :last_error, :created_at, :updated_at, :timeline_json
+                        :delivery_status, :published_at, :last_provider_sync_at, :analytics_refreshed_at,
+                        :calendar_bucket, :last_error, :created_at, :updated_at, :timeline_json
                     )
                     """,
                     row,
@@ -339,6 +483,11 @@ class SocialStore:
         last_error: str | None = None,
         provider_job_id: str | None = None,
         result: dict[str, Any] | None = None,
+        delivery_status: str | None = None,
+        published_at: str | None = None,
+        last_provider_sync_at: str | None = None,
+        analytics_refreshed_at: str | None = None,
+        calendar_bucket: str | None = None,
         increment_attempt: bool = False,
     ) -> bool:
         now = utcnow_iso()
@@ -369,6 +518,11 @@ class SocialStore:
                     last_error = ?,
                     provider_job_id = COALESCE(?, provider_job_id),
                     result_json = COALESCE(?, result_json),
+                    delivery_status = COALESCE(?, delivery_status),
+                    published_at = COALESCE(?, published_at),
+                    last_provider_sync_at = COALESCE(?, last_provider_sync_at),
+                    analytics_refreshed_at = COALESCE(?, analytics_refreshed_at),
+                    calendar_bucket = COALESCE(?, calendar_bucket),
                     timeline_json = ?,
                     updated_at = ?
                 WHERE id = ?
@@ -380,6 +534,50 @@ class SocialStore:
                     last_error,
                     provider_job_id,
                     json.dumps(result, ensure_ascii=False) if result is not None else None,
+                    delivery_status,
+                    published_at,
+                    last_provider_sync_at,
+                    analytics_refreshed_at,
+                    calendar_bucket,
+                    json.dumps(timeline, ensure_ascii=False),
+                    now,
+                    job_id,
+                ),
+            )
+            conn.commit()
+            return True
+
+    def reschedule_publish_job(self, job_id: str, *, scheduled_at: str, timezone_name: str | None) -> bool:
+        now = utcnow_iso()
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT timeline_json FROM social_publish_jobs WHERE id = ?",
+                (job_id,),
+            ).fetchone()
+            if row is None:
+                return False
+            try:
+                timeline = json.loads(row["timeline_json"] or "[]")
+            except ValueError:
+                timeline = []
+            timeline.append({"state": "scheduled", "message": "Takvim zamanı güncellendi", "at": now})
+            conn.execute(
+                """
+                UPDATE social_publish_jobs
+                SET scheduled_at = ?,
+                    timezone = ?,
+                    state = CASE WHEN state = 'cancelled' THEN state ELSE 'scheduled' END,
+                    next_attempt_at = ?,
+                    calendar_bucket = ?,
+                    timeline_json = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    scheduled_at,
+                    timezone_name,
+                    scheduled_at,
+                    scheduled_at[:10],
                     json.dumps(timeline, ensure_ascii=False),
                     now,
                     job_id,
@@ -485,8 +683,261 @@ class SocialStore:
                 "DELETE FROM social_publish_jobs WHERE subject = ?",
                 (subject,),
             ).rowcount or 0
+            session_rows = conn.execute(
+                "DELETE FROM social_connection_sessions WHERE subject = ?",
+                (subject,),
+            ).rowcount or 0
+            account_rows = conn.execute(
+                "DELETE FROM social_account_cache WHERE subject = ?",
+                (subject,),
+            ).rowcount or 0
+            analytics_rows = conn.execute(
+                "DELETE FROM social_analytics_snapshots WHERE subject = ?",
+                (subject,),
+            ).rowcount or 0
+            dashboard_rows = conn.execute(
+                "DELETE FROM social_dashboard_cache WHERE subject = ?",
+                (subject,),
+            ).rowcount or 0
             conn.commit()
-        return int(credential_rows + draft_rows + publish_job_rows)
+        return int(credential_rows + draft_rows + publish_job_rows + session_rows + account_rows + analytics_rows + dashboard_rows)
+
+    def create_connection_session(
+        self,
+        *,
+        subject: str,
+        platform: str,
+        return_url: str | None,
+        ttl_seconds: int = 900,
+    ) -> dict[str, Any]:
+        now = datetime.now(timezone.utc)
+        payload = {
+            "id": uuid.uuid4().hex,
+            "subject": subject,
+            "platform": platform,
+            "phase": "created",
+            "status": "pending",
+            "return_url": return_url,
+            "launch_url": None,
+            "last_error": None,
+            "expires_at": (now.timestamp() + ttl_seconds),
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+        }
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO social_connection_sessions(
+                    id, subject, platform, phase, status, return_url, launch_url, last_error, expires_at, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload["id"],
+                    payload["subject"],
+                    payload["platform"],
+                    payload["phase"],
+                    payload["status"],
+                    payload["return_url"],
+                    payload["launch_url"],
+                    payload["last_error"],
+                    str(payload["expires_at"]),
+                    payload["created_at"],
+                    payload["updated_at"],
+                ),
+            )
+            conn.commit()
+        return payload
+
+    def get_connection_session(self, session_id: str) -> dict[str, Any] | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM social_connection_sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def update_connection_session(
+        self,
+        session_id: str,
+        *,
+        phase: str | None = None,
+        status: str | None = None,
+        launch_url: str | None = None,
+        last_error: str | None = None,
+    ) -> bool:
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                """
+                UPDATE social_connection_sessions
+                SET phase = COALESCE(?, phase),
+                    status = COALESCE(?, status),
+                    launch_url = COALESCE(?, launch_url),
+                    last_error = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    phase,
+                    status,
+                    launch_url,
+                    last_error,
+                    utcnow_iso(),
+                    session_id,
+                ),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
+    def replace_account_cache(self, subject: str, accounts: list[dict[str, Any]]) -> None:
+        now = utcnow_iso()
+        with self._lock, self._connect() as conn:
+            existing_ids = {
+                row["account_id"]
+                for row in conn.execute(
+                    "SELECT account_id FROM social_account_cache WHERE subject = ?",
+                    (subject,),
+                ).fetchall()
+            }
+            seen_ids: set[str] = set()
+            for account in accounts:
+                account_id = str(account.get("id") or "").strip()
+                if not account_id:
+                    continue
+                seen_ids.add(account_id)
+                conn.execute(
+                    """
+                    INSERT INTO social_account_cache(
+                        subject, account_id, platform, provider, name, username, avatar_url,
+                        disabled, raw_json, last_seen_at, disconnected_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(subject, account_id)
+                    DO UPDATE SET
+                        platform=excluded.platform,
+                        provider=excluded.provider,
+                        name=excluded.name,
+                        username=excluded.username,
+                        avatar_url=excluded.avatar_url,
+                        disabled=excluded.disabled,
+                        raw_json=excluded.raw_json,
+                        last_seen_at=excluded.last_seen_at,
+                        disconnected_at=NULL
+                    """,
+                    (
+                        subject,
+                        account_id,
+                        str(account.get("platform") or ""),
+                        str(account.get("provider") or "") or None,
+                        str(account.get("name") or account_id),
+                        account.get("username"),
+                        account.get("avatar_url"),
+                        1 if bool(account.get("disabled")) else 0,
+                        json.dumps(account, ensure_ascii=False),
+                        now,
+                        None,
+                    ),
+                )
+            stale_ids = existing_ids - seen_ids
+            for account_id in stale_ids:
+                conn.execute(
+                    """
+                    UPDATE social_account_cache
+                    SET disabled = 1,
+                        disconnected_at = COALESCE(disconnected_at, ?)
+                    WHERE subject = ? AND account_id = ?
+                    """,
+                    (now, subject, account_id),
+                )
+            conn.commit()
+
+    def list_account_cache(self, subject: str, *, include_disabled: bool = False) -> list[dict[str, Any]]:
+        query = "SELECT * FROM social_account_cache WHERE subject = ?"
+        params: list[Any] = [subject]
+        if not include_disabled:
+            query += " AND disabled = 0"
+        query += " ORDER BY platform ASC, name ASC"
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(query, tuple(params)).fetchall()
+
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            try:
+                item["raw"] = json.loads(item.get("raw_json") or "{}")
+            except ValueError:
+                item["raw"] = {}
+            item["id"] = item["account_id"]
+            item["disabled"] = bool(item.get("disabled"))
+            item.pop("raw_json", None)
+            out.append(item)
+        return out
+
+    def mark_account_disconnected(self, subject: str, account_id: str) -> bool:
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                """
+                UPDATE social_account_cache
+                SET disabled = 1,
+                    disconnected_at = COALESCE(disconnected_at, ?)
+                WHERE subject = ? AND account_id = ?
+                """,
+                (utcnow_iso(), subject, account_id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
+    def upsert_analytics_snapshot(self, subject: str, *, scope: str, payload: dict[str, Any]) -> None:
+        now = utcnow_iso()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO social_analytics_snapshots(subject, scope, payload_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(subject, scope)
+                DO UPDATE SET payload_json=excluded.payload_json, updated_at=excluded.updated_at
+                """,
+                (subject, scope, json.dumps(payload, ensure_ascii=False), now, now),
+            )
+            conn.commit()
+
+    def get_analytics_snapshot(self, subject: str, *, scope: str) -> dict[str, Any] | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload_json FROM social_analytics_snapshots WHERE subject = ? AND scope = ?",
+                (subject, scope),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            return json.loads(row["payload_json"] or "{}")
+        except ValueError:
+            return None
+
+    def upsert_dashboard_cache(self, subject: str, *, key: str, payload: dict[str, Any]) -> None:
+        now = utcnow_iso()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO social_dashboard_cache(subject, cache_key, payload_json, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(subject, cache_key)
+                DO UPDATE SET payload_json=excluded.payload_json, updated_at=excluded.updated_at
+                """,
+                (subject, key, json.dumps(payload, ensure_ascii=False), now),
+            )
+            conn.commit()
+
+    def get_dashboard_cache(self, subject: str, *, key: str) -> dict[str, Any] | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload_json FROM social_dashboard_cache WHERE subject = ? AND cache_key = ?",
+                (subject, key),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            return json.loads(row["payload_json"] or "{}")
+        except ValueError:
+            return None
 
 
 _store_instance: SocialStore | None = None

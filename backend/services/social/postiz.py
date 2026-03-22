@@ -299,6 +299,21 @@ class PostizClient:
     def validate_connection(self) -> list[dict[str, Any]]:
         return self.list_integrations()
 
+    def get_connect_channel_url(self, integration: str) -> str:
+        integration_name = str(integration or "").strip().lower()
+        if not integration_name:
+            raise PostizApiError("Postiz connect integration adı boş olamaz")
+
+        raw = self._request("GET", f"/social/{integration_name}", timeout=60)
+        if isinstance(raw, dict):
+            for key in ("url", "redirectUrl", "redirect_url", "authUrl", "auth_url"):
+                value = str(raw.get(key) or "").strip()
+                if value:
+                    return value
+        if isinstance(raw, str) and raw.strip().startswith("http"):
+            return raw.strip()
+        raise PostizApiError("Postiz connect channel URL bulunamadı")
+
     def upload_media_direct(self, clip_path: Path) -> dict[str, Any]:
         with open(clip_path, "rb") as f:
             raw = self._request(
@@ -383,3 +398,9 @@ class PostizClient:
         if not post_id_value:
             raise PostizApiError("Postiz delete requires post id")
         return self._request("DELETE", f"/posts/{post_id_value}", timeout=60)
+
+    def delete_integration(self, integration_id: str) -> Any:
+        integration_id_value = str(integration_id).strip()
+        if not integration_id_value:
+            raise PostizApiError("Postiz delete integration requires integration id")
+        return self._request("DELETE", f"/integrations/{integration_id_value}", timeout=60)

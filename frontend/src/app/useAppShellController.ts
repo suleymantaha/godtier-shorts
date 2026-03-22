@@ -6,7 +6,7 @@ import { useJobStore } from '../store/useJobStore';
 import { useLocaleStore } from '../store/useLocaleStore';
 import { useThemeStore } from '../store/useThemeStore';
 import type { Clip } from '../types';
-import { normalizeStoredClip, persistAppState, readAppState, type AppViewMode } from './helpers';
+import { normalizeStoredClip, persistAppState, readAppState, syncViewModeToUrl, type AppViewMode } from './helpers';
 import type { SubtitleAnimationType } from '../config/subtitleStyles';
 
 export function useAppShellController(canUseBackend = true, identityKey: string | null = null) {
@@ -39,6 +39,12 @@ export function useAppShellController(canUseBackend = true, identityKey: string 
     setEditingClip(null);
     setSubtitleTargetClip(null);
     setSubtitleSessionNonce((nonce) => nonce + 1);
+  }, []);
+
+  const openSocial = useCallback(() => {
+    setViewMode('social');
+    setEditingClip(null);
+    setSubtitleTargetClip(null);
   }, []);
 
   const openClipSubtitleEditor = useCallback((clip: Clip) => {
@@ -77,6 +83,7 @@ export function useAppShellController(canUseBackend = true, identityKey: string 
 
   useEffect(() => {
     persistAppState(viewMode, editingClip, subtitleTargetClip);
+    syncViewModeToUrl(viewMode);
   }, [editingClip, subtitleTargetClip, viewMode]);
 
   return {
@@ -90,6 +97,7 @@ export function useAppShellController(canUseBackend = true, identityKey: string 
     openClipSubtitleEditor,
     openConfig,
     openManual,
+    openSocial,
     openSubtitle,
     locale,
     setLocale,

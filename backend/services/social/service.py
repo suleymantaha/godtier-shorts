@@ -352,6 +352,8 @@ def build_signed_social_oauth_state(
     *,
     subject: str,
     integration: str,
+    target_platform: str | None = None,
+    connection_session_id: str | None = None,
     ttl_seconds: int | None = None,
 ) -> str:
     normalized_integration = normalize_social_oauth_integration(integration)
@@ -363,16 +365,27 @@ def build_signed_social_oauth_state(
         "nonce": secrets.token_urlsafe(12),
         "exp": int(datetime.now(timezone.utc).timestamp()) + expires_in,
     }
+    if target_platform:
+        payload["target_platform"] = str(target_platform).strip().lower()
+    if connection_session_id:
+        payload["connection_session_id"] = str(connection_session_id).strip()
     return _sign_social_payload(payload)
 
 
-def resolve_signed_social_oauth_state(token: str) -> dict[str, str]:
+def resolve_signed_social_oauth_state(token: str) -> dict[str, str | None]:
     payload = _resolve_signed_social_payload(token, expected_kind="social_oauth_state")
     subject = str(payload.get("sub") or "").strip()
     integration = normalize_social_oauth_integration(str(payload.get("integration") or ""))
     if not subject:
         raise ValueError("Social OAuth state alanları eksik")
-    return {"subject": subject, "integration": integration}
+    target_platform = str(payload.get("target_platform") or "").strip().lower() or None
+    connection_session_id = str(payload.get("connection_session_id") or "").strip() or None
+    return {
+        "subject": subject,
+        "integration": integration,
+        "target_platform": target_platform,
+        "connection_session_id": connection_session_id,
+    }
 
 
 def build_signed_social_export_token(

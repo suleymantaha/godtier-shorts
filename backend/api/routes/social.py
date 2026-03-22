@@ -20,6 +20,8 @@ from backend.core.exceptions import InvalidInputError
 from backend.services.social.constants import SOCIAL_PROVIDER_POSTIZ, SUPPORTED_SOCIAL_PLATFORMS
 from backend.services.social.crypto import SocialCrypto, get_social_connection_mode
 from backend.services.social.postiz import build_postiz_oauth_authorize_url, exchange_postiz_oauth_code
+from backend.services.social.providers import get_primary_postiz_integration
+from backend.services.social.repository import get_social_repository
 from backend.services.social.scheduler import get_social_scheduler
 from backend.services.social.service import (
     build_signed_social_oauth_state,
@@ -116,6 +118,23 @@ class JobActionResponse(BaseModel):
     job_id: str
 
 
+class SocialConnectionStartRequest(BaseModel):
+    platform: str
+    return_url: str | None = None
+
+    @field_validator("platform")
+    @classmethod
+    def validate_platform(cls, value: str) -> str:
+        if value not in SUPPORTED_SOCIAL_PLATFORMS:
+            raise ValueError("Desteklenmeyen platform")
+        return value
+
+
+class SocialCalendarUpdateRequest(BaseModel):
+    scheduled_at: str
+    timezone: str | None = None
+
+
 # --- Helpers -----------------------------------------------------------------
 
 
@@ -190,6 +209,22 @@ def _build_social_oauth_return_url(status: Literal["success", "error"]) -> str:
     return _append_return_query(config["return_url"], social_oauth=status)
 
 
+def _build_social_suite_return_url(
+    status: Literal["success", "error", "pending"],
+    *,
+    platform: str | None = None,
+    session_id: str | None = None,
+) -> str:
+    config = _read_social_oauth_config()
+    return _append_return_query(
+        config["return_url"],
+        tab="social",
+        social_connect=status,
+        platform=platform or "",
+        session_id=session_id or "",
+    )
+
+
 def _resolve_postiz_connect_url(subject: str) -> str | None:
     try:
         _read_social_oauth_config()
@@ -197,6 +232,25 @@ def _resolve_postiz_connect_url(subject: str) -> str | None:
     except Exception:
         return None
     return f"/api/social/oauth/start?integration=youtube&subject_token={token}"
+
+
+def _build_social_oauth_start_url(
+    request: Request,
+    *,
+    integration: str,
+    subject_token: str,
+    platform: str | None = None,
+    connection_session_id: str | None = None,
+) -> str:
+    params = {
+        "integration": integration,
+        "subject_token": subject_token,
+    }
+    if platform:
+        params["platform"] = platform
+    if connection_session_id:
+        params["connection_session_id"] = connection_session_id
+    return str(request.url_for("start_social_oauth").include_query_params(**params))
 
 
 # --- Endpoints ---------------------------------------------------------------
@@ -254,6 +308,8 @@ async def delete_social_credentials(
 async def start_social_oauth(
     integration: str = Query(default="youtube"),
     subject_token: str = Query(..., min_length=24),
+    platform: str | None = Query(default=None),
+    connection_session_id: str | None = Query(default=None),
 ) -> RedirectResponse:
     try:
         config = _read_social_oauth_config()
@@ -264,6 +320,8 @@ async def start_social_oauth(
         state = build_signed_social_oauth_state(
             subject=subject_payload["subject"],
             integration=normalized_integration,
+            target_platform=platform,
+            connection_session_id=connection_session_id,
         )
         authorize_url = build_postiz_oauth_authorize_url(
             client_id=config["client_id"],
@@ -326,6 +384,46 @@ async def social_oauth_callback(
             crypto.encrypt(access_token),
             None,
         )
+        repository = get_social_repository()
+        session_id = str(state_payload.get("connection_session_id") or "").strip() or None
+        target_platform = str(state_payload.get("target_platform") or "").strip() or None
+        if session_id:
+            repository.update_connection_session(
+                session_id,
+                phase="token_ready",
+                status="pending_platform",
+                last_error=None,
+            )
+        if session_id and target_platform:
+            try:
+                integration_key = get_primary_postiz_integration(target_platform)
+                client, _ = get_postiz_client_for_subject(state_payload["subject"], store=store)
+                launch_url = await asyncio.to_thread(client.get_connect_channel_url, integration_key)
+                repository.update_connection_session(
+                    session_id,
+                    phase="launch_ready",
+                    status="awaiting_user",
+                    launch_url=launch_url,
+                    last_error=None,
+                )
+                return RedirectResponse(url=launch_url, status_code=307)
+            except Exception as exc:
+                logger.warning(
+                    "social.connection.callback launch_url_failed subject={} platform={} reason={}",
+                    state_payload["subject"],
+                    target_platform,
+                    str(exc),
+                )
+                repository.update_connection_session(
+                    session_id,
+                    phase="launch_failed",
+                    status="error",
+                    last_error=str(exc),
+                )
+                return RedirectResponse(
+                    url=_build_social_suite_return_url("error", platform=target_platform, session_id=session_id),
+                    status_code=307,
+                )
     except Exception as exc:
         logger.warning("social_oauth_callback_exchange_failed reason={}", str(exc))
         return RedirectResponse(url=error_redirect, status_code=307)
@@ -628,3 +726,254 @@ async def cancel_publish_job(
     if not ok:
         raise HTTPException(status_code=400, detail="Job iptal edilemedi")
     return JobActionResponse(status="cancelled", job_id=job_id)
+
+
+@router.get("/providers")
+async def list_social_providers(
+    auth: AuthContext = Depends(require_policy("social_view_jobs")),
+) -> dict:
+    repository = get_social_repository()
+    store = get_social_store()
+    if has_postiz_credential_configured(auth.subject, store=store) and not repository.list_cached_accounts(auth.subject):
+        try:
+            await asyncio.to_thread(
+                repository.sync_accounts_for_subject,
+                auth.subject,
+                resolve_client_for_subject=get_postiz_client_for_subject,
+            )
+        except Exception as exc:
+            logger.warning("social.connection.sync initial_provider_sync_failed subject={} reason={}", auth.subject, str(exc))
+    return {
+        "providers": repository.list_provider_statuses(auth.subject),
+        "connection_mode": get_social_connection_mode(),
+    }
+
+
+@router.get("/connections")
+async def list_social_connections(
+    auth: AuthContext = Depends(require_policy("social_view_jobs")),
+) -> dict:
+    repository = get_social_repository()
+    store = get_social_store()
+    if has_postiz_credential_configured(auth.subject, store=store) and not repository.list_cached_accounts(auth.subject):
+        try:
+            accounts = await asyncio.to_thread(
+                repository.sync_accounts_for_subject,
+                auth.subject,
+                resolve_client_for_subject=get_postiz_client_for_subject,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Bağlı hesaplar alınamadı: {exc}") from exc
+    else:
+        accounts = repository.list_cached_accounts(auth.subject)
+    return {
+        "accounts": _serialize_accounts(accounts),
+        "providers": repository.list_provider_statuses(auth.subject),
+        "connected": bool(accounts),
+    }
+
+
+@router.post("/connections/start")
+async def start_social_connection(
+    request: Request,
+    payload: SocialConnectionStartRequest,
+    auth: AuthContext = Depends(require_policy("social_connect")),
+) -> dict:
+    repository = get_social_repository()
+    store = get_social_store()
+    session = repository.create_connection_session(
+        subject=auth.subject,
+        platform=payload.platform,
+        return_url=payload.return_url,
+    )
+    session_id = str(session["id"])
+    launch_url: str
+
+    if not has_postiz_credential_configured(auth.subject, store=store):
+        subject_token = build_signed_social_oauth_subject_token(subject=auth.subject, integration="youtube")
+        launch_url = _build_social_oauth_start_url(
+            request,
+            integration="youtube",
+            subject_token=subject_token,
+            platform=payload.platform,
+            connection_session_id=session_id,
+        )
+        repository.update_connection_session(
+            session_id,
+            phase="oauth_required",
+            status="pending",
+            launch_url=launch_url,
+            last_error=None,
+        )
+        logger.info("social.connection.start subject={} platform={} phase=oauth_required", auth.subject, payload.platform)
+        return {
+            "status": "oauth_required",
+            "session_id": session_id,
+            "launch_url": launch_url,
+        }
+
+    try:
+        client, _ = get_postiz_client_for_subject(auth.subject, store=store)
+        launch_url = await asyncio.to_thread(client.get_connect_channel_url, get_primary_postiz_integration(payload.platform))
+    except Exception as exc:
+        repository.update_connection_session(
+            session_id,
+            phase="launch_failed",
+            status="error",
+            last_error=str(exc),
+        )
+        raise HTTPException(status_code=502, detail=f"Bağlantı akışı başlatılamadı: {exc}") from exc
+
+    repository.update_connection_session(
+        session_id,
+        phase="launch_ready",
+        status="awaiting_user",
+        launch_url=launch_url,
+        last_error=None,
+    )
+    logger.info("social.connection.start subject={} platform={} phase=launch_ready", auth.subject, payload.platform)
+    return {
+        "status": "launch_ready",
+        "session_id": session_id,
+        "launch_url": launch_url,
+    }
+
+
+@router.get("/connections/callback")
+async def social_connections_callback(
+    session_id: str = Query(..., min_length=8),
+    status: Literal["success", "error", "pending"] = Query(default="success"),
+) -> RedirectResponse:
+    repository = get_social_repository()
+    session = repository.get_connection_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Connection session bulunamadı")
+    repository.update_connection_session(
+        session_id,
+        phase="completed" if status == "success" else "callback",
+        status=status,
+        last_error=None if status != "error" else "Provider callback error",
+    )
+    return RedirectResponse(
+        url=_build_social_suite_return_url(status, platform=str(session.get("platform") or ""), session_id=session_id),
+        status_code=307,
+    )
+
+
+@router.post("/connections/sync")
+async def sync_social_connections(
+    auth: AuthContext = Depends(require_policy("social_connect")),
+) -> dict:
+    repository = get_social_repository()
+    store = get_social_store()
+    if not has_postiz_credential_configured(auth.subject, store=store):
+        return {"status": "not_connected", "accounts": [], "providers": repository.list_provider_statuses(auth.subject)}
+    try:
+        accounts = await asyncio.to_thread(
+            repository.sync_accounts_for_subject,
+            auth.subject,
+            resolve_client_for_subject=get_postiz_client_for_subject,
+        )
+    except Exception as exc:
+        logger.warning("social.connection.sync subject={} reason={}", auth.subject, str(exc))
+        raise HTTPException(status_code=502, detail=f"Hesaplar senkronize edilemedi: {exc}") from exc
+    logger.info("social.connection.sync subject={} account_count={}", auth.subject, len(accounts))
+    return {
+        "status": "synced",
+        "accounts": _serialize_accounts(accounts),
+        "providers": repository.list_provider_statuses(auth.subject),
+    }
+
+
+@router.delete("/connections/{account_id}")
+async def delete_social_connection(
+    account_id: str,
+    auth: AuthContext = Depends(require_policy("social_connect")),
+) -> dict:
+    repository = get_social_repository()
+    try:
+        await asyncio.to_thread(
+            repository.disconnect_account,
+            subject=auth.subject,
+            account_id=account_id,
+            resolve_client_for_subject=get_postiz_client_for_subject,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Hesap bağlantısı kaldırılamadı: {exc}") from exc
+    logger.info("social.connection.disconnect subject={} account_id={}", auth.subject, account_id)
+    return {"status": "deleted", "account_id": account_id}
+
+
+@router.get("/queue")
+async def list_social_queue(
+    state: str | None = Query(default=None),
+    platform: str | None = Query(default=None),
+    auth: AuthContext = Depends(require_policy("social_view_jobs")),
+) -> dict:
+    repository = get_social_repository()
+    return {"jobs": repository.list_queue(subject=auth.subject, state=state, platform=platform)}
+
+
+@router.get("/calendar")
+async def list_social_calendar(
+    platform: str | None = Query(default=None),
+    include_past: bool = Query(default=False),
+    auth: AuthContext = Depends(require_policy("social_view_jobs")),
+) -> dict:
+    repository = get_social_repository()
+    return {
+        "items": repository.list_calendar(subject=auth.subject, platform=platform, include_past=include_past)
+    }
+
+
+@router.patch("/calendar/{job_id}")
+async def update_social_calendar_item(
+    job_id: str,
+    payload: SocialCalendarUpdateRequest,
+    auth: AuthContext = Depends(require_policy("social_publish")),
+) -> dict:
+    repository = get_social_repository()
+    scheduled_utc = _parse_scheduled_at_utc(payload.scheduled_at, payload.timezone)
+    if scheduled_utc is None:
+        raise InvalidInputError("scheduled_at zorunlu")
+    updated = repository.update_calendar_job(
+        subject=auth.subject,
+        job_id=job_id,
+        scheduled_at=scheduled_utc,
+        timezone_name=payload.timezone,
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Takvim öğesi bulunamadı")
+    logger.info("social.calendar.update subject={} job_id={} scheduled_at={}", auth.subject, job_id, scheduled_utc)
+    return {"status": "updated", "job": updated}
+
+
+@router.get("/analytics/overview")
+async def social_analytics_overview(
+    refresh: bool = Query(default=False),
+    auth: AuthContext = Depends(require_policy("social_view_jobs")),
+) -> dict:
+    repository = get_social_repository()
+    payload = await asyncio.to_thread(repository.refresh_analytics if refresh else repository.read_analytics, subject=auth.subject)
+    logger.info("social.analytics.refresh subject={} refresh={}", auth.subject, refresh)
+    return {"overview": payload["overview"], "platforms": payload["platforms"]}
+
+
+@router.get("/analytics/accounts")
+async def social_analytics_accounts(
+    refresh: bool = Query(default=False),
+    auth: AuthContext = Depends(require_policy("social_view_jobs")),
+) -> dict:
+    repository = get_social_repository()
+    payload = await asyncio.to_thread(repository.refresh_analytics if refresh else repository.read_analytics, subject=auth.subject)
+    return {"accounts": payload["accounts"]}
+
+
+@router.get("/analytics/posts")
+async def social_analytics_posts(
+    refresh: bool = Query(default=False),
+    auth: AuthContext = Depends(require_policy("social_view_jobs")),
+) -> dict:
+    repository = get_social_repository()
+    payload = await asyncio.to_thread(repository.refresh_analytics if refresh else repository.read_analytics, subject=auth.subject)
+    return {"posts": payload["posts"]}

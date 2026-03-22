@@ -30,7 +30,7 @@ describe('ShareComposerModal connection', () => {
     await renderShareComposerModal();
 
     await user.type(screen.getByPlaceholderText(/postiz api key/i), '  sk_live_123  ');
-    await user.click(screen.getByRole('button', { name: /^bağla$/i }));
+    await user.click(screen.getByRole('button', { name: /^connect$/i }));
 
     await waitFor(() => {
       expect(mockSaveCredentials).toHaveBeenCalledWith({
@@ -38,12 +38,12 @@ describe('ShareComposerModal connection', () => {
         provider: 'postiz',
       });
     });
-    expect(await screen.findByText(/postiz hesabı bağlandı/i)).toBeInTheDocument();
+    expect(await screen.findByText(/postiz account connected\./i)).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /^kaldır$/i }));
+    await user.click(screen.getByRole('button', { name: /^remove$/i }));
 
     await waitFor(() => expect(mockDeleteCredentials).toHaveBeenCalled());
-    expect(await screen.findByText(/postiz bağlantısı kaldırıldı/i)).toBeInTheDocument();
+    expect(await screen.findByText(/postiz connection removed\./i)).toBeInTheDocument();
   });
 
   it('hides manual api key controls in managed mode and refreshes accounts', async () => {
@@ -66,15 +66,15 @@ describe('ShareComposerModal connection', () => {
 
     await renderShareComposerModal();
 
-    expect(await screen.findByText(/manuel api key girişi kapalıdır/i)).toBeInTheDocument();
+    expect(await screen.findByText(/manual api key entry is disabled\./i)).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/postiz api key/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^bağla$/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /bağlantıyı postiz'de aç/i })).toHaveAttribute(
+    expect(screen.queryByRole('button', { name: /^connect$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /open connection in postiz/i })).toHaveAttribute(
       'href',
-      '/api/social/oauth/start?integration=youtube&subject_token=test_token',
+      'http://localhost:8000/api/social/oauth/start?integration=youtube&subject_token=test_token',
     );
 
-    await user.click(screen.getByRole('button', { name: /hesapları yenile/i }));
+    await user.click(screen.getByRole('button', { name: /refresh accounts/i }));
 
     await waitFor(() => expect(mockGetAccounts).toHaveBeenCalledTimes(2));
     expect(await screen.findByText(/yt managed/i)).toBeInTheDocument();
@@ -100,15 +100,15 @@ describe('ShareComposerModal connection', () => {
 
     await renderShareComposerModal();
 
-    await user.click(await screen.findByRole('link', { name: /bağlantıyı postiz'de aç/i }));
-    expect(await screen.findByText(/otomatik yenilenecek/i)).toBeInTheDocument();
+    await user.click(await screen.findByRole('link', { name: /open connection in postiz/i }));
+    expect(await screen.findByText(/accounts will refresh automatically\./i)).toBeInTheDocument();
 
     await act(async () => {
       window.dispatchEvent(new Event('focus'));
     });
 
     await waitFor(() => expect(mockGetAccounts).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText(/postiz hesabı bağlandı/i)).toBeInTheDocument();
+    expect(await screen.findByText(/postiz account connected\./i)).toBeInTheDocument();
     expect(await screen.findByText(/yt return/i)).toBeInTheDocument();
   });
 });
@@ -139,7 +139,7 @@ describe('ShareComposerModal oauth callback signal', () => {
     await renderShareComposerModal();
 
     await waitFor(() => expect(mockGetAccounts).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText(/postiz hesabı bağlandı/i)).toBeInTheDocument();
+    expect(await screen.findByText(/postiz account connected\./i)).toBeInTheDocument();
     expect(await screen.findByText(/yt callback/i)).toBeInTheDocument();
     expect(window.location.search).toBe('');
   });
@@ -156,7 +156,7 @@ describe('ShareComposerModal oauth callback signal', () => {
 
     await renderShareComposerModal();
 
-    expect(await screen.findByText(/postiz bağlantısı tamamlanamadı/i)).toBeInTheDocument();
+    expect(await screen.findByText(/postiz connection could not be completed\./i)).toBeInTheDocument();
     expect(window.location.search).toBe('');
   });
 });
