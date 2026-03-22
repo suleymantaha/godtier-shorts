@@ -1,14 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
+import { AUTH_IDENTITY_STORAGE_KEY } from '../../auth/isolation';
 import type { Clip } from '../../types';
 import {
+  clearSocialOAuthStatusQuery,
+  getShareComposerIdentityScope,
   buildHashtagsFromInput,
+  clearManagedConnectPending,
   buildPublishTargets,
   getPublishSuccessMessage,
+  hasManagedConnectPending,
   localDraftKey,
+  managedConnectPendingKey,
+  markManagedConnectPending,
   mergeDraftContent,
   nowPlusHourLocal,
   parseLocalDraftBuffer,
+  readSocialOAuthStatusFromQuery,
   resolveProjectId,
   summarizePublishErrors,
   toggleSelection,
@@ -17,8 +25,34 @@ import { createPrefillResponse } from './shareComposer.test-helpers';
 
 describe('shareComposer helpers', () => {
   it('builds deterministic storage keys and local timestamps', () => {
-    expect(localDraftKey('proj_1', 'clip_1.mp4')).toBe('social-share-buffer:proj_1:clip_1.mp4');
+    expect(getShareComposerIdentityScope()).toBe('anonymous');
+    expect(localDraftKey('proj_1', 'clip_1.mp4')).toBe('social-share-buffer:anonymous:proj_1:clip_1.mp4');
+    expect(managedConnectPendingKey()).toBe('social-postiz-managed-connect-pending:anonymous');
+    localStorage.setItem(AUTH_IDENTITY_STORAGE_KEY, 'user-123');
+    expect(getShareComposerIdentityScope()).toBe('user-123');
+    expect(localDraftKey('proj_1', 'clip_1.mp4')).toBe('social-share-buffer:user-123:proj_1:clip_1.mp4');
+    expect(managedConnectPendingKey()).toBe('social-postiz-managed-connect-pending:user-123');
     expect(nowPlusHourLocal(new Date(2026, 2, 14, 8, 5).getTime())).toBe('2026-03-14T09:05');
+  });
+
+  it('tracks managed connection pending state per identity scope', () => {
+    expect(hasManagedConnectPending()).toBe(false);
+    markManagedConnectPending();
+    expect(hasManagedConnectPending()).toBe(true);
+    clearManagedConnectPending();
+    expect(hasManagedConnectPending()).toBe(false);
+  });
+
+  it('reads and clears social oauth callback query signal', () => {
+    expect(readSocialOAuthStatusFromQuery('?social_oauth=success')).toBe('success');
+    expect(readSocialOAuthStatusFromQuery('?social_oauth=error')).toBe('error');
+    expect(readSocialOAuthStatusFromQuery('?social_oauth=unknown')).toBeNull();
+
+    window.history.replaceState({}, '', '/editor?social_oauth=success&foo=1#modal');
+    clearSocialOAuthStatusQuery();
+    expect(window.location.pathname).toBe('/editor');
+    expect(window.location.search).toBe('?foo=1');
+    expect(window.location.hash).toBe('#modal');
   });
 
   it('parses and merges local draft buffers onto server content', () => {
@@ -53,9 +87,9 @@ describe('shareComposer helpers', () => {
       url: '/api/projects/proj_1/files/clip/clip_1.mp4',
     };
 
-    expect(getPublishSuccessMessage('now', false)).toBe('Paylaşım jobları kuyruğa alındı.');
-    expect(getPublishSuccessMessage('scheduled', false)).toBe('Video Postiz takvimine eklendi.');
-    expect(getPublishSuccessMessage('scheduled', true)).toBe('Takvimli paylaşım onay kuyruğuna alındı.');
+    expect(getPublishSuccessMessage('now', false)).toBe('Share jobs were added to the queue.');
+    expect(getPublishSuccessMessage('scheduled', false)).toBe('The video was added to the Postiz calendar.');
+    expect(getPublishSuccessMessage('scheduled', true)).toBe('The scheduled post was added to the approval queue.');
     expect(summarizePublishErrors([{ error: 'quota' }, { error: 'token' }])).toBe('quota | token');
     expect(resolveProjectId(clip)).toBe('proj_1');
     expect(resolveProjectId({ ...clip, project: 'legacy' })).toBeNull();

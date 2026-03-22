@@ -5,6 +5,8 @@
 # Frontend
 frontend/dist/
 frontend/node_modules/
+marketing/.next/
+marketing/node_modules/
 .github/workflows/
 # Large models
 models/

@@ -19,6 +19,7 @@ def _clip_transcript_response(clip_name: str, project_id: str | None = None) -> 
 def _build_app() -> FastAPI:
     app = FastAPI()
     register_exception_handlers(app)
+    app.include_router(clips.router)
     app.include_router(editor.router)
     return app
 
@@ -162,6 +163,52 @@ def test_get_clip_transcript_reports_project_pending_status(monkeypatch, tmp_pat
     assert response["recommended_strategy"] == "project_slice"
     assert response["active_job_id"] == "upload_1"
     clips.manager.jobs.clear()
+
+
+def test_clip_transcript_route_resolves_unique_accessible_project_when_requested_project_is_stale(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    auth_headers: dict[str, str],
+) -> None:
+    project_root = tmp_path / "projects"
+    monkeypatch.setattr(config, "PROJECTS_DIR", project_root)
+    monkeypatch.setattr(clips, "PROJECTS_DIR", project_root)
+
+    stale_project_id = _owned_project_id("editor-token", "stale")
+    actual_project_id = _owned_project_id("editor-token", "actual")
+    stale_project_dir = config.get_project_dir(stale_project_id)
+    actual_project_dir = config.get_project_dir(actual_project_id)
+    (stale_project_dir / "shorts").mkdir(parents=True, exist_ok=True)
+    actual_shorts_dir = actual_project_dir / "shorts"
+    actual_shorts_dir.mkdir(parents=True, exist_ok=True)
+
+    ensure_project_manifest(stale_project_id, owner_subject=_static_subject("editor-token"), source="test")
+    ensure_project_manifest(actual_project_id, owner_subject=_static_subject("editor-token"), source="test")
+
+    (actual_shorts_dir / "clip_ready.mp4").write_bytes(b"video")
+    (actual_shorts_dir / "clip_ready.json").write_text(json.dumps({
+        "transcript": [{"end": 1.5, "start": 0.0, "text": "ready"}],
+        "render_metadata": {
+            "clip_name": "clip_ready.mp4",
+            "end_time": 1.5,
+            "project_id": actual_project_id,
+            "start_time": 0.0,
+        },
+    }), encoding="utf-8")
+
+    client = TestClient(_build_app())
+    response = client.get(
+        "/api/clip-transcript/clip_ready.mp4",
+        headers=auth_headers,
+        params={"project_id": stale_project_id},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["transcript_status"] == "ready"
+    assert payload["capabilities"]["has_clip_transcript"] is True
+    assert payload["capabilities"]["resolved_project_id"] == actual_project_id
+    assert payload["render_metadata"]["project_id"] == actual_project_id
 
 
 def test_get_project_transcript_reports_pending_and_failed_states(monkeypatch, tmp_path: Path, auth_headers: dict[str, str]):

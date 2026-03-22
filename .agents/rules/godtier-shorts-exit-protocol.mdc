@@ -1,0 +1,39 @@
+---
+alwaysApply: true
+---
+
+# GodTier Shorts Session Exit Protocol
+
+Before ending any meaningful work session, complete the full exit checklist.
+
+## Exit Checklist
+
+- `Memory`
+  - Update `PROJECT_MEMORY.md` with the current objective, current state, decisions in force, open work, validation status, key references, and a fresh session log entry.
+- `Tests`
+  - Run the smallest relevant verification for the edited surface area.
+  - If the change spans multiple areas or confidence is low, run broader verification such as `bash scripts/verify.sh`.
+  - If verification is blocked, record the exact command, blocker, and next check in `PROJECT_MEMORY.md`.
+- `Docs`
+  - Update the smallest truthful set of docs affected by the change.
+  - If no docs changed, record why no doc update was needed in `PROJECT_MEMORY.md`.
+- `Closeout`
+  - Leave the next agent a concrete restart point, not a vague summary.
+  - Do not mark work as complete while tests, docs, or memory are stale.
+
+## Scope
+
+- This protocol applies to code, config, workflow, script, rule, and behavior changes.
+- Tiny read-only exploration sessions do not need the full checklist.
+
+## Canonical References
+
+- `PROJECT_MEMORY.md`
+- `.agents/rules/godtier-shorts-progress.mdc`
+- `.agents/rules/godtier-shorts-testing.mdc`
+- `.agents/rules/godtier-shorts-docs.mdc`
+- `docs/operations/ai-session-exit-protocol.md`
+
+---
+
+## alwaysApply: true

@@ -1,6 +1,7 @@
 import { screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
+import i18n from '../../i18n';
 import { renderJobForm } from './jobForm.test-helpers';
 
 describe('JobForm accessibility and layout', () => {
@@ -37,9 +38,9 @@ describe('JobForm accessibility and layout', () => {
     expect(controlGrid.className).toContain('grid-cols-1');
     expect(controlGrid.className).toContain('lg:grid-cols-2');
 
-    expect(screen.getByRole('switch', { name: /altyaz/i })).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByRole('switch', { name: /skip subtitle processing/i })).toHaveAttribute('aria-checked', 'false');
     expect(screen.getByLabelText(/target clone count/i)).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: /otomatik mod/i })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: /automatic mode/i })).toBeInTheDocument();
   });
 
   it('keeps select triggers clipped inside narrow control cards', async () => {
@@ -57,8 +58,17 @@ describe('JobForm accessibility and layout', () => {
   it('hides manual duration inputs while auto mode is active', async () => {
     await renderJobForm();
 
-    expect(screen.getByRole('switch', { name: /otomatik mod/i })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('switch', { name: /automatic mode/i })).toHaveAttribute('aria-checked', 'true');
     expect(screen.queryByLabelText(/min sure/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/max sure/i)).not.toBeInTheDocument();
+  });
+
+  it('renders Turkish labels in tr locale', async () => {
+    await i18n.changeLanguage('tr');
+    await renderJobForm();
+
+    expect(screen.getByLabelText("KAYNAK AKIŞ URL'Sİ")).toBeInTheDocument();
+    expect(screen.getByLabelText('GÖRSEL STİL')).toBeInTheDocument();
+    expect(screen.getByLabelText('HAREKET STİLİ')).toBeInTheDocument();
   });
 });

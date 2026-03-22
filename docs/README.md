@@ -6,6 +6,10 @@ Ana proje: [README.md](../README.md)
 
 - [API Key ve .env Rehberi](./api-key-setup.md)
 
+## Operasyon
+
+- [AI Session Exit Protocol](./operations/ai-session-exit-protocol.md)
+
 ## Sayfalar (UI)
 
 | Sayfa                                       | Açıklama                                      |

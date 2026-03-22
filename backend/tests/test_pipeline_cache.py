@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import backend.config as config
+from backend.core.clip_events import NullClipEventPort
 from backend.core.workflow_helpers import (
     build_pipeline_cache_identity,
     build_segments_signature,
@@ -39,6 +40,14 @@ def _build_identity(project: config.ProjectPaths):
         skip_subtitles=False,
         video_model_identifier="yolo11x.pt",
     )
+
+
+class _RecordingClipEventPort(NullClipEventPort):
+    def __init__(self) -> None:
+        self.invalidate_calls: list[str] = []
+
+    def invalidate_clips_cache(self, *, reason: str) -> None:
+        self.invalidate_calls.append(reason)
 
 
 def _write_clip_assets(
@@ -112,11 +121,7 @@ def test_record_pipeline_render_cache_removes_previous_active_set(monkeypatch, t
     write_json_atomic(project.viral_meta, viral_results)
     record_pipeline_analysis_cache(project, identity=identity, viral_results=viral_results)
 
-    invalidate_calls: list[str] = []
-    monkeypatch.setattr(
-        "backend.api.routes.clips.invalidate_clips_cache",
-        lambda reason="unknown": invalidate_calls.append(reason),
-    )
+    clip_event_port = _RecordingClipEventPort()
 
     old_clip = "short_1_old.mp4"
     _write_clip_assets(project, old_clip, analysis_key=identity.analysis_key, render_key=identity.render_key)
@@ -126,6 +131,7 @@ def test_record_pipeline_render_cache_removes_previous_active_set(monkeypatch, t
         segments_signature="old-signature",
         clip_names=[old_clip],
         skip_subtitles=False,
+        clip_event_port=clip_event_port,
     )
 
     new_clip = "short_1_new.mp4"
@@ -136,6 +142,7 @@ def test_record_pipeline_render_cache_removes_previous_active_set(monkeypatch, t
         segments_signature="new-signature",
         clip_names=[new_clip],
         skip_subtitles=False,
+        clip_event_port=clip_event_port,
     )
 
     assert deleted_count == 3
@@ -147,4 +154,4 @@ def test_record_pipeline_render_cache_removes_previous_active_set(monkeypatch, t
     assert project.master_audio.exists()
     assert project.transcript.exists()
     assert project.viral_meta.exists()
-    assert invalidate_calls == [f"pipeline_render_cleanup:{project.root.name}"]
+    assert clip_event_port.invalidate_calls == [f"pipeline_render_cleanup:{project.root.name}"]

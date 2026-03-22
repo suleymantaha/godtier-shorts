@@ -28,7 +28,9 @@ TEMP_DIR      = WORKSPACE / "temp"
 OUTPUTS_DIR   = WORKSPACE / "outputs"     # Genel çıktılar (opsiyonel/eski)
 METADATA_DIR  = WORKSPACE / "metadata"
 LOGS_DIR      = WORKSPACE / "logs"
+STATE_DIR     = WORKSPACE / "state"
 PROJECTS_DIR  = WORKSPACE / "projects"    # Subject bazlı proje yapısı
+JOB_STATE_PATH = STATE_DIR / "jobs.json"
 
 SUBJECT_HASH_PATTERN = re.compile(r"(?:^|_)([0-9a-f]{32})(?:_|$)")
 
@@ -193,7 +195,7 @@ REQUEST_BODY_HARD_LIMIT_BYTES = _env_int("REQUEST_BODY_HARD_LIMIT_BYTES", UPLOAD
 
 def ensure_workspace() -> None:
     """Workspace alt klasörlerinin var olduğunu garanti eder."""
-    for d in (DOWNLOADS_DIR, TEMP_DIR, OUTPUTS_DIR, METADATA_DIR, LOGS_DIR, PROJECTS_DIR):
+    for d in (DOWNLOADS_DIR, TEMP_DIR, OUTPUTS_DIR, METADATA_DIR, LOGS_DIR, STATE_DIR, PROJECTS_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
 ensure_workspace()

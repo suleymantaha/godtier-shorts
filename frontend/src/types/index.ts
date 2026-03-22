@@ -8,6 +8,17 @@
 export type JobStatus = 'queued' | 'processing' | 'completed' | 'cancelled' | 'error' | 'empty';
 export type JobTimelineSource = 'api' | 'worker' | 'websocket' | 'clip_ready';
 
+export interface DownloadProgress {
+    phase: 'download';
+    downloaded_bytes?: number;
+    total_bytes?: number;
+    total_bytes_estimate?: number;
+    percent?: number;
+    speed_text?: string;
+    eta_text?: string;
+    status?: string;
+}
+
 export interface JobTimelineEntry {
     id: string;
     at: string;
@@ -16,6 +27,7 @@ export interface JobTimelineEntry {
     progress: number;
     message: string;
     source: JobTimelineSource;
+    download_progress?: DownloadProgress;
 }
 
 export interface LogEntry extends JobTimelineEntry {
@@ -49,16 +61,20 @@ export interface Job {
     output_path?: string;
     error?: string;
     num_clips?: number;
+    download_progress?: DownloadProgress;
     timeline?: JobTimelineEntry[];
 }
 
 export interface Clip {
     name: string;
     project?: string;
+    resolved_project_id?: string | null;
+    transcript_status?: ClipTranscriptStatus;
     url: string;
     has_transcript: boolean;
     ui_title?: string;
     created_at: number;
+    duration?: number | null;
 }
 
 export interface ClipListResponse {
@@ -75,6 +91,34 @@ export interface AuthWhoAmIResponse {
     subject: string;
     subject_hash: string;
     token_type: 'jwt' | 'bearer';
+}
+
+export interface OwnershipRecoveryProject {
+    clip_count: number;
+    created_at: string;
+    latest_clip_name?: string | null;
+    owner_subject_hash: string;
+    project_id: string;
+    source: string;
+    status: string;
+}
+
+export interface OwnershipDiagnosticsResponse {
+    auth_mode: 'clerk_jwt' | 'static_token';
+    current_subject: string;
+    current_subject_hash: string;
+    reclaimable_projects: OwnershipRecoveryProject[];
+    token_type: 'jwt' | 'bearer';
+    visible_project_count: number;
+}
+
+export interface ClaimProjectOwnershipResponse {
+    status: 'claimed';
+    clip_count: number;
+    current_subject_hash: string;
+    metadata_files_updated: number;
+    new_project_id: string;
+    old_project_id: string;
 }
 
 export interface DeleteClipResponse {
@@ -280,6 +324,8 @@ export interface StartJobResponse {
     cache_hit?: boolean;
     cache_scope?: 'none' | 'analysis' | 'full_render';
     message: string;
+    existing_job?: boolean;
+    processing_locked?: boolean;
     gpu_locked: boolean;
 }
 
@@ -360,6 +406,8 @@ export type SocialPlatform =
     | 'x'
     | 'linkedin';
 
+export type SocialConnectionMode = 'managed' | 'manual_api_key';
+
 export interface SocialAccount {
     id: string;
     name: string;
@@ -367,6 +415,15 @@ export interface SocialAccount {
     provider?: string;
     username?: string | null;
     avatar_url?: string | null;
+}
+
+export interface SocialAccountsResponse {
+    accounts: SocialAccount[];
+    connected: boolean;
+    connection_mode: SocialConnectionMode;
+    connect_url?: string | null;
+    provider: string;
+    workspace_id?: string;
 }
 
 export interface ShareDraftContent {

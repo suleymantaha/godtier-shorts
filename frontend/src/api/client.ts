@@ -31,11 +31,17 @@ import type {
     BatchJobPayload,
     SharePrefillResponse,
     SocialAccount,
+    SocialAccountsResponse,
     SocialPlatform,
     PublishJob,
     AccountDeletionResponse,
     AuthWhoAmIResponse,
+    ClaimProjectOwnershipResponse,
+    OwnershipDiagnosticsResponse,
 } from '../types';
+
+type ProjectsFetchStatus = 'good' | 'degraded' | 'unknown';
+const PROJECTS_CACHE_KEY = 'gts:projects-cache:v1';
 
 // ─── Kimlik Doğrulama (Clerk Token Injection) ──────────────────────────────────
 export let activeToken: string | null = null;
@@ -47,6 +53,36 @@ export const setApiToken = (token: string | null) => {
 
 interface GetFreshTokenOptions {
     forceRefresh?: boolean;
+}
+
+interface ApiFetchOptions {
+    suppressAuthPause?: boolean;
+}
+
+interface ClerkSessionLike {
+    getToken: (options?: { template: string }) => Promise<string | null>;
+}
+
+function readClerkSession(): ClerkSessionLike | null {
+    return typeof window !== 'undefined' ? (window.Clerk?.session as ClerkSessionLike | null | undefined) ?? null : null;
+}
+
+async function waitForClerkSession(timeoutMs: number): Promise<ClerkSessionLike | null> {
+    const immediateSession = readClerkSession();
+    if (immediateSession) {
+        return immediateSession;
+    }
+
+    const deadline = Date.now() + Math.max(0, timeoutMs);
+    while (Date.now() < deadline) {
+        await sleep(50);
+        const nextSession = readClerkSession();
+        if (nextSession) {
+            return nextSession;
+        }
+    }
+
+    return readClerkSession();
 }
 
 // Clerk'ten dinamik olarak en güncel tokeni çekmek için yardımcı fonksiyon
@@ -213,41 +249,93 @@ function buildRequestInit(init: RequestInit | undefined, token: string): Request
     };
 }
 
+function getReusableTokenWhenAllowed(forceRefresh: boolean): string | null {
+    if (forceRefresh) {
+        return null;
+    }
+
+    return getReusableToken();
+}
+
+function readProjectsCache(): ProjectSummary[] {
+    try {
+        const raw = localStorage.getItem(PROJECTS_CACHE_KEY);
+        if (!raw) {
+            return [];
+        }
+        const parsed = JSON.parse(raw) as unknown;
+        return Array.isArray(parsed) ? parsed as ProjectSummary[] : [];
+    } catch {
+        return [];
+    }
+}
+
+function writeProjectsCache(projects: ProjectSummary[]): void {
+    try {
+        localStorage.setItem(PROJECTS_CACHE_KEY, JSON.stringify(projects));
+    } catch {
+        // Storage cache is opportunistic only.
+    }
+}
+
+function throwOfflineRefreshError(token: string | null): never {
+    pauseProtectedRequests('network_offline', token);
+    throw createAppError(
+        'auth_revalidation_required',
+        'Internet baglantisi olmadigi icin oturum yeniden dogrulanamiyor. Baglanti geri geldiginde tekrar deneyin.',
+        { source: 'auth' },
+    );
+}
+
+function throwMissingSessionError(token: string | null): never {
+    pauseProtectedRequests('unauthorized', token);
+    throw createAppError(
+        'unauthorized',
+        'Oturum dogrulanamadi. Lutfen yeniden giris yapin.',
+        { source: 'auth' },
+    );
+}
+
+function getTokenOrThrowWhenOffline(forceRefresh: boolean, cachedToken: string | null): string {
+    const fallbackToken = getReusableTokenWhenAllowed(forceRefresh);
+    if (fallbackToken) {
+        return fallbackToken;
+    }
+
+    throwOfflineRefreshError(cachedToken ?? activeToken);
+}
+
+async function getSessionOrFallbackToken(
+    forceRefresh: boolean,
+    cachedToken: string | null,
+): Promise<{ clerkSession: ClerkSessionLike | null; fallbackToken: string | null }> {
+    const clerkSession = await waitForClerkSession(Math.min(API_REQUEST_TIMEOUT_MS, 1500));
+    if (clerkSession) {
+        return { clerkSession, fallbackToken: null };
+    }
+
+    const fallbackToken = getReusableTokenWhenAllowed(forceRefresh);
+    if (fallbackToken) {
+        return { clerkSession: null, fallbackToken };
+    }
+
+    throwMissingSessionError(cachedToken ?? activeToken);
+}
+
 async function refreshActiveToken(forceRefresh: boolean): Promise<string> {
     const cachedToken = getCachedToken();
     const tokenExpiresAt = getProtectedTokenExpiry(activeToken) ?? getProtectedTokenExpiry(cachedToken);
 
     if (!readOnlineStatus()) {
-        if (!forceRefresh) {
-            const offlineToken = getReusableToken();
-            if (offlineToken) {
-                return offlineToken;
-            }
-        }
-
-        pauseProtectedRequests('network_offline', cachedToken ?? activeToken);
-        throw createAppError(
-            'auth_revalidation_required',
-            'Internet baglantisi olmadigi icin oturum yeniden dogrulanamiyor. Baglanti geri geldiginde tekrar deneyin.',
-            { source: 'auth' },
-        );
+        return getTokenOrThrowWhenOffline(forceRefresh, cachedToken);
     }
 
-    const clerkSession = typeof window !== 'undefined' ? window.Clerk?.session : null;
+    const { clerkSession, fallbackToken } = await getSessionOrFallbackToken(forceRefresh, cachedToken);
+    if (fallbackToken) {
+        return fallbackToken;
+    }
     if (!clerkSession) {
-        if (!forceRefresh) {
-            const fallbackToken = getReusableToken();
-            if (fallbackToken) {
-                return fallbackToken;
-            }
-        }
-
-        pauseProtectedRequests('unauthorized', cachedToken ?? activeToken);
-        throw createAppError(
-            'unauthorized',
-            'Oturum dogrulanamadi. Lutfen yeniden giris yapin.',
-            { source: 'auth' },
-        );
+        throwMissingSessionError(cachedToken ?? activeToken);
     }
 
     useAuthRuntimeStore.getState().setProtectedRequestsRefreshing(tokenExpiresAt);
@@ -372,7 +460,32 @@ function classifyApiResponseError(path: string, response: Response, text: string
     return createResponseError('unknown', message || `API ${path} hatasi`, response, code ?? undefined);
 }
 
-async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+function syncProtectedRequestFailure(error: unknown): void {
+    if (!isAppError(error) || !['token_expired', 'unauthorized'].includes(error.code)) {
+        return;
+    }
+
+    pauseProtectedRequests(error.code === 'token_expired' ? 'token_expired' : 'unauthorized');
+}
+
+async function replayAuthRequest<T>(path: string, init?: RequestInit, options?: ApiFetchOptions): Promise<T> {
+    const replayToken = await getFreshToken({ forceRefresh: true });
+    const replayResponse = await fetchWithTimeout(`${API_BASE}${path}`, buildRequestInit(init, replayToken));
+
+    if (replayResponse.ok) {
+        syncProtectedRequests(replayToken);
+        return replayResponse.json() as Promise<T>;
+    }
+
+    const replayText = await replayResponse.text();
+    const replayError = classifyApiResponseError(path, replayResponse, replayText);
+    if (!options?.suppressAuthPause && isAppError(replayError) && ['token_expired', 'unauthorized'].includes(replayError.code)) {
+        pauseProtectedRequests(replayError.code === 'token_expired' ? 'token_expired' : 'unauthorized');
+    }
+    throw replayError;
+}
+
+async function requestJson<T>(path: string, init?: RequestInit, options?: ApiFetchOptions): Promise<T> {
     let attempt = 0;
     let canReplayAuth = true;
 
@@ -384,30 +497,22 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
                 const text = await response.text();
                 const error = classifyApiResponseError(path, response, text);
 
-                if (canReplayAuth && isAppError(error) && error.code === 'token_expired') {
+                if (
+                    canReplayAuth
+                    && isAppError(error)
+                    && (error.code === 'token_expired' || error.code === 'unauthorized')
+                ) {
                     canReplayAuth = false;
-                    const replayToken = await getFreshToken({ forceRefresh: true });
-                    const replayResponse = await fetchWithTimeout(`${API_BASE}${path}`, buildRequestInit(init, replayToken));
-
-                    if (!replayResponse.ok) {
-                        const replayText = await replayResponse.text();
-                        const replayError = classifyApiResponseError(path, replayResponse, replayText);
-                        if (isAppError(replayError) && ['token_expired', 'unauthorized'].includes(replayError.code)) {
-                            pauseProtectedRequests('token_expired');
-                        }
-                        throw replayError;
-                    }
-
-                    return replayResponse.json() as Promise<T>;
+                    return replayAuthRequest<T>(path, init, options);
                 }
 
-                if (isAppError(error) && ['token_expired', 'unauthorized'].includes(error.code)) {
-                    pauseProtectedRequests(error.code === 'token_expired' ? 'token_expired' : 'unauthorized');
+                if (!options?.suppressAuthPause) {
+                    syncProtectedRequestFailure(error);
                 }
-
                 throw error;
             }
 
+            syncProtectedRequests(token);
             return response.json() as Promise<T>;
         } catch (error) {
             if (!shouldRetry(error, attempt)) {
@@ -420,16 +525,23 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     }
 }
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+async function apiFetch<T>(path: string, init?: RequestInit, options?: ApiFetchOptions): Promise<T> {
     return requestJson<T>(path, {
         headers: { 'Content-Type': 'application/json', ...(init?.headers as Record<string, string> | undefined) },
         ...init,
-    });
+    }, options);
 }
 
 export const authApi = {
     whoami: () =>
         apiFetch<AuthWhoAmIResponse>('/api/auth/whoami'),
+    ownershipDiagnostics: () =>
+        apiFetch<OwnershipDiagnosticsResponse>('/api/auth/ownership-diagnostics', undefined, { suppressAuthPause: true }),
+    claimProjectOwnership: (projectId: string) =>
+        apiFetch<ClaimProjectOwnershipResponse>(
+            '/api/auth/claim-project-ownership',
+            { method: 'POST', body: JSON.stringify({ project_id: projectId }) },
+        ),
 };
 
 // ─── Job endpoint'leri ────────────────────────────────────────────────────────
@@ -455,7 +567,10 @@ export const jobsApi = {
 
     /** Bir işi iptal et */
     cancel: (jobId: string) =>
-        apiFetch<{ status: string; message: string }>(`/api/cancel-job/${jobId}`, { method: 'POST' }),
+        apiFetch<{ status: string; message: string }>(`/api/cancel-job/${jobId}`, {
+            method: 'POST',
+            body: JSON.stringify({ confirmed: true, source: 'job_queue_confirm' }),
+        }),
 
     /** Kullanılabilir stilleri getir */
     styles: () =>
@@ -499,12 +614,32 @@ export const editorApi = {
     /** Proje listesini getir. Hata durumunda error ile döner. */
     getProjects: async (): Promise<{
         projects: ProjectSummary[];
-        error?: string;
+        error: string | null;
+        status: ProjectsFetchStatus;
     }> => {
         try {
-            return await apiFetch<{ projects: ProjectSummary[] }>('/api/projects');
+            const response = await apiFetch<{ projects: ProjectSummary[] }>('/api/projects');
+            writeProjectsCache(response.projects);
+            return {
+                projects: response.projects,
+                error: null,
+                status: 'good',
+            };
         } catch (err) {
-            return { projects: [], error: err instanceof Error ? err.message : 'Projeler alınamadı' };
+            const message = err instanceof Error ? err.message : 'Projeler alınamadı';
+            const cachedProjects = readProjectsCache();
+            if (cachedProjects.length > 0) {
+                return {
+                    projects: cachedProjects,
+                    error: message,
+                    status: 'degraded',
+                };
+            }
+            return {
+                projects: [],
+                error: message,
+                status: 'unknown',
+            };
         }
     },
 
@@ -617,7 +752,7 @@ export const socialApi = {
         }),
 
     getAccounts: () =>
-        apiFetch<{ connected: boolean; provider: string; workspace_id?: string; accounts: SocialAccount[] }>('/api/social/accounts'),
+        apiFetch<SocialAccountsResponse>('/api/social/accounts'),
 
     getPrefill: (project_id: string, clip_name: string) =>
         apiFetch<SharePrefillResponse>(`/api/social/prefill?project_id=${encodeURIComponent(project_id)}&clip_name=${encodeURIComponent(clip_name)}`),

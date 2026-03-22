@@ -1,9 +1,8 @@
 import { useAuth } from '@clerk/clerk-react';
 import { useEffect, useMemo, useState } from 'react';
 
-import type { AppError } from '../api/errors';
 import { authApi, getFreshToken, setApiToken } from '../api/client';
-import { isAppError } from '../api/errors';
+import { isAppError, type AppError } from '../api/errors';
 import { useAuthRuntimeStore } from './runtime';
 import {
   AUTH_BOOTSTRAP_TIMEOUT_MS,
@@ -21,6 +20,13 @@ import {
 } from './useResilientAuth.helpers';
 
 type NoticeTone = 'danger' | 'info' | 'warning';
+const BACKEND_IDENTITY_RETRY_MS = 2000;
+const BACKEND_IDENTITY_RETRYABLE_CODES = new Set([
+  'auth_provider_unavailable',
+  'auth_revalidation_required',
+  'token_expired',
+  'unauthorized',
+]);
 
 export interface AuthNotice {
   message: string;
@@ -50,74 +56,41 @@ export interface ResilientAuthState {
   tokenExpiresAt: number | null;
 }
 
+interface UseBackendIdentitySyncOptions {
+  isLoaded: boolean;
+  isOnline: boolean;
+  resetProtectedRequests: () => void;
+  sessionId: string | null;
+  signedOut: boolean;
+  userId: string | null;
+}
+
 export function useResilientAuth(): ResilientAuthState {
   const { isLoaded, isSignedIn, sessionId, userId } = useAuth();
   const isOnline = useOnlineStatus();
+  const signedOut = isLoaded && !isSignedIn;
   const bootstrapTimedOut = useBootstrapTimeout(isLoaded, AUTH_BOOTSTRAP_TIMEOUT_MS);
-  const [authError, setAuthError] = useState<AppError | null>(null);
-  const [backendIdentity, setBackendIdentity] = useState<{ subject: string } | null>(null);
   const backendAuthStatus = useAuthRuntimeStore((state) => state.backendAuthStatus);
   const canUseProtectedRequests = useAuthRuntimeStore((state) => state.canUseProtectedRequests);
   const pauseReason = useAuthRuntimeStore((state) => state.pauseReason);
   const resetProtectedRequests = useAuthRuntimeStore((state) => state.resetProtectedRequests);
   const tokenExpiresAt = useAuthRuntimeStore((state) => state.tokenExpiresAt);
+  const { authError, backendIdentity } = useBackendIdentitySync({
+    isLoaded,
+    isOnline,
+    resetProtectedRequests,
+    sessionId: sessionId ?? null,
+    signedOut,
+    userId: userId ?? null,
+  });
 
-  useEffect(() => {
-    if (!isLoaded) {
-      return;
-    }
-
-    if (!isSignedIn) {
-      setApiToken(null);
-      setBackendIdentity(null);
-      setAuthError(null);
-      if (isOnline) {
-        clearAuthSnapshot();
-      }
-      resetProtectedRequests();
-      return;
-    }
-
-    let cancelled = false;
-
-    const syncToken = async () => {
-      try {
-        const token = await getFreshToken();
-        const whoami = await authApi.whoami();
-        if (cancelled) {
-          return;
-        }
-
-        const nextSnapshot = buildAuthSnapshot({
-          isSignedIn: true,
-          sessionId,
-          token,
-          userId,
-        });
-        writeAuthSnapshot(nextSnapshot);
-        setBackendIdentity({ subject: whoami.subject });
-        setAuthError(null);
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-
-        setBackendIdentity(null);
-        setAuthError(isAppError(error) ? error : classifyTokenRefreshError(error, isOnline));
-      }
-    };
-
-    void syncToken();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isLoaded, isOnline, isSignedIn, resetProtectedRequests, sessionId, userId]);
+  const effectiveAuthError = signedOut ? null : authError;
+  const effectiveBackendIdentity = signedOut ? null : backendIdentity;
 
   return useMemo(
     () => ({
       ...resolveResilientAuthState({
-        authError,
+        authError: effectiveAuthError,
         backendRuntime: {
           backendAuthStatus,
           canUseProtectedRequests,
@@ -129,14 +102,14 @@ export function useResilientAuth(): ResilientAuthState {
         isOnline,
         isSignedIn,
       }),
-      identityKey: isSignedIn ? backendIdentity?.subject ?? userId ?? null : null,
+      identityKey: isSignedIn ? effectiveBackendIdentity?.subject ?? userId ?? null : null,
     }),
     [
-      authError,
       backendAuthStatus,
-      backendIdentity?.subject,
       bootstrapTimedOut,
       canUseProtectedRequests,
+      effectiveAuthError,
+      effectiveBackendIdentity?.subject,
       isLoaded,
       isOnline,
       isSignedIn,
@@ -145,4 +118,141 @@ export function useResilientAuth(): ResilientAuthState {
       userId,
     ],
   );
+}
+
+function useBackendIdentitySync({
+  isLoaded,
+  isOnline,
+  resetProtectedRequests,
+  sessionId,
+  signedOut,
+  userId,
+}: UseBackendIdentitySyncOptions): {
+  authError: AppError | null;
+  backendIdentity: { subject: string } | null;
+} {
+  const [authError, setAuthError] = useState<AppError | null>(null);
+  const [backendIdentity, setBackendIdentity] = useState<{ subject: string } | null>(null);
+  const clearBackendIdentity = useAuthRuntimeStore((state) => state.clearBackendIdentity);
+  const setBackendIdentityInStore = useAuthRuntimeStore((state) => state.setBackendIdentity);
+
+  useEffect(() => {
+    if (!isLoaded) {
+      return;
+    }
+
+    if (signedOut) {
+      setApiToken(null);
+      if (isOnline) {
+        clearAuthSnapshot();
+      }
+      clearBackendIdentity();
+      resetProtectedRequests();
+      return;
+    }
+
+    let cancelled = false;
+    let retryTimer: number | null = null;
+
+    const clearRetryTimer = () => {
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+    };
+
+    const attemptSync = async () => {
+      const syncSucceeded = await syncBackendIdentity({
+        isOnline,
+        onError: setAuthError,
+        onIdentity: setBackendIdentity,
+        onIdentityDetails: setBackendIdentityInStore,
+        sessionId,
+        userId,
+        wasCancelled: () => cancelled,
+      });
+
+      if (cancelled || syncSucceeded || !isOnline) {
+        return;
+      }
+
+      const currentError = useAuthRuntimeStore.getState().pauseReason;
+      const shouldRetry = currentError === null || BACKEND_IDENTITY_RETRYABLE_CODES.has(currentError);
+      if (!shouldRetry) {
+        return;
+      }
+
+      clearRetryTimer();
+      retryTimer = window.setTimeout(() => {
+        retryTimer = null;
+        if (!cancelled) {
+          void attemptSync();
+        }
+      }, BACKEND_IDENTITY_RETRY_MS);
+    };
+
+    void attemptSync();
+
+    return () => {
+      cancelled = true;
+      clearRetryTimer();
+    };
+  }, [clearBackendIdentity, isLoaded, isOnline, resetProtectedRequests, sessionId, setBackendIdentityInStore, signedOut, userId]);
+
+  return { authError, backendIdentity };
+}
+
+async function syncBackendIdentity({
+  isOnline,
+  onError,
+  onIdentity,
+  onIdentityDetails,
+  sessionId,
+  userId,
+  wasCancelled,
+}: {
+  isOnline: boolean;
+  onError: (error: AppError | null) => void;
+  onIdentity: (identity: { subject: string } | null) => void;
+  onIdentityDetails: (identity: {
+    authMode: 'clerk_jwt' | 'static_token';
+    subject: string;
+    subjectHash: string;
+    tokenType: 'jwt' | 'bearer';
+  }) => void;
+  sessionId: string | null;
+  userId: string | null;
+  wasCancelled: () => boolean;
+}): Promise<boolean> {
+  try {
+    const token = await getFreshToken();
+    const whoami = await authApi.whoami();
+    if (wasCancelled()) {
+      return false;
+    }
+
+    writeAuthSnapshot(buildAuthSnapshot({
+      isSignedIn: true,
+      sessionId,
+      token,
+      userId,
+    }));
+    onIdentityDetails({
+      authMode: whoami.auth_mode,
+      subject: whoami.subject,
+      subjectHash: whoami.subject_hash,
+      tokenType: whoami.token_type,
+    });
+    onIdentity({ subject: whoami.subject });
+    onError(null);
+    return true;
+  } catch (error) {
+    if (wasCancelled()) {
+      return false;
+    }
+
+    onIdentity(null);
+    onError(isAppError(error) ? error : classifyTokenRefreshError(error, isOnline));
+    return false;
+  }
 }

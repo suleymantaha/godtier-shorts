@@ -60,7 +60,9 @@ describe('LazyVideo', () => {
 
     expect(mockUnobserve).toHaveBeenCalled();
   });
+});
 
+describe('LazyVideo protected media', () => {
   it('fetches protected api videos with auth and uses blob URL', async () => {
     const tokenSpy = vi.spyOn(apiClient, 'getFreshToken').mockResolvedValue('token-123');
     const blob = new Blob(['video'], { type: 'video/mp4' });

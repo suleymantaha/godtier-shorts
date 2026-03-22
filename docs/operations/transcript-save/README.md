@@ -46,5 +46,5 @@ Frontend (düzenlenmiş segment listesi) → POST /api/transcript → JSON dosya
 
 ## İlgili
 
-- [Subtitle Edit](../pages/subtitle-edit/README.md)
-- [Reburn](./reburn/README.md)
+- [Subtitle Edit](../../pages/subtitle-edit/README.md)
+- [Reburn](../reburn/README.md)

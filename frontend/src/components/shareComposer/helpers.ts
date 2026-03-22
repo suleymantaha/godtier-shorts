@@ -1,13 +1,10 @@
 import type { Clip, ShareDraftContent, SharePrefillResponse, SocialAccount, SocialPlatform } from '../../types';
+import { AUTH_IDENTITY_STORAGE_KEY } from '../../auth/isolation';
+import { tSafe } from '../../i18n';
 
-export const PLATFORM_LABELS: Record<SocialPlatform, string> = {
-  youtube_shorts: 'YouTube Shorts',
-  tiktok: 'TikTok',
-  instagram_reels: 'Instagram Reels',
-  facebook_reels: 'Facebook Reels',
-  x: 'X',
-  linkedin: 'LinkedIn',
-};
+export function getPlatformLabel(platform: SocialPlatform): string {
+  return tSafe(`shareComposer.platforms.${platform}`, { defaultValue: platform });
+}
 
 export const DEFAULT_PLATFORM: SocialPlatform = 'youtube_shorts';
 
@@ -22,13 +19,76 @@ export interface ParsedDraftBuffer {
 }
 
 export type ShareComposerContentMap = Record<SocialPlatform, ShareDraftContent>;
+export type SocialOAuthStatus = 'success' | 'error';
+const MANAGED_CONNECT_PENDING_PREFIX = 'social-postiz-managed-connect-pending';
 
 export function resolveProjectId(clip: Clip | null): string | null {
   return clip?.project && clip.project !== 'legacy' ? clip.project : null;
 }
 
+export function getShareComposerIdentityScope(): string {
+  if (typeof window === 'undefined') {
+    return 'anonymous';
+  }
+
+  const identity = window.localStorage.getItem(AUTH_IDENTITY_STORAGE_KEY)?.trim();
+  return identity || 'anonymous';
+}
+
 export function localDraftKey(projectId: string, clipName: string): string {
-  return `social-share-buffer:${projectId}:${clipName}`;
+  return `social-share-buffer:${getShareComposerIdentityScope()}:${projectId}:${clipName}`;
+}
+
+export function managedConnectPendingKey(): string {
+  return `${MANAGED_CONNECT_PENDING_PREFIX}:${getShareComposerIdentityScope()}`;
+}
+
+export function hasManagedConnectPending(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return window.localStorage.getItem(managedConnectPendingKey()) === '1';
+}
+
+export function markManagedConnectPending(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.localStorage.setItem(managedConnectPendingKey(), '1');
+}
+
+export function clearManagedConnectPending(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.localStorage.removeItem(managedConnectPendingKey());
+}
+
+export function readSocialOAuthStatusFromQuery(search: string): SocialOAuthStatus | null {
+  const params = new URLSearchParams(search);
+  const status = params.get('social_oauth');
+  if (status === 'success' || status === 'error') {
+    return status;
+  }
+  return null;
+}
+
+export function clearSocialOAuthStatusQuery(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const currentUrl = new URL(window.location.href);
+  if (!currentUrl.searchParams.has('social_oauth')) {
+    return;
+  }
+  currentUrl.searchParams.delete('social_oauth');
+  const nextQuery = currentUrl.searchParams.toString();
+  const nextUrl = `${currentUrl.pathname}${nextQuery ? `?${nextQuery}` : ''}${currentUrl.hash}`;
+  window.history.replaceState({}, '', nextUrl);
 }
 
 export function nowPlusHourLocal(now = Date.now()): string {
@@ -129,14 +189,14 @@ export function summarizePublishErrors(errors?: Array<{ error: string }>): strin
 
 export function getPublishSuccessMessage(mode: 'now' | 'scheduled', approvalRequired: boolean): string {
   if (mode === 'scheduled' && approvalRequired) {
-    return 'Takvimli paylaşım onay kuyruğuna alındı.';
+    return tSafe('shareComposer.publish.scheduledApprovalSuccess');
   }
 
   if (mode === 'scheduled') {
-    return 'Video Postiz takvimine eklendi.';
+    return tSafe('shareComposer.publish.scheduledSuccess');
   }
 
-  return 'Paylaşım jobları kuyruğa alındı.';
+  return tSafe('shareComposer.publish.queuedSuccess');
 }
 
 export function getErrorMessage(error: unknown, fallback: string): string {

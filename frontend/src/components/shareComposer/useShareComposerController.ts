@@ -1,18 +1,24 @@
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 
+import { tSafe } from '../../i18n';
 import { socialApi } from '../../api/client';
-import type { Clip, PublishJob, ShareDraftContent, SocialAccount, SocialPlatform } from '../../types';
+import type { Clip, PublishJob, ShareDraftContent, SocialAccount, SocialConnectionMode, SocialPlatform } from '../../types';
 import {
+  clearManagedConnectPending,
+  clearSocialOAuthStatusQuery,
   DEFAULT_PLATFORM,
   buildDraftState,
   buildHashtagsFromInput,
   buildPublishTargets,
   getErrorMessage,
   getPublishSuccessMessage,
+  hasManagedConnectPending,
   localDraftKey,
+  markManagedConnectPending,
   mergeDraftContent,
   nowPlusHourLocal,
   parseLocalDraftBuffer,
+  readSocialOAuthStatusFromQuery,
   resolveProjectId,
   summarizePublishErrors,
   toggleSelection,
@@ -24,12 +30,15 @@ interface ShareComposerState {
   accounts: SocialAccount[];
   apiKey: string;
   connected: boolean;
+  connectionMode: SocialConnectionMode;
+  connectUrl: string | null;
   contentByPlatform: ShareComposerContentMap | null;
   draftState: DraftState;
   error: string | null;
   hasDirtyEdits: boolean;
   jobs: PublishJob[];
   loading: boolean;
+  managedConnectionPending: boolean;
   publishing: boolean;
   scheduleAt: string;
   selectedAccountIds: string[];
@@ -40,6 +49,8 @@ interface ShareComposerState {
 interface LoadedShareComposerData {
   accounts: SocialAccount[];
   connected: boolean;
+  connectionMode: SocialConnectionMode;
+  connectUrl: string | null;
   contentByPlatform: ShareComposerContentMap;
   draftState: DraftState;
   jobs: PublishJob[];
@@ -55,12 +66,15 @@ function useShareComposerState(): [ShareComposerState, Dispatch<SetStateAction<S
     accounts: [],
     apiKey: '',
     connected: false,
+    connectionMode: 'manual_api_key',
+    connectUrl: null,
     contentByPlatform: null,
     draftState: { hasLocalBuffer: false, hasServerDrafts: false },
     error: null,
     hasDirtyEdits: false,
     jobs: [],
     loading: false,
+    managedConnectionPending: hasManagedConnectPending(),
     publishing: false,
     scheduleAt: nowPlusHourLocal(),
     selectedAccountIds: [],
@@ -85,6 +99,8 @@ async function fetchShareComposerData(projectId: string, clipName: string): Prom
   return {
     accounts: accountResp.accounts ?? [],
     connected: accountResp.connected,
+    connectionMode: accountResp.connection_mode ?? 'managed',
+    connectUrl: accountResp.connect_url ?? null,
     contentByPlatform: mergeDraftContent(prefillResp.platforms, parsedBuffer.buffer),
     draftState: buildDraftState(prefillResp, parsedBuffer.buffer),
     jobs: jobsResp.jobs ?? [],
@@ -102,7 +118,7 @@ function useShareComposerData({
 }) {
   const loadData = useCallback(async () => {
     if (!open || !clip || !projectId) {
-      return;
+      return null;
     }
 
     setState((current) => ({ ...current, error: null, loading: true }));
@@ -114,11 +130,13 @@ function useShareComposerData({
         error: null,
         hasDirtyEdits: false,
       }));
+      return loaded;
     } catch (error) {
       setState((current) => ({
         ...current,
-        error: getErrorMessage(error, 'Paylaşım verileri yüklenemedi.'),
+        error: getErrorMessage(error, tSafe('shareComposer.errors.loadDataFailed')),
       }));
+      return null;
     } finally {
       setState((current) => ({ ...current, loading: false }));
     }
@@ -133,6 +151,127 @@ function useShareComposerData({
   }, [loadData, open]);
 
   return loadData;
+}
+
+function useManagedConnectionSync({
+  connectionMode,
+  loadData,
+  managedConnectionPending,
+  open,
+  setState,
+}: {
+  connectionMode: SocialConnectionMode;
+  loadData: () => Promise<LoadedShareComposerData | null>;
+  managedConnectionPending: boolean;
+  open: boolean;
+  setState: Dispatch<SetStateAction<ShareComposerState>>;
+}) {
+  const refreshManagedConnection = useCallback(async () => {
+    if (!open || connectionMode !== 'managed' || !managedConnectionPending) {
+      return;
+    }
+
+    const loaded = await loadData();
+    if (!loaded?.connected) {
+      return;
+    }
+
+    clearManagedConnectPending();
+    setState((current) => ({
+      ...current,
+      managedConnectionPending: false,
+      success: tSafe('shareComposer.connection.oauthConnectedSuccess'),
+    }));
+  }, [connectionMode, loadData, managedConnectionPending, open, setState]);
+
+  useEffect(() => {
+    if (!open || connectionMode !== 'managed' || !managedConnectionPending) {
+      return;
+    }
+
+    const handleFocus = () => {
+      void refreshManagedConnection();
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshManagedConnection();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [connectionMode, managedConnectionPending, open, refreshManagedConnection]);
+}
+
+function useManagedOAuthCallbackSignal({
+  connectionMode,
+  loadData,
+  open,
+  setState,
+}: {
+  connectionMode: SocialConnectionMode;
+  loadData: () => Promise<LoadedShareComposerData | null>;
+  open: boolean;
+  setState: Dispatch<SetStateAction<ShareComposerState>>;
+}) {
+  useEffect(() => {
+    if (!open || connectionMode !== 'managed') {
+      return;
+    }
+
+    const oauthStatus = readSocialOAuthStatusFromQuery(window.location.search);
+    if (!oauthStatus) {
+      return;
+    }
+
+    clearSocialOAuthStatusQuery();
+    clearManagedConnectPending();
+    setState((current) => ({
+      ...current,
+      managedConnectionPending: false,
+    }));
+
+    if (oauthStatus === 'error') {
+      setState((current) => ({
+        ...current,
+        error: tSafe('shareComposer.connection.oauthError'),
+        success: null,
+      }));
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const loaded = await loadData();
+      if (cancelled) {
+        return;
+      }
+      if (loaded?.connected) {
+        setState((current) => ({
+          ...current,
+          error: null,
+          managedConnectionPending: false,
+          success: tSafe('shareComposer.connection.oauthConnectedSuccess'),
+        }));
+        return;
+      }
+      setState((current) => ({
+        ...current,
+        managedConnectionPending: false,
+        error: tSafe('shareComposer.connection.oauthVerifyFailed'),
+        success: null,
+      }));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [connectionMode, loadData, open, setState]);
 }
 
 function useShareComposerAutosave({
@@ -166,7 +305,7 @@ function useShareComposerAutosave({
 function useShareComposerConnectionActions(setState: Dispatch<SetStateAction<ShareComposerState>>) {
   const handleConnect = useCallback(async (apiKey: string) => {
     if (!apiKey.trim()) {
-      setState((current) => ({ ...current, error: 'API key girin.' }));
+      setState((current) => ({ ...current, error: tSafe('shareComposer.connection.missingApiKey') }));
       return;
     }
 
@@ -181,12 +320,12 @@ function useShareComposerConnectionActions(setState: Dispatch<SetStateAction<Sha
         accounts: response.accounts ?? [],
         apiKey: '',
         connected: true,
-        success: 'Postiz hesabı bağlandı.',
+        success: tSafe('shareComposer.connection.connectedSuccess'),
       }));
     } catch (error) {
       setState((current) => ({
         ...current,
-        error: getErrorMessage(error, 'Postiz bağlantısı başarısız.'),
+        error: getErrorMessage(error, tSafe('shareComposer.connection.connectFailed')),
       }));
     } finally {
       setState((current) => ({ ...current, loading: false }));
@@ -202,12 +341,12 @@ function useShareComposerConnectionActions(setState: Dispatch<SetStateAction<Sha
         accounts: [],
         connected: false,
         selectedAccountIds: [],
-        success: 'Postiz bağlantısı kaldırıldı.',
+        success: tSafe('shareComposer.connection.disconnectedSuccess'),
       }));
     } catch (error) {
       setState((current) => ({
         ...current,
-        error: getErrorMessage(error, 'Bağlantı kaldırılamadı.'),
+        error: getErrorMessage(error, tSafe('shareComposer.connection.disconnectFailed')),
       }));
     } finally {
       setState((current) => ({ ...current, loading: false }));
@@ -245,7 +384,7 @@ function useShareComposerJobActions({
     } catch (error) {
       setState((current) => ({
         ...current,
-        error: getErrorMessage(error, 'Onay başarısız.'),
+        error: getErrorMessage(error, tSafe('shareComposer.errors.approveFailed')),
       }));
     }
   }, [refreshJobs, setState]);
@@ -257,7 +396,7 @@ function useShareComposerJobActions({
     } catch (error) {
       setState((current) => ({
         ...current,
-        error: getErrorMessage(error, 'İptal başarısız.'),
+        error: getErrorMessage(error, tSafe('shareComposer.errors.cancelFailed')),
       }));
     }
   }, [refreshJobs, setState]);
@@ -281,12 +420,12 @@ function useShareComposerPublishAction({
 }) {
   return useCallback(async (mode: 'now' | 'scheduled', approvalRequired: boolean) => {
     if (!projectId || !clip || !state.contentByPlatform) {
-      setState((current) => ({ ...current, error: 'Geçerli proje/klip seçilemedi.' }));
+      setState((current) => ({ ...current, error: tSafe('shareComposer.publish.missingProject') }));
       return;
     }
 
     if (selectedTargets.length === 0) {
-      setState((current) => ({ ...current, error: 'En az bir bağlı hesap seçin.' }));
+      setState((current) => ({ ...current, error: tSafe('shareComposer.accounts.selectAtLeastOne') }));
       return;
     }
 
@@ -312,7 +451,7 @@ function useShareComposerPublishAction({
     } catch (error) {
       setState((current) => ({
         ...current,
-        error: getErrorMessage(error, 'Paylaşım başlatılamadı.'),
+        error: getErrorMessage(error, tSafe('shareComposer.publish.startFailed')),
       }));
     } finally {
       setState((current) => ({ ...current, publishing: false }));
@@ -327,7 +466,7 @@ function useShareComposerDraftActions({
   setState,
 }: {
   clip: Clip | null;
-  loadData: () => Promise<void>;
+  loadData: () => Promise<LoadedShareComposerData | null>;
   projectId: string | null;
   setState: Dispatch<SetStateAction<ShareComposerState>>;
 }) {
@@ -367,12 +506,12 @@ function useShareComposerDraftActions({
       await loadData();
       setState((current) => ({
         ...current,
-        success: 'Kayıtlı paylaşım taslağı temizlendi. AI önerisi tekrar yüklendi.',
+        success: tSafe('shareComposer.content.resetSuccess'),
       }));
     } catch (error) {
       setState((current) => ({
         ...current,
-        error: getErrorMessage(error, 'Taslak temizlenemedi.'),
+        error: getErrorMessage(error, tSafe('shareComposer.content.resetFailed')),
       }));
     } finally {
       setState((current) => ({ ...current, loading: false }));
@@ -415,6 +554,9 @@ export function useShareComposerController({ clip, open }: UseShareComposerContr
     state,
   });
   const draftActions = useShareComposerDraftActions({ clip, loadData, projectId, setState });
+  const handleRefreshConnection = useCallback(async () => {
+    await loadData();
+  }, [loadData]);
 
   useShareComposerAutosave({
     clip,
@@ -424,19 +566,45 @@ export function useShareComposerController({ clip, open }: UseShareComposerContr
     projectId,
   });
 
+  useManagedConnectionSync({
+    connectionMode: state.connectionMode,
+    loadData,
+    managedConnectionPending: state.managedConnectionPending,
+    open,
+    setState,
+  });
+  useManagedOAuthCallbackSignal({
+    connectionMode: state.connectionMode,
+    loadData,
+    open,
+    setState,
+  });
+
   return {
     activeContent,
     apiKey: state.apiKey,
     accounts: state.accounts,
     connected: state.connected,
+    connectionMode: state.connectionMode,
+    connectUrl: state.connectUrl,
     draftState: state.draftState,
     error: state.error,
     handleApprove,
     handleCancel,
     handleConnect: () => handleConnect(state.apiKey),
     handleDisconnect,
+    handleRefreshConnection,
     jobs: state.jobs,
     loading: state.loading,
+    managedConnectionPending: state.managedConnectionPending,
+    handleManagedConnectOpen: () => {
+      markManagedConnectPending();
+      setState((current) => ({
+        ...current,
+        managedConnectionPending: true,
+        success: null,
+      }));
+    },
     projectId,
     publishing: state.publishing,
     scheduleAt: state.scheduleAt,

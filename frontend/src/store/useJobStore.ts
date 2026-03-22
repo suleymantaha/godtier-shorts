@@ -1,12 +1,15 @@
-import { create } from 'zustand';
+import { create, type StateCreator } from 'zustand';
 
 import { jobsApi } from '../api/client';
+import { JOB_HISTORY_STORAGE_KEY } from '../auth/isolation';
 import { useAuthRuntimeStore } from '../auth/runtime';
-import type { ClipReadyEntry, Job, JobStatus, JobTimelineEntry, JobTimelineSource, LogEntry, WsStatus } from '../types';
+import { tSafe } from '../i18n';
+import type { ClipReadyEntry, DownloadProgress, Job, JobStatus, JobTimelineEntry, JobTimelineSource, LogEntry, WsStatus } from '../types';
+import { readStored } from '../utils/storage';
 
 const MAX_CORE_LOG_ENTRIES = 300;
 const INITIAL_WS_STATUS: WsStatus = 'disconnected';
-const DEFAULT_QUEUED_MESSAGE = 'İşlem kuyruğa alındı. GPU müsait olduğunda başlayacak.';
+const JOB_HISTORY_TTL_MS = 5 * 60 * 1000;
 
 interface TimelineEventPayload {
     at: string;
@@ -16,6 +19,7 @@ interface TimelineEventPayload {
     progress: number;
     source?: JobTimelineSource;
     status?: JobStatus;
+    download_progress?: DownloadProgress;
 }
 
 interface RegisterQueuedJobPayload {
@@ -25,7 +29,23 @@ interface RegisterQueuedJobPayload {
     url: string;
 }
 
-interface JobState {
+interface PersistedJobHistorySnapshot {
+    version: 1;
+    jobs: Job[];
+    clipReadyByJob: Record<string, ClipReadyEntry[]>;
+    jobHistoryExpiresAt: number | null;
+    terminalHistoryCutoffAt: number;
+}
+
+interface HydratedJobHistoryState {
+    clipReadyByJob: Record<string, ClipReadyEntry[]>;
+    hasRetainedHistory: boolean;
+    jobHistoryExpiresAt: number | null;
+    jobs: Job[];
+    terminalHistoryCutoffAt: number;
+}
+
+export interface JobState {
     jobs: Job[];
     clips: string[];
     wsStatus: WsStatus;
@@ -34,6 +54,8 @@ interface JobState {
     clipReadyByJob: Record<string, ClipReadyEntry[]>;
     /** Job tamamlandığında artar; ClipGallery yenileme tetikler */
     refreshClipsTrigger: number;
+    jobHistoryExpiresAt: number | null;
+    hasRetainedHistory: boolean;
     fetchJobs: () => Promise<void>;
     requestClipsRefresh: () => void;
     registerQueuedJob: (payload: RegisterQueuedJobPayload) => void;
@@ -43,8 +65,15 @@ interface JobState {
     setWsStatus: (status: WsStatus) => void;
     addClip: (url: string) => void;
     clearError: () => void;
+    clearRetainedHistory: () => void;
     reset: () => void;
 }
+
+type JobStoreSet = Parameters<StateCreator<JobState>>[0];
+type JobStoreGet = Parameters<StateCreator<JobState>>[1];
+
+let terminalHistoryCutoffAt = 0;
+let jobHistoryExpiryTimeoutId: number | null = null;
 
 function resolveJobStatus(progress: number, status?: JobStatus, currentStatus: JobStatus = 'queued'): JobStatus {
     if (status) {
@@ -62,8 +91,40 @@ function resolveJobStatus(progress: number, status?: JobStatus, currentStatus: J
     return 'processing';
 }
 
+function isActiveJobStatus(status: JobStatus): boolean {
+    return status === 'queued' || status === 'processing';
+}
+
 function normalizeTimelineSource(source?: JobTimelineSource): JobTimelineSource {
     return source && ['api', 'worker', 'websocket', 'clip_ready'].includes(source) ? source : 'worker';
+}
+
+function normalizeDownloadProgress(downloadProgress?: DownloadProgress): DownloadProgress | undefined {
+    if (!downloadProgress || downloadProgress.phase !== 'download') {
+        return undefined;
+    }
+
+    const normalized: DownloadProgress = { phase: 'download' };
+    for (const key of ['downloaded_bytes', 'total_bytes', 'total_bytes_estimate', 'percent'] as const) {
+        const value = downloadProgress[key];
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            normalized[key] = value;
+        }
+    }
+    for (const key of ['speed_text', 'eta_text', 'status'] as const) {
+        const value = downloadProgress[key];
+        if (typeof value === 'string' && value) {
+            normalized[key] = value;
+        }
+    }
+
+    return Object.keys(normalized).length > 1 ? normalized : undefined;
+}
+
+function getDefaultQueuedMessage(): string {
+    return tSafe('jobQueue.waitingForSlot', {
+        defaultValue: 'Waiting for the next job slot.',
+    });
 }
 
 function normalizeTimelineEntry(jobId: string, entry: Partial<JobTimelineEntry>): JobTimelineEntry | null {
@@ -84,6 +145,7 @@ function normalizeTimelineEntry(jobId: string, entry: Partial<JobTimelineEntry>)
         progress: entry.progress,
         message: entry.message,
         source: normalizeTimelineSource(entry.source as JobTimelineSource | undefined),
+        download_progress: normalizeDownloadProgress(entry.download_progress as DownloadProgress | undefined),
     };
 }
 
@@ -119,17 +181,27 @@ function normalizeTimeline(jobId: string, timeline: JobTimelineEntry[] | undefin
     return mergeTimelines([], normalizedEntries);
 }
 
-function normalizeJob(job: Job): Job {
-    const timeline = normalizeTimeline(job.job_id, job.timeline);
-    const latestEvent = timeline[timeline.length - 1];
-    const progress = typeof job.progress === 'number'
+function resolveNormalizedProgress(job: Job, latestEvent?: JobTimelineEntry): number {
+    return typeof job.progress === 'number'
         ? Math.max(0, job.progress)
         : Math.max(0, latestEvent?.progress ?? 0);
-    const status = resolveJobStatus(
+}
+
+function resolveNormalizedStatus(job: Job, latestEvent?: JobTimelineEntry): JobStatus {
+    return resolveJobStatus(
         typeof job.progress === 'number' ? job.progress : latestEvent?.progress ?? 0,
         job.status,
         latestEvent?.status ?? 'queued',
     );
+}
+
+function normalizeJob(job: Job): Job {
+    const timeline = normalizeTimeline(job.job_id, job.timeline);
+    const latestEvent = timeline[timeline.length - 1];
+    const progress = resolveNormalizedProgress(job, latestEvent);
+    const status = resolveNormalizedStatus(job, latestEvent);
+    const downloadProgress = normalizeDownloadProgress(job.download_progress)
+        ?? normalizeDownloadProgress(latestEvent?.download_progress);
 
     return {
         ...job,
@@ -137,6 +209,7 @@ function normalizeJob(job: Job): Job {
         status,
         last_message: job.last_message || latestEvent?.message || '',
         created_at: typeof job.created_at === 'number' ? job.created_at : Date.now() / 1000,
+        download_progress: downloadProgress,
         timeline,
     };
 }
@@ -162,6 +235,7 @@ function mergeJobs(existingJobs: Job[], incomingJobs: Job[]): Job[] {
             style: incomingJob.style || existingJob.style,
             last_message: incomingJob.last_message || existingJob.last_message,
             error: incomingJob.error ?? existingJob.error,
+            download_progress: incomingJob.download_progress ?? existingJob.download_progress,
             timeline: mergeTimelines(existingJob.timeline, incomingJob.timeline),
         }));
     }
@@ -179,7 +253,7 @@ function countNewlyCompletedJobs(previousJobs: Job[], nextJobs: Job[]): number {
     }, 0);
 }
 
-function buildQueuedTimelineEntry(job_id: string, message = DEFAULT_QUEUED_MESSAGE): JobTimelineEntry {
+function buildQueuedTimelineEntry(job_id: string, message = getDefaultQueuedMessage()): JobTimelineEntry {
     return {
         id: `${job_id}:queued`,
         at: new Date().toISOString(),
@@ -227,6 +301,57 @@ function buildFallbackJob(job_id: string, message: string, progress: number, sta
     });
 }
 
+function hasActiveJobs(jobs: Job[]): boolean {
+    return jobs.some((job) => isActiveJobStatus(job.status));
+}
+
+function parseTimestampMs(value?: string): number | null {
+    if (!value) {
+        return null;
+    }
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function resolveJobActivityAt(job: Job): number {
+    const latestTimelineEntry = job.timeline?.[job.timeline.length - 1];
+    const timelineAt = parseTimestampMs(latestTimelineEntry?.at);
+    if (timelineAt !== null) {
+        return timelineAt;
+    }
+    return Math.max(0, job.created_at * 1000);
+}
+
+function shouldKeepJobByCutoff(job: Job, cutoffAt: number): boolean {
+    return isActiveJobStatus(job.status) || resolveJobActivityAt(job) >= cutoffAt;
+}
+
+function filterJobsForVisibility(
+    jobs: Job[],
+    { cutoffAt }: { cutoffAt: number },
+): Job[] {
+    const normalizedJobs = mergeJobs([], jobs).filter((job) => shouldKeepJobByCutoff(job, cutoffAt));
+    return normalizedJobs;
+}
+
+function normalizeClipReadyEntry(entry: ClipReadyEntry): ClipReadyEntry | null {
+    if (typeof entry.job_id !== 'string' || !entry.job_id || typeof entry.clipName !== 'string' || !entry.clipName) {
+        return null;
+    }
+    if (typeof entry.message !== 'string' || typeof entry.progress !== 'number') {
+        return null;
+    }
+    return {
+        at: typeof entry.at === 'string' && entry.at ? entry.at : new Date().toISOString(),
+        clipName: entry.clipName,
+        job_id: entry.job_id,
+        message: entry.message,
+        progress: entry.progress,
+        projectId: typeof entry.projectId === 'string' ? entry.projectId : undefined,
+        uiTitle: typeof entry.uiTitle === 'string' ? entry.uiTitle : undefined,
+    };
+}
+
 function mergeClipReadyEntries(
     existing: ClipReadyEntry[] | undefined,
     incoming: ClipReadyEntry,
@@ -248,16 +373,192 @@ function mergeClipReadyEntries(
     });
 }
 
-export const useJobStore = create<JobState>((set) => ({
-    jobs: [],
-    clips: [],
-    wsStatus: INITIAL_WS_STATUS,
-    lastError: null,
-    clipReadySignal: 0,
-    clipReadyByJob: {},
-    refreshClipsTrigger: 0,
+function filterClipReadyByJob(
+    clipReadyByJob: Record<string, ClipReadyEntry[]>,
+    jobs: Job[],
+    cutoffAt: number,
+): Record<string, ClipReadyEntry[]> {
+    const visibleJobIds = new Set(jobs.map((job) => job.job_id));
+    const filtered: Record<string, ClipReadyEntry[]> = {};
 
-    fetchJobs: async () => {
+    for (const [jobId, entries] of Object.entries(clipReadyByJob)) {
+        if (!visibleJobIds.has(jobId)) {
+            continue;
+        }
+
+        const nextEntries = (entries ?? [])
+            .map(normalizeClipReadyEntry)
+            .filter((entry): entry is ClipReadyEntry => entry !== null)
+            .filter((entry) => {
+                const at = parseTimestampMs(entry.at);
+                return at === null || at >= cutoffAt;
+            })
+            .sort((left, right) => {
+                const byTime = left.at.localeCompare(right.at);
+                return byTime !== 0 ? byTime : left.clipName.localeCompare(right.clipName);
+            });
+
+        if (nextEntries.length > 0) {
+            filtered[jobId] = nextEntries;
+        }
+    }
+
+    return filtered;
+}
+
+function reconcileFetchedJobs(existingJobs: Job[], incomingJobs: Job[]): Job[] {
+    const retainedJobs = existingJobs.filter((job) => !isActiveJobStatus(job.status) && shouldKeepJobByCutoff(job, terminalHistoryCutoffAt));
+    const filteredIncomingJobs = incomingJobs.filter((job) => shouldKeepJobByCutoff(job, terminalHistoryCutoffAt));
+    return mergeJobs(retainedJobs, filteredIncomingJobs);
+}
+
+function resolveJobHistoryExpiresAt(
+    previousJobs: Job[],
+    nextJobs: Job[],
+    previousExpiresAt: number | null,
+    now: number,
+): number | null {
+    if (nextJobs.length === 0) {
+        return null;
+    }
+    if (hasActiveJobs(nextJobs)) {
+        return null;
+    }
+    if (hasActiveJobs(previousJobs) || previousExpiresAt === null || previousExpiresAt <= now) {
+        return now + JOB_HISTORY_TTL_MS;
+    }
+    return previousExpiresAt;
+}
+
+function buildRetainedHistoryState(
+    previousJobs: Job[],
+    nextJobs: Job[],
+    clipReadyByJob: Record<string, ClipReadyEntry[]>,
+    previousExpiresAt: number | null,
+    now: number,
+): Pick<JobState, 'clipReadyByJob' | 'hasRetainedHistory' | 'jobHistoryExpiresAt' | 'jobs'> {
+    const visibleJobs = filterJobsForVisibility(nextJobs, {
+        cutoffAt: terminalHistoryCutoffAt,
+    });
+    const historyExpiresAt = resolveJobHistoryExpiresAt(previousJobs, visibleJobs, previousExpiresAt, now);
+    return {
+        jobs: visibleJobs,
+        clipReadyByJob: filterClipReadyByJob(clipReadyByJob, visibleJobs, terminalHistoryCutoffAt),
+        jobHistoryExpiresAt: historyExpiresAt,
+        hasRetainedHistory: visibleJobs.length > 0,
+    };
+}
+
+function readPersistedJobHistory(now = Date.now()): HydratedJobHistoryState {
+    const snapshot = readStored<PersistedJobHistorySnapshot | null>(JOB_HISTORY_STORAGE_KEY, null);
+    if (!snapshot || snapshot.version !== 1) {
+        return {
+            jobs: [],
+            clipReadyByJob: {},
+            jobHistoryExpiresAt: null,
+            hasRetainedHistory: false,
+            terminalHistoryCutoffAt: 0,
+        };
+    }
+
+    const cutoffAt = typeof snapshot.terminalHistoryCutoffAt === 'number' && Number.isFinite(snapshot.terminalHistoryCutoffAt)
+        ? Math.max(0, snapshot.terminalHistoryCutoffAt)
+        : 0;
+    const rawExpiresAt = typeof snapshot.jobHistoryExpiresAt === 'number' && Number.isFinite(snapshot.jobHistoryExpiresAt)
+        ? snapshot.jobHistoryExpiresAt
+        : null;
+    const visibleJobs = rawExpiresAt !== null && rawExpiresAt <= now
+        ? []
+        : filterJobsForVisibility(snapshot.jobs ?? [], {
+            cutoffAt,
+        });
+    const historyExpiresAt = resolveJobHistoryExpiresAt([], visibleJobs, rawExpiresAt, now);
+
+    return {
+        jobs: visibleJobs,
+        clipReadyByJob: filterClipReadyByJob(snapshot.clipReadyByJob ?? {}, visibleJobs, cutoffAt),
+        jobHistoryExpiresAt: historyExpiresAt,
+        hasRetainedHistory: visibleJobs.length > 0,
+        terminalHistoryCutoffAt: cutoffAt,
+    };
+}
+
+function clearJobHistoryExpiryTimeout(): void {
+    if (typeof window === 'undefined') {
+        jobHistoryExpiryTimeoutId = null;
+        return;
+    }
+    if (jobHistoryExpiryTimeoutId !== null) {
+        window.clearTimeout(jobHistoryExpiryTimeoutId);
+        jobHistoryExpiryTimeoutId = null;
+    }
+}
+
+function persistJobHistorySnapshot(state: Pick<JobState, 'clipReadyByJob' | 'jobHistoryExpiresAt' | 'jobs'>): void {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    if (state.jobs.length === 0 && Object.keys(state.clipReadyByJob).length === 0 && state.jobHistoryExpiresAt === null && terminalHistoryCutoffAt === 0) {
+        window.localStorage.removeItem(JOB_HISTORY_STORAGE_KEY);
+        return;
+    }
+
+    const snapshot: PersistedJobHistorySnapshot = {
+        version: 1,
+        jobs: state.jobs,
+        clipReadyByJob: state.clipReadyByJob,
+        jobHistoryExpiresAt: state.jobHistoryExpiresAt,
+        terminalHistoryCutoffAt,
+    };
+    window.localStorage.setItem(JOB_HISTORY_STORAGE_KEY, JSON.stringify(snapshot));
+}
+
+function scheduleJobHistoryExpiry(set: JobStoreSet, get: JobStoreGet): void {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    clearJobHistoryExpiryTimeout();
+    const expiresAt = get().jobHistoryExpiresAt;
+    if (expiresAt === null) {
+        return;
+    }
+
+    jobHistoryExpiryTimeoutId = window.setTimeout(() => {
+        const state = get();
+        if (state.jobHistoryExpiresAt === null || state.jobHistoryExpiresAt > Date.now() || hasActiveJobs(state.jobs)) {
+            scheduleJobHistoryExpiry(set, get);
+            return;
+        }
+
+        terminalHistoryCutoffAt = Date.now();
+        set({
+            jobs: [],
+            clipReadyByJob: {},
+            jobHistoryExpiresAt: null,
+            hasRetainedHistory: false,
+        });
+        persistJobHistorySnapshot({
+            jobs: [],
+            clipReadyByJob: {},
+            jobHistoryExpiresAt: null,
+        });
+        clearJobHistoryExpiryTimeout();
+    }, Math.max(0, expiresAt - Date.now()));
+}
+
+function syncPersistedJobHistory(set: JobStoreSet, get: JobStoreGet): void {
+    persistJobHistorySnapshot({
+        jobs: get().jobs,
+        clipReadyByJob: get().clipReadyByJob,
+        jobHistoryExpiresAt: get().jobHistoryExpiresAt,
+    });
+    scheduleJobHistoryExpiry(set, get);
+}
+
+function createFetchJobsAction(set: JobStoreSet, get: JobStoreGet) {
+    return async () => {
         if (!useAuthRuntimeStore.getState().canUseProtectedRequests) {
             return;
         }
@@ -265,123 +566,243 @@ export const useJobStore = create<JobState>((set) => ({
         try {
             const data = await jobsApi.list();
             set((state) => {
-                const nextJobs = mergeJobs(state.jobs, data.jobs);
+                const reconciledJobs = reconcileFetchedJobs(state.jobs, data.jobs);
+                const retainedState = buildRetainedHistoryState(
+                    state.jobs,
+                    reconciledJobs,
+                    state.clipReadyByJob,
+                    state.jobHistoryExpiresAt,
+                    Date.now(),
+                );
                 return {
-                    jobs: nextJobs,
+                    jobs: retainedState.jobs,
+                    clipReadyByJob: retainedState.clipReadyByJob,
+                    jobHistoryExpiresAt: retainedState.jobHistoryExpiresAt,
+                    hasRetainedHistory: retainedState.hasRetainedHistory,
                     lastError: null,
-                    refreshClipsTrigger: state.refreshClipsTrigger + countNewlyCompletedJobs(state.jobs, nextJobs),
+                    refreshClipsTrigger: state.refreshClipsTrigger + countNewlyCompletedJobs(state.jobs, retainedState.jobs),
                 };
             });
+            syncPersistedJobHistory(set, get);
         } catch (err) {
-            const msg = err instanceof Error ? err.message : 'Job listesi alınamadı';
+            const msg = err instanceof Error ? err.message : tSafe('jobQueue.errors.fetchFailed', { defaultValue: 'Job list could not be fetched.' });
             set({ lastError: msg });
             console.error('Failed to fetch jobs', err);
         }
-    },
+    };
+}
 
-    clearError: () => set({ lastError: null }),
+function createRegisterQueuedJobAction(set: JobStoreSet, get: JobStoreGet) {
+    return ({ job_id, message = getDefaultQueuedMessage(), style = '', url }: RegisterQueuedJobPayload) => {
+        set((state) => {
+            const queuedEvent = buildQueuedTimelineEntry(job_id, message);
+            const existingJob = state.jobs.find((job) => job.job_id === job_id);
+            const nextJobs = mergeJobs(
+                state.jobs.filter((job) => job.job_id !== job_id),
+                [
+                    normalizeJob({
+                        ...(existingJob ?? buildFallbackJob(job_id, message, 0, 'queued')),
+                        job_id,
+                        url,
+                        style: existingJob?.style || style,
+                        status: 'queued',
+                        progress: 0,
+                        last_message: message,
+                        timeline: mergeTimelines(existingJob?.timeline, [queuedEvent]),
+                    }),
+                ],
+            );
+            const retainedState = buildRetainedHistoryState(
+                state.jobs,
+                nextJobs,
+                state.clipReadyByJob,
+                state.jobHistoryExpiresAt,
+                Date.now(),
+            );
 
-    requestClipsRefresh: () => set((state) => ({
-        refreshClipsTrigger: state.refreshClipsTrigger + 1,
-    })),
-
-    registerQueuedJob: ({ job_id, message = DEFAULT_QUEUED_MESSAGE, style = '', url }) => set((state) => {
-        const queuedEvent = buildQueuedTimelineEntry(job_id, message);
-        const existingJob = state.jobs.find((job) => job.job_id === job_id);
-        const nextJobs = mergeJobs(
-            state.jobs.filter((job) => job.job_id !== job_id),
-            [
-                normalizeJob({
-                    ...(existingJob ?? buildFallbackJob(job_id, message, 0, 'queued')),
-                    job_id,
-                    url,
-                    style: existingJob?.style || style,
-                    status: 'queued',
-                    progress: 0,
-                    last_message: message,
-                    timeline: mergeTimelines(existingJob?.timeline, [queuedEvent]),
-                }),
-            ],
-        );
-
-        return {
-            jobs: nextJobs,
-            lastError: null,
-        };
-    }),
-
-    mergeJobTimelineEvent: ({ at, event_id, job_id, message, progress, source, status }) => set((state) => {
-        const existingJob = state.jobs.find((job) => job.job_id === job_id);
-        const previousStatus = existingJob?.status;
-        const timelineEntry = normalizeTimelineEntry(job_id, {
-            id: event_id,
-            at,
-            job_id,
-            message,
-            progress,
-            source: source ?? 'worker',
-            status,
+            return {
+                jobs: retainedState.jobs,
+                clipReadyByJob: retainedState.clipReadyByJob,
+                jobHistoryExpiresAt: retainedState.jobHistoryExpiresAt,
+                hasRetainedHistory: retainedState.hasRetainedHistory,
+                lastError: null,
+            };
         });
-        if (!timelineEntry) {
-            return state;
-        }
+        syncPersistedJobHistory(set, get);
+    };
+}
 
-        const nextStatus = resolveJobStatus(progress, status, existingJob?.status ?? 'queued');
-        const nextJobs = mergeJobs(
-            state.jobs.filter((job) => job.job_id !== job_id),
-            [
-                normalizeJob({
-                    ...(existingJob ?? buildFallbackJob(job_id, message, progress, nextStatus)),
-                    status: nextStatus,
-                    progress: Math.max(0, progress),
-                    last_message: message,
-                    timeline: mergeTimelines(existingJob?.timeline, [timelineEntry]),
-                }),
-            ],
-        );
-        const nextJob = nextJobs.find((job) => job.job_id === job_id);
-        const newlyCompleted = nextJob?.status === 'completed' && previousStatus !== 'completed' ? 1 : 0;
+function createMergeJobTimelineEventAction(set: JobStoreSet, get: JobStoreGet) {
+    return ({ at, event_id, job_id, message, progress, source, status, download_progress }: TimelineEventPayload) => {
+        set((state) => {
+            const existingJob = state.jobs.find((job) => job.job_id === job_id);
+            const previousStatus = existingJob?.status;
+            const timelineEntry = normalizeTimelineEntry(job_id, {
+                id: event_id,
+                at,
+                job_id,
+                message,
+                progress,
+                source: source ?? 'worker',
+                status,
+                download_progress,
+            });
+            if (!timelineEntry) {
+                return state;
+            }
 
-        return {
-            jobs: nextJobs,
-            refreshClipsTrigger: state.refreshClipsTrigger + newlyCompleted,
-        };
-    }),
+            const nextStatus = resolveJobStatus(progress, status, existingJob?.status ?? 'queued');
+            const nextJobs = mergeJobs(
+                state.jobs.filter((job) => job.job_id !== job_id),
+                [
+                    normalizeJob({
+                        ...(existingJob ?? buildFallbackJob(job_id, message, progress, nextStatus)),
+                        status: nextStatus,
+                        progress: Math.max(0, progress),
+                        last_message: message,
+                        download_progress: normalizeDownloadProgress(download_progress) ?? existingJob?.download_progress,
+                        timeline: mergeTimelines(existingJob?.timeline, [timelineEntry]),
+                    }),
+                ],
+            );
+            const retainedState = buildRetainedHistoryState(
+                state.jobs,
+                nextJobs,
+                state.clipReadyByJob,
+                state.jobHistoryExpiresAt,
+                Date.now(),
+            );
+            const nextJob = retainedState.jobs.find((job) => job.job_id === job_id);
+            const newlyCompleted = nextJob?.status === 'completed' && previousStatus !== 'completed' ? 1 : 0;
 
-    markClipReady: (payload) => set((state) => ({
-        clipReadySignal: state.clipReadySignal + 1,
-        clipReadyByJob: {
-            ...state.clipReadyByJob,
-            [payload.job_id]: mergeClipReadyEntries(state.clipReadyByJob[payload.job_id], payload),
-        },
-    })),
+            return {
+                jobs: retainedState.jobs,
+                clipReadyByJob: retainedState.clipReadyByJob,
+                jobHistoryExpiresAt: retainedState.jobHistoryExpiresAt,
+                hasRetainedHistory: retainedState.hasRetainedHistory,
+                refreshClipsTrigger: state.refreshClipsTrigger + newlyCompleted,
+            };
+        });
+        syncPersistedJobHistory(set, get);
+    };
+}
 
-    cancelJob: async (job_id) => {
+function createCancelJobAction(set: JobStoreSet, get: JobStoreGet) {
+    return async (job_id: string) => {
         try {
             await jobsApi.cancel(job_id);
-            set((state) => ({
-                jobs: state.jobs.map((job) => (
+            set((state) => {
+                const nextJobs = state.jobs.map((job) => (
                     job.job_id === job_id
-                        ? normalizeJob({ ...job, status: 'cancelled', progress: job.progress, last_message: 'İş iptal edildi.' })
+                        ? normalizeJob({ ...job, status: 'cancelled', progress: job.progress, last_message: tSafe('common.status.cancelled') })
                         : job
-                )),
-                lastError: null,
-            }));
+                ));
+                const retainedState = buildRetainedHistoryState(
+                    state.jobs,
+                    nextJobs,
+                    state.clipReadyByJob,
+                    state.jobHistoryExpiresAt,
+                    Date.now(),
+                );
+                return {
+                    jobs: retainedState.jobs,
+                    clipReadyByJob: retainedState.clipReadyByJob,
+                    jobHistoryExpiresAt: retainedState.jobHistoryExpiresAt,
+                    hasRetainedHistory: retainedState.hasRetainedHistory,
+                    lastError: null,
+                };
+            });
+            syncPersistedJobHistory(set, get);
         } catch (err) {
-            const msg = err instanceof Error ? err.message : 'İptal başarısız';
+            const msg = err instanceof Error ? err.message : tSafe('jobQueue.errors.cancelFailed', { defaultValue: 'Cancel failed.' });
             set({ lastError: msg });
             console.error('Failed to cancel job', err);
         }
-    },
+    };
+}
 
-    setWsStatus: (status) => set({ wsStatus: status }),
-    addClip: (url) => set((state) => ({ clips: [...state.clips, url] })),
-    reset: () => set({
-        jobs: [],
+const hydratedJobHistory = readPersistedJobHistory();
+terminalHistoryCutoffAt = hydratedJobHistory.terminalHistoryCutoffAt;
+
+function createJobStoreState(set: JobStoreSet, get: JobStoreGet): JobState {
+    return {
+        jobs: hydratedJobHistory.jobs,
+        clips: [],
+        wsStatus: INITIAL_WS_STATUS,
         lastError: null,
         clipReadySignal: 0,
-        clipReadyByJob: {},
+        clipReadyByJob: hydratedJobHistory.clipReadyByJob,
         refreshClipsTrigger: 0,
-        wsStatus: INITIAL_WS_STATUS,
-    }),
-}));
+        jobHistoryExpiresAt: hydratedJobHistory.jobHistoryExpiresAt,
+        hasRetainedHistory: hydratedJobHistory.hasRetainedHistory,
+
+        fetchJobs: createFetchJobsAction(set, get),
+
+        clearError: () => set({ lastError: null }),
+
+        requestClipsRefresh: () => set((state) => ({
+            refreshClipsTrigger: state.refreshClipsTrigger + 1,
+        })),
+
+        registerQueuedJob: createRegisterQueuedJobAction(set, get),
+
+        mergeJobTimelineEvent: createMergeJobTimelineEventAction(set, get),
+
+        markClipReady: (payload) => {
+            set((state) => {
+                const normalizedPayload = normalizeClipReadyEntry(payload);
+                if (!normalizedPayload) {
+                    return state;
+                }
+                const nextClipReadyByJob = {
+                    ...state.clipReadyByJob,
+                    [normalizedPayload.job_id]: mergeClipReadyEntries(state.clipReadyByJob[normalizedPayload.job_id], normalizedPayload),
+                };
+                return {
+                    clipReadySignal: state.clipReadySignal + 1,
+                    clipReadyByJob: filterClipReadyByJob(nextClipReadyByJob, state.jobs, terminalHistoryCutoffAt),
+                };
+            });
+            syncPersistedJobHistory(set, get);
+        },
+
+        cancelJob: createCancelJobAction(set, get),
+
+        setWsStatus: (status) => set({ wsStatus: status }),
+        addClip: (url) => set((state) => ({ clips: [...state.clips, url] })),
+        clearRetainedHistory: () => {
+            const state = get();
+            if (hasActiveJobs(state.jobs)) {
+                return;
+            }
+
+            terminalHistoryCutoffAt = Date.now();
+            set({
+                jobs: [],
+                clipReadyByJob: {},
+                jobHistoryExpiresAt: null,
+                hasRetainedHistory: false,
+            });
+            syncPersistedJobHistory(set, get);
+        },
+        reset: () => {
+            terminalHistoryCutoffAt = 0;
+            clearJobHistoryExpiryTimeout();
+            set({
+                jobs: [],
+                lastError: null,
+                clipReadySignal: 0,
+                clipReadyByJob: {},
+                refreshClipsTrigger: 0,
+                wsStatus: INITIAL_WS_STATUS,
+                jobHistoryExpiresAt: null,
+                hasRetainedHistory: false,
+            });
+            syncPersistedJobHistory(set, get);
+        },
+    };
+}
+
+export const useJobStore = create<JobState>((set, get) => createJobStoreState(set, get));
+
+scheduleJobHistoryExpiry(useJobStore.setState, useJobStore.getState);

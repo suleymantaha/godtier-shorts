@@ -13,8 +13,10 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import parse_qs, urlparse
 
 from backend.config import ProjectPaths, TEMP_DIR
+from backend.core.clip_events import ClipEventPort, NullClipEventPort
 from backend.core.render_contracts import resolve_duration_validation_status
 from loguru import logger
 
@@ -23,6 +25,7 @@ PIPELINE_ANALYSIS_CACHE_VERSION = 1
 PIPELINE_RENDER_CACHE_VERSION = 1
 PIPELINE_ANALYZER_CONTRACT_VERSION = 1
 PIPELINE_SUBTITLE_STYLE_CONTRACT_VERSION = 1
+YOUTUBE_VIDEO_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]{11}$")
 
 
 @dataclass(frozen=True)
@@ -119,6 +122,37 @@ async def run_blocking(func, /, *args, **kwargs):
     return await asyncio.to_thread(partial(func, *args, **kwargs))
 
 
+def extract_youtube_video_id(youtube_url: str) -> str | None:
+    normalized = str(youtube_url or "").strip()
+    if not normalized:
+        return None
+
+    if YOUTUBE_VIDEO_ID_PATTERN.fullmatch(normalized):
+        return normalized
+
+    parsed = urlparse(normalized)
+    host = (parsed.netloc or "").lower()
+    path = parsed.path or ""
+
+    if host.endswith("youtu.be"):
+        candidate = path.strip("/").split("/", 1)[0]
+        return candidate if YOUTUBE_VIDEO_ID_PATTERN.fullmatch(candidate) else None
+
+    if "youtube.com" not in host:
+        return None
+
+    if path == "/watch":
+        candidate = parse_qs(parsed.query).get("v", [""])[0]
+        return candidate if YOUTUBE_VIDEO_ID_PATTERN.fullmatch(candidate) else None
+
+    path_parts = [part for part in path.split("/") if part]
+    if len(path_parts) >= 2 and path_parts[0] in {"embed", "shorts", "live", "v"}:
+        candidate = path_parts[1]
+        return candidate if YOUTUBE_VIDEO_ID_PATTERN.fullmatch(candidate) else None
+
+    return None
+
+
 def write_json_atomic(path: str | Path, payload: object, *, indent: int = 2) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -144,34 +178,13 @@ def publish_clip_ready_event(
     message: str,
     progress: int,
     ui_title: str | None = None,
+    clip_event_port: ClipEventPort | None = None,
 ) -> bool:
     """Broadcast a clip-ready signal after the clip metadata has been committed."""
-    from backend.api.routes.clips import invalidate_clips_cache
-    from backend.api.websocket import manager, thread_safe_broadcast
-
+    port = clip_event_port or NullClipEventPort()
     safe_progress = max(0, min(progress, 99))
-    invalidate_clips_cache(reason=f"clip_ready:{project_id}/{clip_name}")
-
-    resolved_job_id = job_id if job_id in manager.jobs else None
-    if resolved_job_id is None and subject:
-        active_jobs = [
-            (float(job.get("created_at") or 0.0), candidate_job_id)
-            for candidate_job_id, job in manager.jobs.items()
-            if str(job.get("subject") or "") == subject
-            and str(job.get("status") or "") in {"queued", "processing"}
-        ]
-        if active_jobs:
-            resolved_job_id = max(active_jobs)[1]
-
-    if resolved_job_id is None:
-        active_jobs = [
-            (float(job.get("created_at") or 0.0), candidate_job_id)
-            for candidate_job_id, job in manager.jobs.items()
-            if str(job.get("project_id") or "") == project_id
-            and str(job.get("status") or "") in {"queued", "processing"}
-        ]
-        if active_jobs:
-            resolved_job_id = max(active_jobs)[1]
+    port.invalidate_clips_cache(reason=f"clip_ready:{project_id}/{clip_name}")
+    resolved_job_id = port.resolve_clip_ready_job_id(subject=subject, project_id=project_id, job_id=job_id)
 
     if not resolved_job_id:
         logger.warning(
@@ -191,11 +204,7 @@ def publish_clip_ready_event(
     if ui_title:
         extra_payload["ui_title"] = ui_title
 
-    thread_safe_broadcast(
-        {"message": message, "progress": safe_progress, "status": "processing"},
-        resolved_job_id,
-        extra=extra_payload,
-    )
+    port.broadcast_clip_ready(message=message, progress=safe_progress, job_id=resolved_job_id, extra=extra_payload)
     return True
 
 
@@ -556,6 +565,7 @@ def cleanup_stale_render_outputs(
     *,
     previous_outputs: list[str],
     current_outputs: list[str],
+    clip_event_port: ClipEventPort | None = None,
 ) -> int:
     current_set = {item for item in current_outputs if isinstance(item, str)}
     deleted = 0
@@ -571,9 +581,7 @@ def cleanup_stale_render_outputs(
         except FileNotFoundError:
             continue
     if deleted:
-        from backend.api.routes.clips import invalidate_clips_cache
-
-        invalidate_clips_cache(reason=f"pipeline_render_cleanup:{project.root.name}")
+        (clip_event_port or NullClipEventPort()).invalidate_clips_cache(reason=f"pipeline_render_cleanup:{project.root.name}")
     return deleted
 
 
@@ -584,6 +592,7 @@ def record_pipeline_render_cache(
     segments_signature: str,
     clip_names: list[str],
     skip_subtitles: bool,
+    clip_event_port: ClipEventPort | None = None,
 ) -> int:
     expected_outputs: list[str] = []
     for clip_name in clip_names:
@@ -619,6 +628,7 @@ def record_pipeline_render_cache(
         project,
         previous_outputs=previous_outputs,
         current_outputs=expected_outputs,
+        clip_event_port=clip_event_port,
     )
 
 
@@ -691,6 +701,10 @@ def _pipeline_release_whisper_models() -> None:
 
 
 async def fetch_youtube_video_id(ctx, youtube_url: str) -> str:
+    parsed_video_id = extract_youtube_video_id(youtube_url)
+    if parsed_video_id:
+        return parsed_video_id
+
     rc, stdout, stderr = await ctx._run_command_with_cancel_async(
         ["yt-dlp", "--get-id", youtube_url],
         timeout=120,
@@ -758,10 +772,11 @@ async def ensure_pipeline_master_assets(ctx, youtube_url: str, resolution: str) 
 
 
 async def ensure_pipeline_transcript(ctx, master_audio: str) -> str:
-    if ctx.project is None:
+    project = ctx.project
+    if project is None:
         raise RuntimeError("Proje bağlamı bulunamadı.")
 
-    metadata_file = str(ctx.project.transcript)
+    metadata_file = str(project.transcript)
     if os.path.exists(metadata_file):
         ctx._update_status("✅ Transkript kütüphanede bulundu, analiz atlanıyor.", 45)
         logger.info(f"♻️ Transkript zaten mevcut: {metadata_file}")
@@ -773,7 +788,7 @@ async def ensure_pipeline_transcript(ctx, master_audio: str) -> str:
         metadata_file = await run_blocking(
             _pipeline_run_transcription,
             audio_file=master_audio,
-            output_json=str(ctx.project.transcript),
+            output_json=str(project.transcript),
             status_callback=lambda msg, pct: ctx._update_status(msg, pct),
             cancel_event=ctx.cancel_event,
         )
@@ -883,28 +898,12 @@ async def render_pipeline_segments(
         ass_file = str(TEMP_DIR / f"subs_{clip_num}.ass")
         temp_cropped = str(TEMP_DIR / f"cropped_{clip_num}.mp4")
         final_output = str(ctx.project.outputs / clip_filename)
-        render_plan = resolve_subtitle_render_plan(
-            video_processor=ctx.video_processor,
-            source_video=master_video,
-            start_t=start_t,
-            end_t=end_t,
-            requested_layout=layout,
-            cut_as_short=True,
-            manual_center_x=None,
-        )
-        validated_start_t, opening_report = apply_opening_validation(
-            video_processor=ctx.video_processor,
-            source_video=master_video,
-            start_t=start_t,
-            end_t=end_t,
-            resolved_layout=render_plan.resolved_layout,
-            manual_center_x=None,
-        )
-        if str(opening_report.get("layout_validation_status")) == "opening_subject_missing":
-            raise RuntimeError("Açılışta görünür subject bulunamadı.")
-        if validated_start_t > start_t:
-            start_t = validated_start_t
-            start_t, end_t, snap_report = snap_segment_boundaries(source_transcript, start_t, end_t)
+        async with ctx.acquire_gpu_stage(
+            wait_message=f"Klip {clip_num}/{total} - GPU render sırası bekleniyor...",
+            active_message=f"Klip {clip_num}/{total} - GPU render slotu alındı.",
+            wait_progress=render_pct + 1,
+            active_progress=render_pct + 1,
+        ):
             render_plan = resolve_subtitle_render_plan(
                 video_processor=ctx.video_processor,
                 source_video=master_video,
@@ -914,7 +913,7 @@ async def render_pipeline_segments(
                 cut_as_short=True,
                 manual_center_x=None,
             )
-            _, opening_report = apply_opening_validation(
+            validated_start_t, opening_report = apply_opening_validation(
                 video_processor=ctx.video_processor,
                 source_video=master_video,
                 start_t=start_t,
@@ -922,86 +921,108 @@ async def render_pipeline_segments(
                 resolved_layout=render_plan.resolved_layout,
                 manual_center_x=None,
             )
-        duration_validation_status = resolve_duration_validation_status(
-            start_t,
-            end_t,
-            duration_min=duration_min,
-            duration_max=duration_max,
-        )
-        if duration_validation_status != "ok":
-            raise RuntimeError("Segment süresi istenen aralığın dışına çıktı.")
-        resolved_style = StyleManager.resolve_style(style_name, animation_type)
-        subtitle_engine = None if skip_subtitles else create_subtitle_renderer(
-            style_name,
-            animation_type=animation_type,
-            canvas_width=render_plan.canvas_width,
-            canvas_height=render_plan.canvas_height,
-            layout=render_plan.resolved_layout,
-            safe_area_profile=render_plan.safe_area_profile,
-            lower_third_detection={
-                "lower_third_collision_detected": render_plan.lower_third_collision_detected,
-                "lower_third_band_height_ratio": render_plan.lower_third_band_height_ratio,
-            },
-        )
-
-        with TempArtifactManager(shifted_json, ass_file) as artifacts:
-            if temp_cropped != final_output:
-                artifacts.add(temp_cropped)
-
-            if not skip_subtitles and subtitle_engine is not None:
-                ctx._update_status(f"Klip {clip_num}/{total} - Altyazılar oluşturuluyor...", render_pct + 1)
-            shift_report = shift_timestamps_with_report(metadata_file, start_t, end_t, shifted_json)
-            transcript_data = shift_report["segments"]
-            if not skip_subtitles and subtitle_engine is not None:
-                subtitle_engine.generate_ass_file(shifted_json, ass_file, max_words_per_screen=3)
-
-            ctx._update_status(f"Klip {clip_num}/{total} - Video kesiliyor (YOLO + NVENC)...", render_pct + 2)
-            if not skip_subtitles and subtitle_engine is not None:
-                ctx._update_status(f"Klip {clip_num}/{total} - Altyazılar videoya gömülüyor...", render_pct + 3)
-
-            render_report = await run_blocking(
-                ctx._cut_and_burn_clip,
-                master_video,
+            if str(opening_report.get("layout_validation_status")) == "opening_subject_missing":
+                raise RuntimeError("Açılışta görünür subject bulunamadı.")
+            if validated_start_t > start_t:
+                start_t = validated_start_t
+                start_t, end_t, snap_report = snap_segment_boundaries(source_transcript, start_t, end_t)
+                render_plan = resolve_subtitle_render_plan(
+                    video_processor=ctx.video_processor,
+                    source_video=master_video,
+                    start_t=start_t,
+                    end_t=end_t,
+                    requested_layout=layout,
+                    cut_as_short=True,
+                    manual_center_x=None,
+                )
+                _, opening_report = apply_opening_validation(
+                    video_processor=ctx.video_processor,
+                    source_video=master_video,
+                    start_t=start_t,
+                    end_t=end_t,
+                    resolved_layout=render_plan.resolved_layout,
+                    manual_center_x=None,
+                )
+            duration_validation_status = resolve_duration_validation_status(
                 start_t,
                 end_t,
-                temp_cropped,
-                final_output,
-                ass_file,
-                subtitle_engine,
+                duration_min=duration_min,
+                duration_max=duration_max,
+            )
+            if duration_validation_status != "ok":
+                raise RuntimeError("Segment süresi istenen aralığın dışına çıktı.")
+            resolved_style = StyleManager.resolve_style(style_name, animation_type)
+            subtitle_engine = None if skip_subtitles else create_subtitle_renderer(
+                style_name,
+                animation_type=animation_type,
+                canvas_width=render_plan.canvas_width,
+                canvas_height=render_plan.canvas_height,
                 layout=render_plan.resolved_layout,
-                center_x=None,
-                initial_slot_centers=resolve_initial_slot_centers(opening_report),
-                cut_as_short=True,
-                require_audio=True,
+                safe_area_profile=render_plan.safe_area_profile,
+                lower_third_detection={
+                    "lower_third_collision_detected": render_plan.lower_third_collision_detected,
+                    "lower_third_band_height_ratio": render_plan.lower_third_band_height_ratio,
+                },
             )
-            if isinstance(render_report, dict):
-                artifacts.add(render_report.get("debug_overlay_temp_path"))
 
-            subtitle_layout_quality = render_report.get("subtitle_layout_quality") if isinstance(render_report, dict) else None
-            transcript_quality = merge_transcript_quality(
-                base_quality=shift_report.get("transcript_quality"),
-                subtitle_layout_quality=subtitle_layout_quality if isinstance(subtitle_layout_quality, dict) else None,
-                snapping_report=snap_report,
-            )
-            tracking_quality = render_report.get("tracking_quality") if isinstance(render_report, dict) else None
-            debug_timing = render_report.get("debug_timing") if isinstance(render_report, dict) else None
-            render_quality_score = compute_render_quality_score(
-                tracking_quality=tracking_quality if isinstance(tracking_quality, dict) else None,
-                transcript_quality=transcript_quality,
-                debug_timing=debug_timing if isinstance(debug_timing, dict) else None,
-                subtitle_layout_quality=subtitle_layout_quality if isinstance(subtitle_layout_quality, dict) else None,
-            )
-            debug_artifacts = persist_debug_artifacts(
-                project=ctx.project,
-                clip_name=clip_filename,
-                render_report=render_report if isinstance(render_report, dict) else None,
-                subtitle_layout_quality=subtitle_layout_quality if isinstance(subtitle_layout_quality, dict) else None,
-                snap_report=snap_report,
-                debug_timing=debug_timing if isinstance(debug_timing, dict) else None,
-            )
-            clip_full_metadata = ctx._build_clip_metadata(
-                transcript_data,
-                viral_metadata={
+            with TempArtifactManager(shifted_json, ass_file) as artifacts:
+                if temp_cropped != final_output:
+                    artifacts.add(temp_cropped)
+
+                if not skip_subtitles and subtitle_engine is not None:
+                    ctx._update_status(f"Klip {clip_num}/{total} - Altyazılar oluşturuluyor...", render_pct + 1)
+                shift_report = shift_timestamps_with_report(metadata_file, start_t, end_t, shifted_json)
+                transcript_data = shift_report["segments"]
+                if not skip_subtitles and subtitle_engine is not None:
+                    subtitle_engine.generate_ass_file(shifted_json, ass_file, max_words_per_screen=3)
+
+                ctx._update_status(f"Klip {clip_num}/{total} - Video kesiliyor (YOLO + NVENC)...", render_pct + 2)
+                if not skip_subtitles and subtitle_engine is not None:
+                    ctx._update_status(f"Klip {clip_num}/{total} - Altyazılar videoya gömülüyor...", render_pct + 3)
+
+                render_report = await run_blocking(
+                    ctx._cut_and_burn_clip,
+                    master_video,
+                    start_t,
+                    end_t,
+                    temp_cropped,
+                    final_output,
+                    ass_file,
+                    subtitle_engine,
+                    layout=render_plan.resolved_layout,
+                    center_x=None,
+                    initial_slot_centers=resolve_initial_slot_centers(opening_report),
+                    cut_as_short=True,
+                    require_audio=True,
+                )
+                if isinstance(render_report, dict):
+                    artifacts.add(render_report.get("debug_overlay_temp_path"))
+
+                subtitle_layout_quality = render_report.get("subtitle_layout_quality") if isinstance(render_report, dict) else None
+                transcript_quality = merge_transcript_quality(
+                    base_quality=shift_report.get("transcript_quality"),
+                    subtitle_layout_quality=subtitle_layout_quality if isinstance(subtitle_layout_quality, dict) else None,
+                    snapping_report=snap_report,
+                )
+                tracking_quality = render_report.get("tracking_quality") if isinstance(render_report, dict) else None
+                debug_timing = render_report.get("debug_timing") if isinstance(render_report, dict) else None
+                render_quality_score = compute_render_quality_score(
+                    tracking_quality=tracking_quality if isinstance(tracking_quality, dict) else None,
+                    transcript_quality=transcript_quality,
+                    debug_timing=debug_timing if isinstance(debug_timing, dict) else None,
+                    subtitle_layout_quality=subtitle_layout_quality if isinstance(subtitle_layout_quality, dict) else None,
+                )
+                debug_artifacts = persist_debug_artifacts(
+                    project=ctx.project,
+                    clip_name=clip_filename,
+                    render_report=render_report if isinstance(render_report, dict) else None,
+                    subtitle_layout_quality=subtitle_layout_quality if isinstance(subtitle_layout_quality, dict) else None,
+                    snap_report=snap_report,
+                    debug_timing=debug_timing if isinstance(debug_timing, dict) else None,
+                )
+                clip_full_metadata = ctx._build_clip_metadata(
+                    transcript_data,
+                    viral_metadata={
                     "hook_text": seg.get("hook_text", ""),
                     "ui_title": seg.get("ui_title", ""),
                     "social_caption": seg.get("social_caption", ""),
@@ -1049,6 +1070,7 @@ async def render_pipeline_segments(
                 message=f"Klip {clip_num}/{total} hazır.",
                 progress=min(render_pct + 4, 99),
                 ui_title=str(seg.get("ui_title", "")).strip() or None,
+                clip_event_port=ctx.clip_event_port,
             )
             rendered_clip_names.append(clip_filename)
 
@@ -1161,43 +1183,28 @@ async def render_batch_segments(
             raise RuntimeError("Proje bağlamı bulunamadı.")
         final_output = str(ctx.project.outputs / clip_filename)
 
-        render_plan = resolve_subtitle_render_plan(
-            video_processor=ctx.video_processor,
-            source_video=master_video,
-            start_t=s_t,
-            end_t=e_t,
-            requested_layout=layout,
-            cut_as_short=cut_as_short,
-            manual_center_x=None,
-        )
-        opening_report = {
-            "layout_validation_status": "not_applicable",
-            "opening_visibility_delay_ms": 0.0,
-            "suggested_start_time": s_t,
-        }
-        if cut_as_short:
-            validated_start_t, opening_report = apply_opening_validation(
+        async with ctx.acquire_gpu_stage(
+            wait_message=f"Klip {clip_num}/{total} - GPU render sırası bekleniyor...",
+            active_message=f"Klip {clip_num}/{total} - GPU render slotu alındı.",
+            wait_progress=render_pct + 1,
+            active_progress=render_pct + 1,
+        ):
+            render_plan = resolve_subtitle_render_plan(
                 video_processor=ctx.video_processor,
                 source_video=master_video,
                 start_t=s_t,
                 end_t=e_t,
-                resolved_layout=render_plan.resolved_layout,
+                requested_layout=layout,
+                cut_as_short=cut_as_short,
                 manual_center_x=None,
             )
-            if str(opening_report.get("layout_validation_status")) == "opening_subject_missing":
-                raise RuntimeError("Açılışta görünür subject bulunamadı.")
-            if validated_start_t > s_t:
-                s_t, e_t, snap_report = snap_segment_boundaries(transcript_data, validated_start_t, e_t)
-                render_plan = resolve_subtitle_render_plan(
-                    video_processor=ctx.video_processor,
-                    source_video=master_video,
-                    start_t=s_t,
-                    end_t=e_t,
-                    requested_layout=layout,
-                    cut_as_short=cut_as_short,
-                    manual_center_x=None,
-                )
-                _, opening_report = apply_opening_validation(
+            opening_report = {
+                "layout_validation_status": "not_applicable",
+                "opening_visibility_delay_ms": 0.0,
+                "suggested_start_time": s_t,
+            }
+            if cut_as_short:
+                validated_start_t, opening_report = apply_opening_validation(
                     video_processor=ctx.video_processor,
                     source_video=master_video,
                     start_t=s_t,
@@ -1205,90 +1212,111 @@ async def render_batch_segments(
                     resolved_layout=render_plan.resolved_layout,
                     manual_center_x=None,
                 )
-        duration_validation_status = resolve_duration_validation_status(
-            s_t,
-            e_t,
-            duration_min=duration_min,
-            duration_max=duration_max,
-        )
-        if duration_validation_status != "ok":
-            raise RuntimeError("Segment süresi istenen aralığın dışına çıktı.")
-        resolved_style = StyleManager.resolve_style(style_name, animation_type)
-        subtitle_engine: SubtitleRenderer | None = None
-        if not skip_subtitles:
-            subtitle_engine = create_subtitle_renderer(
-                style_name,
-                animation_type=animation_type,
-                canvas_width=render_plan.canvas_width,
-                canvas_height=render_plan.canvas_height,
-                layout=render_plan.resolved_layout,
-                safe_area_profile=render_plan.safe_area_profile,
-                lower_third_detection={
-                    "lower_third_collision_detected": render_plan.lower_third_collision_detected,
-                    "lower_third_band_height_ratio": render_plan.lower_third_band_height_ratio,
-                },
-            )
-
-        with TempArtifactManager(temp_orig, shifted_json) as artifacts:
-            if subtitle_engine is not None:
-                artifacts.add(ass_file)
-                artifacts.add(temp_cropped)
-
-            with open(temp_orig, "w", encoding="utf-8") as handle:
-                json.dump(transcript_data, handle, ensure_ascii=False)
-            shifted_segments, shifted_quality = build_shifted_transcript_segments_with_report(transcript_data, s_t, e_t)
-            with open(shifted_json, "w", encoding="utf-8") as shifted_handle:
-                json.dump(shifted_segments, shifted_handle, ensure_ascii=False, indent=4)
-            if subtitle_engine is not None:
-                subtitle_engine.generate_ass_file(shifted_json, ass_file, max_words_per_screen=3)
-
-            ctx._update_status(f"Klip {clip_num}/{total} - Video kesiliyor...", render_pct + 1)
-            if subtitle_engine is not None:
-                ctx._update_status(f"Klip {clip_num}/{total} - Altyazılar basılıyor...", render_pct + 2)
-
-            render_report = await run_blocking(
-                ctx._cut_and_burn_clip,
-                master_video,
+                if str(opening_report.get("layout_validation_status")) == "opening_subject_missing":
+                    raise RuntimeError("Açılışta görünür subject bulunamadı.")
+                if validated_start_t > s_t:
+                    s_t, e_t, snap_report = snap_segment_boundaries(transcript_data, validated_start_t, e_t)
+                    render_plan = resolve_subtitle_render_plan(
+                        video_processor=ctx.video_processor,
+                        source_video=master_video,
+                        start_t=s_t,
+                        end_t=e_t,
+                        requested_layout=layout,
+                        cut_as_short=cut_as_short,
+                        manual_center_x=None,
+                    )
+                    _, opening_report = apply_opening_validation(
+                        video_processor=ctx.video_processor,
+                        source_video=master_video,
+                        start_t=s_t,
+                        end_t=e_t,
+                        resolved_layout=render_plan.resolved_layout,
+                        manual_center_x=None,
+                    )
+            duration_validation_status = resolve_duration_validation_status(
                 s_t,
                 e_t,
-                temp_cropped,
-                final_output,
-                ass_file,
-                subtitle_engine,
-                render_plan.resolved_layout,
-                None,
-                resolve_initial_slot_centers(opening_report),
-                cut_as_short,
-                False,
+                duration_min=duration_min,
+                duration_max=duration_max,
             )
-            if isinstance(render_report, dict):
-                artifacts.add(render_report.get("debug_overlay_temp_path"))
+            if duration_validation_status != "ok":
+                raise RuntimeError("Segment süresi istenen aralığın dışına çıktı.")
+            resolved_style = StyleManager.resolve_style(style_name, animation_type)
+            subtitle_engine: SubtitleRenderer | None = None
+            if not skip_subtitles:
+                subtitle_engine = create_subtitle_renderer(
+                    style_name,
+                    animation_type=animation_type,
+                    canvas_width=render_plan.canvas_width,
+                    canvas_height=render_plan.canvas_height,
+                    layout=render_plan.resolved_layout,
+                    safe_area_profile=render_plan.safe_area_profile,
+                    lower_third_detection={
+                        "lower_third_collision_detected": render_plan.lower_third_collision_detected,
+                        "lower_third_band_height_ratio": render_plan.lower_third_band_height_ratio,
+                    },
+                )
 
-            subtitle_layout_quality = render_report.get("subtitle_layout_quality") if isinstance(render_report, dict) else None
-            transcript_quality = merge_transcript_quality(
-                base_quality=shifted_quality,
-                subtitle_layout_quality=subtitle_layout_quality if isinstance(subtitle_layout_quality, dict) else None,
-                snapping_report=snap_report,
-            )
-            tracking_quality = render_report.get("tracking_quality") if isinstance(render_report, dict) else None
-            debug_timing = render_report.get("debug_timing") if isinstance(render_report, dict) else None
-            render_quality_score = compute_render_quality_score(
-                tracking_quality=tracking_quality if isinstance(tracking_quality, dict) else None,
-                transcript_quality=transcript_quality,
-                debug_timing=debug_timing if isinstance(debug_timing, dict) else None,
-                subtitle_layout_quality=subtitle_layout_quality if isinstance(subtitle_layout_quality, dict) else None,
-            )
-            debug_artifacts = persist_debug_artifacts(
-                project=ctx.project,
-                clip_name=clip_filename,
-                render_report=render_report if isinstance(render_report, dict) else None,
-                subtitle_layout_quality=subtitle_layout_quality if isinstance(subtitle_layout_quality, dict) else None,
-                snap_report=snap_report,
-                debug_timing=debug_timing if isinstance(debug_timing, dict) else None,
-            )
-            clip_meta = ctx._build_clip_metadata(
-                shifted_segments,
-                viral_metadata={
+            with TempArtifactManager(temp_orig, shifted_json) as artifacts:
+                if subtitle_engine is not None:
+                    artifacts.add(ass_file)
+                    artifacts.add(temp_cropped)
+
+                with open(temp_orig, "w", encoding="utf-8") as handle:
+                    json.dump(transcript_data, handle, ensure_ascii=False)
+                shifted_segments, shifted_quality = build_shifted_transcript_segments_with_report(transcript_data, s_t, e_t)
+                with open(shifted_json, "w", encoding="utf-8") as shifted_handle:
+                    json.dump(shifted_segments, shifted_handle, ensure_ascii=False, indent=4)
+                if subtitle_engine is not None:
+                    subtitle_engine.generate_ass_file(shifted_json, ass_file, max_words_per_screen=3)
+
+                ctx._update_status(f"Klip {clip_num}/{total} - Video kesiliyor...", render_pct + 1)
+                if subtitle_engine is not None:
+                    ctx._update_status(f"Klip {clip_num}/{total} - Altyazılar basılıyor...", render_pct + 2)
+
+                render_report = await run_blocking(
+                    ctx._cut_and_burn_clip,
+                    master_video,
+                    s_t,
+                    e_t,
+                    temp_cropped,
+                    final_output,
+                    ass_file,
+                    subtitle_engine,
+                    render_plan.resolved_layout,
+                    None,
+                    resolve_initial_slot_centers(opening_report),
+                    cut_as_short,
+                    False,
+                )
+                if isinstance(render_report, dict):
+                    artifacts.add(render_report.get("debug_overlay_temp_path"))
+
+                subtitle_layout_quality = render_report.get("subtitle_layout_quality") if isinstance(render_report, dict) else None
+                transcript_quality = merge_transcript_quality(
+                    base_quality=shifted_quality,
+                    subtitle_layout_quality=subtitle_layout_quality if isinstance(subtitle_layout_quality, dict) else None,
+                    snapping_report=snap_report,
+                )
+                tracking_quality = render_report.get("tracking_quality") if isinstance(render_report, dict) else None
+                debug_timing = render_report.get("debug_timing") if isinstance(render_report, dict) else None
+                render_quality_score = compute_render_quality_score(
+                    tracking_quality=tracking_quality if isinstance(tracking_quality, dict) else None,
+                    transcript_quality=transcript_quality,
+                    debug_timing=debug_timing if isinstance(debug_timing, dict) else None,
+                    subtitle_layout_quality=subtitle_layout_quality if isinstance(subtitle_layout_quality, dict) else None,
+                )
+                debug_artifacts = persist_debug_artifacts(
+                    project=ctx.project,
+                    clip_name=clip_filename,
+                    render_report=render_report if isinstance(render_report, dict) else None,
+                    subtitle_layout_quality=subtitle_layout_quality if isinstance(subtitle_layout_quality, dict) else None,
+                    snap_report=snap_report,
+                    debug_timing=debug_timing if isinstance(debug_timing, dict) else None,
+                )
+                clip_meta = ctx._build_clip_metadata(
+                    shifted_segments,
+                    viral_metadata={
                     "hook_text": seg.get("hook_text", ""),
                     "ui_title": seg.get("ui_title", ""),
                     "social_caption": seg.get("social_caption", ""),
@@ -1335,6 +1363,7 @@ async def render_batch_segments(
                 message=f"Klip {clip_num}/{total} hazır.",
                 progress=min(render_pct + 4, 99),
                 ui_title=str(seg.get("ui_title", "")).strip() or None,
+                clip_event_port=ctx.clip_event_port,
             )
             results.append((final_output, render_quality_score, idx))
 

@@ -56,6 +56,6 @@ Tek bir klip üzerinde manuel düzenleme: kadraj, stil, zaman aralığı, reburn
 
 ## İlgili Dokümantasyon
 
-- [Manual Cut](../operations/manual-cut/README.md)
-- [Reburn](../operations/reburn/README.md)
-- [Video Processor](../logic/video-processor/README.md)
+- [Manual Cut](../../operations/manual-cut/README.md)
+- [Reburn](../../operations/reburn/README.md)
+- [Video Processor](../../logic/video-processor/README.md)

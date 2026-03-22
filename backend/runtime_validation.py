@@ -13,6 +13,13 @@ def validate_runtime_configuration() -> None:
     request_limit = _validate_optional_positive_int("REQUEST_BODY_HARD_LIMIT_BYTES")
     _validate_optional_positive_int("SOCIAL_SCHEDULER_POLL_SECONDS")
     _validate_optional_positive_int("SOCIAL_SCHEDULER_CONCURRENCY")
+    _validate_optional_positive_int("MAX_ACTIVE_JOBS_PER_SUBJECT")
+    _validate_optional_positive_int("MAX_PENDING_JOBS_PER_SUBJECT")
+    _validate_optional_positive_int("YTDLP_DOWNLOAD_IDLE_TIMEOUT_SECONDS")
+    _validate_optional_positive_int("YTDLP_DOWNLOAD_TOTAL_TIMEOUT_SECONDS")
+    _validate_optional_positive_int("YTDLP_PROGRESS_MIN_EMIT_INTERVAL_MS")
+    _validate_optional_choice("SOCIAL_CONNECTION_MODE", {"managed", "manual_api_key"})
+    _validate_optional_bool("ALLOW_ENV_POSTIZ_API_KEY_FALLBACK")
     _validate_optional_bool("REQUIRE_CUDA_FOR_APP")
     _validate_optional_bool("REQUIRE_NVENC_FOR_APP")
     _validate_optional_bool("LOG_ACCELERATOR_STATUS_ON_STARTUP")
@@ -25,6 +32,9 @@ def validate_runtime_configuration() -> None:
     _validate_optional_http_url("FRONTEND_URL")
     _validate_optional_http_url("PUBLIC_APP_URL")
     _validate_optional_http_url("POSTIZ_API_BASE_URL")
+    _validate_optional_http_url("SOCIAL_OAUTH_CALLBACK_URL")
+    _validate_optional_http_url("SOCIAL_OAUTH_RETURN_URL")
+    _validate_optional_positive_int("SOCIAL_OAUTH_STATE_TTL_SECONDS")
     _validate_optional_url_list("CORS_ORIGINS")
 
 
@@ -56,6 +66,15 @@ def _validate_optional_bool(name: str) -> None:
         return
     if raw.lower() not in {"0", "1", "true", "false", "yes", "no", "on", "off"}:
         raise RuntimeError(f"{name} boolean bir deger olmali")
+
+
+def _validate_optional_choice(name: str, choices: set[str]) -> None:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return
+    if raw not in choices:
+        allowed = ", ".join(sorted(choices))
+        raise RuntimeError(f"{name} su degerlerden biri olmali: {allowed}")
 
 
 def _validate_optional_url_list(name: str) -> None:

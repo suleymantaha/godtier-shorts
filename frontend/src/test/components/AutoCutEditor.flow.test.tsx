@@ -116,7 +116,7 @@ describe('AutoCutEditor page flow', () => {
         { clipName: 'clip-1.mp4', projectId: 'proj-1', uiTitle: 'Hook 1' },
         { clipName: 'clip-2.mp4', projectId: 'proj-1', uiTitle: 'Hook 2' },
       ],
-      resultVideoSrc: '/api/projects/proj-1/shorts/clip-1.mp4',
+      resultVideoSrc: 'https://cdn.example.com/clip-1.mp4',
     });
 
     render(<AutoCutEditor onOpenLibrary={controllerState.value?.handleOpenLibrary as () => void} />);

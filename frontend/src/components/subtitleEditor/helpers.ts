@@ -1,6 +1,8 @@
-import { ANIMATION_SELECT_OPTIONS, STYLE_OPTIONS } from '../../config/subtitleStyles';
+import { getAnimationSelectOptions, getStyleLabel, STYLE_OPTIONS } from '../../config/subtitleStyles';
+import { tSafe } from '../../i18n';
 import { API_BASE } from '../../config';
 import type { Clip, ClipTranscriptCapabilities, ProjectSummary, Segment } from '../../types';
+import { syncSegmentTextAndWords } from '../../utils/transcript';
 import { getClipUrl } from '../../utils/url';
 
 export type SubtitleEditorMode = 'project' | 'clip';
@@ -22,10 +24,13 @@ export const EMPTY_CLIP_TRANSCRIPT_CAPABILITIES: ClipTranscriptCapabilities = {
   resolved_project_id: null,
 };
 
-export const SUBTITLE_STYLE_OPTIONS = STYLE_OPTIONS
-  .map((style) => ({ label: style, value: style }));
+export function getSubtitleStyleOptions() {
+  return STYLE_OPTIONS.map((style) => ({ label: getStyleLabel(style), value: style }));
+}
 
-export const SUBTITLE_ANIMATION_OPTIONS = ANIMATION_SELECT_OPTIONS;
+export function getSubtitleAnimationOptions() {
+  return getAnimationSelectOptions();
+}
 
 export function filterSubtitleProjects(projects: SubtitleProject[]): SubtitleProject[] {
   return projects.filter((project) => project.has_master);
@@ -37,6 +42,23 @@ export function hasSubtitleSelection(
   selectedClip: Clip | null,
 ): boolean {
   return (mode === 'project' && Boolean(selectedProjectId)) || (mode === 'clip' && Boolean(selectedClip));
+}
+
+export function resolveSubtitleSelectionKey(
+  mode: SubtitleEditorMode,
+  selectedProjectId: string | null,
+  selectedClip: Clip | null,
+): string | null {
+  if (mode === 'project' && selectedProjectId) {
+    return `project:${selectedProjectId}`;
+  }
+
+  if (mode === 'clip' && selectedClip) {
+    const projectId = selectedClip.resolved_project_id ?? selectedClip.project ?? 'legacy';
+    return `clip:${projectId}:${selectedClip.name}`;
+  }
+
+  return null;
 }
 
 export function resolveSubtitleVideoSrc({
@@ -55,7 +77,10 @@ export function resolveSubtitleVideoSrc({
   }
 
   if (mode === 'clip' && selectedClip) {
-    return getClipUrl(selectedClip, { cacheBust: cacheBust || undefined });
+    const clipCacheKey = cacheBust > 0
+      ? `${selectedClip.created_at}:${cacheBust}`
+      : selectedClip.created_at;
+    return getClipUrl(selectedClip, { cacheBust: clipCacheKey });
   }
 
   return undefined;
@@ -63,7 +88,7 @@ export function resolveSubtitleVideoSrc({
 
 export function replaceTranscriptText(transcript: Segment[], index: number, text: string): Segment[] {
   return transcript.map((segment, segmentIndex) => (
-    segmentIndex === index ? { ...segment, text } : segment
+    segmentIndex === index ? syncSegmentTextAndWords(segment, text) : segment
   ));
 }
 
@@ -90,7 +115,9 @@ export function resolveLoadedEndTime(duration: number, previousEndTime: number):
 }
 
 export function resolveCompletionSuccessMessage(mode: SubtitleEditorMode): string {
-  return mode === 'clip' ? 'Video render edildi. Altyazılar güncellendi.' : 'Klip üretildi.';
+  return mode === 'clip'
+    ? tSafe('subtitleEditor.transcript.transcriptSaved', { defaultValue: 'Transcript saved.' })
+    : tSafe('subtitleEditor.transcript.clipRendered', { defaultValue: 'Clip rendered.' });
 }
 
 export function resolveClipSelectValue(clip: Clip | null): string {
@@ -104,4 +131,53 @@ export function selectClipByValue(clips: Clip[], value: string): Clip | null {
 
   const [project, name] = value.split(':');
   return clips.find((clip) => (clip.project ?? 'legacy') === project && clip.name === name) ?? null;
+}
+
+function mergeLockedClipContext(matchingClip: Clip, targetClip: Clip): Clip {
+  return {
+    ...matchingClip,
+    has_transcript: matchingClip.has_transcript || targetClip.has_transcript,
+    project: matchingClip.project ?? targetClip.project,
+    resolved_project_id: matchingClip.resolved_project_id ?? targetClip.resolved_project_id ?? null,
+    transcript_status: matchingClip.transcript_status ?? targetClip.transcript_status,
+    ui_title: matchingClip.ui_title ?? targetClip.ui_title,
+  };
+}
+
+function hasSameLockedClipContext(left: Clip, right: Clip): boolean {
+  return left.name === right.name
+    && left.url === right.url
+    && left.has_transcript === right.has_transcript
+    && (left.project ?? null) === (right.project ?? null)
+    && (left.resolved_project_id ?? null) === (right.resolved_project_id ?? null)
+    && (left.transcript_status ?? null) === (right.transcript_status ?? null)
+    && (left.ui_title ?? null) === (right.ui_title ?? null);
+}
+
+export function reconcileLockedClip(clips: Clip[], targetClip: Clip | null): Clip | null {
+  if (!targetClip) {
+    return null;
+  }
+
+  const targetProjectId = targetClip.resolved_project_id ?? targetClip.project ?? null;
+  const matchingByIdentity = clips.find((clip) => {
+    if (clip.name !== targetClip.name) {
+      return false;
+    }
+
+    const clipProjectId = clip.resolved_project_id ?? clip.project ?? null;
+    return clipProjectId === targetProjectId;
+  });
+  if (matchingByIdentity) {
+    const mergedClip = mergeLockedClipContext(matchingByIdentity, targetClip);
+    return hasSameLockedClipContext(mergedClip, targetClip) ? targetClip : mergedClip;
+  }
+
+  const clipsWithSameName = clips.filter((clip) => clip.name === targetClip.name);
+  if (clipsWithSameName.length === 1) {
+    const mergedClip = mergeLockedClipContext(clipsWithSameName[0], targetClip);
+    return hasSameLockedClipContext(mergedClip, targetClip) ? targetClip : mergedClip;
+  }
+
+  return targetClip;
 }

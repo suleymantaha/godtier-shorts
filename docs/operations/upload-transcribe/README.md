@@ -45,4 +45,4 @@ Transkripsiyon sırasında ilerleme mesajları WebSocket ile broadcast edilir:
 ## İlgili
 
 - [clips.py](../../backend/api/routes/clips.py) – `prepare_uploaded_project`, `ensure_project_transcript`
-- [Transcription](../logic/transcription/README.md)
+- [Transcription](../../logic/transcription/README.md)

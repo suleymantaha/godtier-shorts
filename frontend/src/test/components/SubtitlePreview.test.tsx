@@ -3,11 +3,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { SubtitlePreview } from '../../components/SubtitlePreview';
 
-describe('SubtitlePreview', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
+afterEach(() => {
+  vi.useRealTimers();
+});
 
+describe('SubtitlePreview base rendering', () => {
   it('renders preview words with correct colors for HORMOZI', () => {
     render(<SubtitlePreview styleName="HORMOZI" disabled={false} />);
 
@@ -71,9 +71,11 @@ describe('SubtitlePreview', () => {
 
   it('shows style label when not disabled', () => {
     render(<SubtitlePreview styleName="HIGHCARE" disabled={false} />);
-    expect(screen.getByText('Yüksek Kontrast')).toBeInTheDocument();
+    expect(screen.getByText('High Contrast')).toBeInTheDocument();
   });
+});
 
+describe('SubtitlePreview layout and shell variants', () => {
   it('applies text-shadow for outline styles', () => {
     render(<SubtitlePreview styleName="HORMOZI" disabled={false} />);
 
@@ -140,7 +142,9 @@ describe('SubtitlePreview', () => {
     expect(stage.className).toContain('lg:h-full');
     expect(screen.queryByText('primary')).not.toBeInTheDocument();
   });
+});
 
+describe('SubtitlePreview motion and band styling', () => {
   it('keeps the preview subtitle band content-sized inside the phone shell', () => {
     render(<SubtitlePreview styleName="TIKTOK" disabled={false} variant="device" size="tall" showLegend={false} />);
 
@@ -178,7 +182,9 @@ describe('SubtitlePreview', () => {
     expect(band).toHaveAttribute('data-preview-band-mode', 'terminal_plate');
     expect(screen.getByText('Bu').parentElement?.parentElement?.className).toContain('border-emerald-400/20');
   });
+});
 
+describe('SubtitlePreview motion animations', () => {
   it('applies motion-specific band animations so preview effects are distinguishable', () => {
     const { rerender } = render(
       <SubtitlePreview
@@ -246,7 +252,9 @@ describe('SubtitlePreview', () => {
 
     expect(screen.getByTestId('subtitle-preview-word-1').style.display).not.toBe('none');
   });
+});
 
+describe('SubtitlePreview media and timer behavior', () => {
   it('renders a decorative media layer when videoSrc is provided', () => {
     render(<SubtitlePreview styleName="TIKTOK" disabled={false} videoSrc="blob:auto-cut" />);
 

@@ -7,9 +7,10 @@ import os
 import hmac
 import hashlib
 import base64
+import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from loguru import logger
 
@@ -24,12 +25,17 @@ from .constants import (
     SUPPORTED_SOCIAL_PLATFORMS,
 )
 from .content import build_platform_prefill, resolve_clip_metadata_paths, resolve_viral_metadata
-from .crypto import SocialCrypto, get_social_encryption_secret
+from .crypto import (
+    SocialCrypto,
+    get_social_encryption_secret,
+    is_env_postiz_api_key_fallback_enabled,
+)
 from .postiz import PostizApiError, PostizClient
 from .store import SocialStore, get_social_store, parse_iso
 
 
 RETRY_BACKOFF_MINUTES = [1, 2, 4, 8, 16]
+SUPPORTED_SOCIAL_OAUTH_INTEGRATIONS: set[str] = {"youtube"}
 
 
 def _safe_read_json(path: Path) -> dict[str, Any]:
@@ -117,7 +123,71 @@ def normalize_postiz_accounts(accounts: list[dict[str, Any]]) -> list[dict[str, 
     return normalized
 
 
+def resolve_postiz_accounts_for_subject(
+    subject: str,
+    *,
+    store: SocialStore | None = None,
+    resolve_client_for_subject: Any | None = None,
+) -> list[dict[str, Any]]:
+    db = store or get_social_store()
+    client_resolver = resolve_client_for_subject or get_postiz_client_for_subject
+    client, _credential = client_resolver(subject, store=db)
+    raw_accounts = client.list_integrations()
+    return normalize_postiz_accounts(raw_accounts)
+
+
+def validate_publish_targets_for_subject(
+    *,
+    subject: str,
+    targets: list[dict[str, Any]],
+    store: SocialStore | None = None,
+    resolve_client_for_subject: Any | None = None,
+) -> list[dict[str, Any]]:
+    accounts = resolve_postiz_accounts_for_subject(
+        subject,
+        store=store,
+        resolve_client_for_subject=resolve_client_for_subject,
+    )
+    accounts_by_id = {str(account["id"]): account for account in accounts}
+
+    validated_targets: list[dict[str, Any]] = []
+    for target in targets:
+        account_id = str(target.get("account_id") or "").strip()
+        platform = str(target.get("platform") or "").strip()
+        provider = str(target.get("provider") or "").strip() or None
+        if not account_id or not platform:
+            raise ValueError("Hedef hesap bilgisi eksik")
+
+        account = accounts_by_id.get(account_id)
+        if account is None:
+            raise ValueError(f"Hedef hesap bu kullanıcıya bağlı değil: {account_id}")
+
+        account_platform = str(account.get("platform") or "").strip()
+        if account_platform != platform:
+            raise ValueError(
+                f"Hedef hesap platformu uyuşmuyor: hesap={account_platform} istek={platform}"
+            )
+
+        account_provider = str(account.get("provider") or "").strip() or None
+        if provider is not None and account_provider is not None and account_provider != provider:
+            raise ValueError(
+                f"Hedef hesap provider bilgisi uyuşmuyor: hesap={account_provider} istek={provider}"
+            )
+
+        validated_targets.append(
+            {
+                "account_id": account_id,
+                "platform": account_platform,
+                "provider": account_provider,
+            }
+        )
+
+    return validated_targets
+
+
 def get_postiz_api_key_from_env() -> str | None:
+    if not is_env_postiz_api_key_fallback_enabled():
+        return None
     value = os.getenv("POSTIZ_API_KEY", "").strip()
     return value or None
 
@@ -194,6 +264,115 @@ def _build_social_export_signature(payload_segment: str) -> str:
     secret = get_social_encryption_secret().encode("utf-8")
     digest = hmac.new(secret, payload_segment.encode("utf-8"), hashlib.sha256).digest()
     return _urlsafe_b64encode(digest)
+
+
+def _sign_social_payload(payload: dict[str, Any]) -> str:
+    payload_segment = _urlsafe_b64encode(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    )
+    signature = _build_social_export_signature(payload_segment)
+    return f"{payload_segment}.{signature}"
+
+
+def _resolve_signed_social_payload(token: str, *, expected_kind: str) -> dict[str, Any]:
+    try:
+        payload_segment, signature = token.split(".", 1)
+    except ValueError as exc:
+        raise ValueError("Geçersiz signed token formatı") from exc
+
+    expected_signature = _build_social_export_signature(payload_segment)
+    if not hmac.compare_digest(signature, expected_signature):
+        raise ValueError("Geçersiz signed token imzası")
+
+    try:
+        payload = json.loads(_urlsafe_b64decode(payload_segment).decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise ValueError("Geçersiz signed token içeriği") from exc
+
+    if not isinstance(payload, dict):
+        raise ValueError("Geçersiz signed token içeriği")
+
+    kind = str(payload.get("kind") or "").strip()
+    if kind != expected_kind:
+        raise ValueError("Geçersiz signed token tipi")
+
+    exp = int(payload.get("exp") or 0)
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+    if exp <= now_ts:
+        raise ValueError("Signed token süresi doldu")
+
+    return payload
+
+
+def _get_social_oauth_state_ttl_seconds() -> int:
+    raw = os.getenv("SOCIAL_OAUTH_STATE_TTL_SECONDS", "").strip()
+    if not raw:
+        return 600
+    try:
+        value = int(raw)
+    except ValueError:
+        return 600
+    return value if value > 0 else 600
+
+
+def normalize_social_oauth_integration(value: str) -> Literal["youtube"]:
+    integration = str(value or "").strip().lower()
+    if integration not in SUPPORTED_SOCIAL_OAUTH_INTEGRATIONS:
+        raise ValueError("Desteklenmeyen social oauth integration")
+    return "youtube"
+
+
+def build_signed_social_oauth_subject_token(
+    *,
+    subject: str,
+    integration: str,
+    ttl_seconds: int | None = None,
+) -> str:
+    normalized_integration = normalize_social_oauth_integration(integration)
+    expires_in = _get_social_oauth_state_ttl_seconds() if ttl_seconds is None else ttl_seconds
+    payload = {
+        "kind": "social_oauth_subject",
+        "sub": str(subject),
+        "integration": normalized_integration,
+        "exp": int(datetime.now(timezone.utc).timestamp()) + expires_in,
+    }
+    return _sign_social_payload(payload)
+
+
+def resolve_signed_social_oauth_subject_token(token: str) -> dict[str, str]:
+    payload = _resolve_signed_social_payload(token, expected_kind="social_oauth_subject")
+    subject = str(payload.get("sub") or "").strip()
+    integration = normalize_social_oauth_integration(str(payload.get("integration") or ""))
+    if not subject:
+        raise ValueError("Social OAuth subject token alanları eksik")
+    return {"subject": subject, "integration": integration}
+
+
+def build_signed_social_oauth_state(
+    *,
+    subject: str,
+    integration: str,
+    ttl_seconds: int | None = None,
+) -> str:
+    normalized_integration = normalize_social_oauth_integration(integration)
+    expires_in = _get_social_oauth_state_ttl_seconds() if ttl_seconds is None else ttl_seconds
+    payload = {
+        "kind": "social_oauth_state",
+        "sub": str(subject),
+        "integration": normalized_integration,
+        "nonce": secrets.token_urlsafe(12),
+        "exp": int(datetime.now(timezone.utc).timestamp()) + expires_in,
+    }
+    return _sign_social_payload(payload)
+
+
+def resolve_signed_social_oauth_state(token: str) -> dict[str, str]:
+    payload = _resolve_signed_social_payload(token, expected_kind="social_oauth_state")
+    subject = str(payload.get("sub") or "").strip()
+    integration = normalize_social_oauth_integration(str(payload.get("integration") or ""))
+    if not subject:
+        raise ValueError("Social OAuth state alanları eksik")
+    return {"subject": subject, "integration": integration}
 
 
 def build_signed_social_export_token(
@@ -543,12 +722,23 @@ def dry_run_publish_via_postiz(
     content_by_platform: dict[str, dict[str, Any]],
     probe_media_upload: bool = False,
     store: SocialStore | None = None,
+    resolve_client_for_subject: Any | None = None,
 ) -> dict[str, Any]:
     db = store or get_social_store()
-    client, _credential = get_postiz_client_for_subject(subject, store=db)
+    client_resolver = resolve_client_for_subject or get_postiz_client_for_subject
+    client, _credential = client_resolver(subject, store=db)
 
-    raw_accounts = client.list_integrations()
-    accounts = normalize_postiz_accounts(raw_accounts)
+    accounts = resolve_postiz_accounts_for_subject(
+        subject,
+        store=db,
+        resolve_client_for_subject=client_resolver,
+    )
+    validated_targets = validate_publish_targets_for_subject(
+        subject=subject,
+        targets=targets,
+        store=db,
+        resolve_client_for_subject=client_resolver,
+    )
     accounts_by_id = {str(account["id"]): account for account in accounts}
 
     clip_path = get_project_path(project_id, "shorts", clip_name)
@@ -573,22 +763,13 @@ def dry_run_publish_via_postiz(
         }
 
     previews: list[dict[str, Any]] = []
-    for target in targets:
+    for target in validated_targets:
         account_id = str(target.get("account_id") or "").strip()
         platform = str(target.get("platform") or "").strip()
         provider = str(target.get("provider") or "").strip() or None
-        if not account_id or not platform:
-            raise ValueError("Hedef hesap bilgisi eksik")
-
         account = accounts_by_id.get(account_id)
         if account is None:
             raise ValueError(f"Hedef hesap bulunamadı: {account_id}")
-
-        account_platform = str(account.get("platform") or "")
-        if account_platform != platform:
-            raise ValueError(
-                f"Hedef hesap platformu uyuşmuyor: hesap={account_platform} istek={platform}"
-            )
 
         content = content_by_platform.get(platform)
         if not isinstance(content, dict):
@@ -613,7 +794,7 @@ def dry_run_publish_via_postiz(
             {
                 "account_id": account_id,
                 "account_name": str(account.get("name") or account_id),
-                "account_platform": account_platform,
+                "account_platform": platform,
                 "provider": provider or account.get("provider"),
                 "settings_type": settings_type,
                 "settings": settings,

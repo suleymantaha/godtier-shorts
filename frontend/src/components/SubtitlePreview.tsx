@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { EyeOff, MonitorPlay, Smartphone, Subtitles } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import {
   type PreviewScreenTheme,
@@ -26,6 +27,99 @@ interface SubtitlePreviewProps {
   variant?: 'card' | 'device';
 }
 
+function normalizePreviewFontWeight(fontWeight: CSSProperties['fontWeight']): number {
+  if (typeof fontWeight === 'number') {
+    return fontWeight;
+  }
+
+  const parsed = Number.parseInt(String(fontWeight ?? 700), 10);
+  return Number.isFinite(parsed) ? parsed : 700;
+}
+
+function buildPreviewChunk(
+  layout: SubtitleLayout,
+  fontSize: string | number | undefined,
+  fontWeight: CSSProperties['fontWeight'],
+): SubtitleChunk {
+  const words = PREVIEW_WORDS.map((word, index) => ({
+    word,
+    start: index * 0.24,
+    end: (index + 1) * 0.24,
+  }));
+  const plan = planSubtitleChunkForDisplay(words, {
+    layout,
+    fontSizeRem: Number.parseFloat(String(fontSize ?? 2.4)) || 2.4,
+    fontWeight: normalizePreviewFontWeight(fontWeight),
+  });
+  return {
+    text: PREVIEW_WORDS.join(' '),
+    start: 0,
+    end: PREVIEW_WORDS.length * 0.24,
+    words,
+    lineBreakAfter: plan.lineBreakAfter ?? null,
+    fontScale: plan.fontScale,
+    overflowStrategy: plan.overflowStrategy,
+  };
+}
+
+function DevicePreviewMeta({
+  cutAsShort,
+  disabled,
+  preview,
+  showLegend,
+  size,
+}: {
+  cutAsShort: boolean;
+  disabled: boolean;
+  preview: ReturnType<typeof getSubtitlePreviewModel>;
+  showLegend: boolean;
+  size: SubtitlePreviewProps['size'];
+}) {
+  const { t } = useTranslation();
+
+  if (size !== 'default') {
+    return null;
+  }
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] font-mono text-muted-foreground/65">
+        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+          {cutAsShort ? t('subtitlePreview.shell.short') : t('subtitlePreview.shell.landscape')}
+        </span>
+        <span className={disabled ? 'opacity-45' : ''}>{preview.styleLabel}</span>
+        <span className={disabled ? 'opacity-45' : ''}>{preview.motionLabel}</span>
+      </div>
+      {!disabled && showLegend ? <ColorLegend highlightColor={preview.highlightColor} primaryColor={preview.primaryColor} /> : null}
+    </>
+  );
+}
+
+function usePreviewTicker(disabled: boolean, animationDurationMs: number) {
+  const [activeWordIndex, setActiveWordIndex] = useState(0);
+
+  useEffect(() => {
+    const resetId = window.setTimeout(() => {
+      setActiveWordIndex(0);
+    }, 0);
+
+    if (disabled) {
+      return () => window.clearTimeout(resetId);
+    }
+
+    const intervalId = window.setInterval(() => {
+      setActiveWordIndex((current) => (current + 1) % PREVIEW_WORDS.length);
+    }, animationDurationMs);
+
+    return () => {
+      window.clearTimeout(resetId);
+      window.clearInterval(intervalId);
+    };
+  }, [animationDurationMs, disabled]);
+
+  return activeWordIndex;
+}
+
 export function SubtitlePreview({
   animationType = 'default',
   styleName,
@@ -44,47 +138,11 @@ export function SubtitlePreview({
   );
   const preview = getSubtitlePreviewModel(styleName, cutAsShort, animationType);
   const resolvedVideoSrc = useResolvedMediaSource(videoSrc);
-  const [activeWordIndex, setActiveWordIndex] = useState(0);
-  const previewChunk = useMemo<SubtitleChunk>(() => {
-    const words = PREVIEW_WORDS.map((word, index) => ({
-      word,
-      start: index * 0.24,
-      end: (index + 1) * 0.24,
-    }));
-    const plan = planSubtitleChunkForDisplay(words, {
-      layout,
-      fontSizeRem: Number.parseFloat(resolvedStyle.inline.fontSize) || 2.4,
-      fontWeight: resolvedStyle.inline.fontWeight,
-    });
-    return {
-      text: PREVIEW_WORDS.join(' '),
-      start: 0,
-      end: PREVIEW_WORDS.length * 0.24,
-      words,
-      lineBreakAfter: plan.lineBreakAfter ?? null,
-      fontScale: plan.fontScale,
-      overflowStrategy: plan.overflowStrategy,
-    };
-  }, [layout, resolvedStyle.inline.fontSize, resolvedStyle.inline.fontWeight]);
-
-  useEffect(() => {
-    const resetId = window.setTimeout(() => {
-      setActiveWordIndex(0);
-    }, 0);
-
-    if (disabled) {
-      return () => window.clearTimeout(resetId);
-    }
-
-    const intervalId = window.setInterval(() => {
-      setActiveWordIndex((current) => (current + 1) % PREVIEW_WORDS.length);
-    }, preview.motionProfile.animationDurationMs);
-
-    return () => {
-      window.clearTimeout(resetId);
-      window.clearInterval(intervalId);
-    };
-  }, [disabled, preview.motionProfile.animationDurationMs, preview.resolvedStyle]);
+  const activeWordIndex = usePreviewTicker(disabled, preview.motionProfile.animationDurationMs);
+  const previewChunk = useMemo(
+    () => buildPreviewChunk(layout, resolvedStyle.inline.fontSize, resolvedStyle.inline.fontWeight),
+    [layout, resolvedStyle.inline.fontSize, resolvedStyle.inline.fontWeight],
+  );
 
   const previewBody = (
     <PreviewSurface size={size} variant={variant}>
@@ -108,16 +166,13 @@ export function SubtitlePreview({
     return (
       <div className={`flex w-full flex-col items-center justify-center ${isCondensedDevice ? 'h-full gap-3' : 'gap-4'}`}>
         {previewBody}
-        {size === 'default' ? (
-          <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] font-mono text-muted-foreground/65">
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
-              {cutAsShort ? 'Short' : 'Landscape'}
-            </span>
-            <span className={disabled ? 'opacity-45' : ''}>{preview.styleLabel}</span>
-            <span className={disabled ? 'opacity-45' : ''}>{preview.motionLabel}</span>
-          </div>
-        ) : null}
-        {!disabled && showLegend && size === 'default' ? <ColorLegend highlightColor={preview.highlightColor} primaryColor={preview.primaryColor} /> : null}
+        <DevicePreviewMeta
+          cutAsShort={cutAsShort}
+          disabled={disabled}
+          preview={preview}
+          showLegend={showLegend}
+          size={size}
+        />
       </div>
     );
   }
@@ -147,15 +202,16 @@ function PreviewHeader({
   motionLabel: string;
   styleLabel: string;
 }) {
+  const { t } = useTranslation();
   const ShellIcon = cutAsShort ? Smartphone : MonitorPlay;
-  const shellLabel = cutAsShort ? 'Short' : 'Landscape';
+  const shellLabel = cutAsShort ? t('subtitlePreview.shell.short') : t('subtitlePreview.shell.landscape');
 
   return (
     <div className="mb-4 flex items-center justify-between gap-3">
       <div className="flex items-center gap-2">
         <Subtitles className="h-4 w-4 text-accent/70" aria-hidden="true" />
         <h3 className="text-xs font-mono uppercase tracking-[0.2em] text-accent/80">
-          Altyazi Onizleme
+          {t('subtitlePreview.title')}
         </h3>
       </div>
       <div className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground/60">
@@ -449,13 +505,15 @@ function getBandContentStyle(preview: ReturnType<typeof getSubtitlePreviewModel>
 }
 
 function DisabledOverlay() {
+  const { t } = useTranslation();
+
   return (
     <div
       className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-black/55 text-sm font-mono text-muted-foreground/80 backdrop-blur-[2px]"
       data-testid="subtitle-preview-disabled"
     >
       <EyeOff className="h-5 w-5" aria-hidden="true" />
-      <span>Altyazi devre disi</span>
+      <span>{t('subtitlePreview.disabled')}</span>
     </div>
   );
 }
@@ -467,10 +525,12 @@ function ColorLegend({
   highlightColor: string;
   primaryColor: string;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="mt-3 flex items-center justify-center gap-3">
-      <ColorLegendItem color={primaryColor} label="primary" />
-      {primaryColor !== highlightColor ? <ColorLegendItem color={highlightColor} label="highlight" /> : null}
+      <ColorLegendItem color={primaryColor} label={t('subtitlePreview.legend.primary')} />
+      {primaryColor !== highlightColor ? <ColorLegendItem color={highlightColor} label={t('subtitlePreview.legend.highlight')} /> : null}
     </div>
   );
 }

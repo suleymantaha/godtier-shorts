@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  STYLE_LABELS,
   STYLE_OPTIONS,
   SUBTITLE_INLINE_STYLES,
   SUBTITLE_STYLES,
+  getStyleLabel,
   getSubtitleBoxStyle,
   resolveSubtitleStyle,
   type StyleName,
@@ -50,7 +50,7 @@ describe('subtitleStyles', () => {
   });
 
   it('derives labels and safe area metrics from one source of truth', () => {
-    expect(STYLE_LABELS.HIGHCARE).toBe('Yüksek Kontrast');
+    expect(getStyleLabel('HIGHCARE')).toBe('High Contrast');
     expect(resolveSubtitleStyle('unknown').resolvedStyle).toBe('HORMOZI');
     expect(getSubtitleBoxStyle('single').bottom).toBe('14%');
     expect(getSubtitleBoxStyle('single', 'overlay', 'lower_third_safe').bottom).toBe('22%');

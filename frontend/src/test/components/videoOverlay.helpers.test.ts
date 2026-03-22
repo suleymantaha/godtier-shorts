@@ -30,7 +30,7 @@ describe('videoOverlay helpers', () => {
     expect(findCurrentSubtitleState(
       [{ end: 2, start: 1, text: 'Hello there', words: [{ word: 'Hello', start: 1, end: 1.4 }, { word: 'there', start: 1.4, end: 1.8 }] }],
       1.95,
-    )?.activeWordIndex).toBeNull();
+    )?.activeWordIndex).toBeUndefined();
     expect(getNextCropValue(0.5, 'ArrowRight')).toBeGreaterThan(0.5);
     expect(getNextCropValue(0.5, 'Escape')).toBeNull();
   });

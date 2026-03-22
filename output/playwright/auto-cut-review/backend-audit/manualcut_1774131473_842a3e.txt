@@ -1,0 +1,13 @@
+manualcut_1774131473_842a3e
+- route: POST /api/manual-cut-upload
+- source file: cut_2_3837_3840_raw.mp4
+- project: up_a4069ffa93794396e1a7bf578c6a7b8b_2efdba3ca75c
+- timeline from logs:
+  - 01:17:53 upload accepted, new project created
+  - 01:18:08 transcript created
+  - 01:18:08 manual render started (0.0 - 2.5s)
+  - 01:18:25 subtitle burn started
+  - 01:18:26 clip_ready cache invalidation emitted
+  - 01:18:26 job_success cache invalidation emitted
+- output file: shorts/manual_manualcut_1774131473_842a3e.mp4
+- metadata summary: transcript_len=1, render_mode=manual_auto, crop_mode=auto, layout=auto, resolved_layout=split, style_name=TIKTOK, render_quality_score=81

@@ -133,7 +133,7 @@ describe('autoCutEditor marker helpers', () => {
     });
 
     expect(result.markers).toEqual([8]);
-    expect(result.feedback).toMatch(/Once videoyu oynatip/i);
+    expect(result.feedback).toMatch(/Play the video/i);
   });
 
   it('adds a new marker in sorted order when valid', () => {
@@ -145,7 +145,7 @@ describe('autoCutEditor marker helpers', () => {
     });
 
     expect(result.markers).toEqual([8, 14, 20]);
-    expect(result.feedback).toBe('Kesim noktasi eklendi.');
+    expect(result.feedback).toBe('Cut point added.');
   });
 
 });

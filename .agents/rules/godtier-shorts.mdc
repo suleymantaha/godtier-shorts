@@ -1,10 +1,18 @@
+---
+alwaysApply: true
+---
+
 # GodTier Shorts Project Rule
 
-Use `.cursor/skills/godtier-shorts/SKILL.md` as the repo-specific playbook for this project.
+Use `.agents/SKILL.md` as the repo-specific playbook for this project.
 
 ## Default Behavior
 
-- Before changing workflows, subtitle styles, auth, WebSocket progress, social publishing, or runtime config, read the matching file under `.cursor/skills/godtier-shorts/references/`.
+- Read `PROJECT_MEMORY.md` before starting work so ongoing progress, blockers, and next steps are not lost between AI sessions.
+- Before changing workflows, subtitle styles, auth, WebSocket progress, social publishing, or runtime config, read the matching file under `.agents/references/`.
+- Follow `.agents/rules/godtier-shorts-testing.mdc` as the mandatory test policy for every non-trivial change.
+- Follow `.agents/rules/godtier-shorts-docs.mdc` as the mandatory documentation policy when behavior or usage changes.
+- Follow `.agents/rules/godtier-shorts-exit-protocol.mdc` before ending any meaningful work session.
 - Prefer these canonical entry points:
   - `backend/api/server.py`
   - `backend/core/orchestrator.py`
@@ -25,6 +33,11 @@ Use `.cursor/skills/godtier-shorts/SKILL.md` as the repo-specific playbook for t
 - Use `scripts/benchmark_render_stability.py` when debugging determinism, throughput, or render reproducibility.
 - Do not reintroduce legacy subtitle renderer imports or collapse workflow modules back into monoliths.
 - Keep compatibility aliases in workflow modules if tests or stable callers monkeypatch module-level symbols directly.
+- Treat `.cursor/*` and `.agents/skills/godtier-shorts/*` as compatibility mirrors that should follow `.agents/*`, not diverge from it.
+- Update `PROJECT_MEMORY.md` after meaningful progress and before ending a work session.
+- Record the exact verification commands and outcomes in `PROJECT_MEMORY.md`.
+- Record related documentation updates, or why no docs changed, in `PROJECT_MEMORY.md`.
+- Use `docs/operations/ai-session-exit-protocol.md` as the human-readable checklist for this closeout flow.
 
 ---
 

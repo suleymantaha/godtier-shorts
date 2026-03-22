@@ -6,6 +6,7 @@ import threading
 from typing import Any, Callable, Optional, Protocol
 
 from backend.config import ProjectPaths
+from backend.core.clip_events import ClipEventPort
 from backend.core.command_runner import CommandRunner
 from backend.services.subtitle_renderer import SubtitleRenderer
 from backend.services.video_processor import VideoProcessor
@@ -18,6 +19,7 @@ class OrchestratorContext(Protocol):
     subject: Optional[str]
     video_processor: VideoProcessor
     command_runner: CommandRunner
+    clip_event_port: ClipEventPort
 
     def _check_cancelled(self) -> None:
         ...
@@ -25,7 +27,7 @@ class OrchestratorContext(Protocol):
     def _validate_youtube_url(self, url: str) -> None:
         ...
 
-    def _update_status(self, message: str, progress: int) -> None:
+    def _update_status(self, message: str, progress: int, extra: Optional[dict[str, Any]] = None) -> None:
         ...
 
     async def _run_command_with_cancel_async(
@@ -85,6 +87,16 @@ class OrchestratorContext(Protocol):
         ...
 
     def _load_project_transcript(self) -> list[dict]:
+        ...
+
+    def acquire_gpu_stage(
+        self,
+        *,
+        wait_message: str | None = None,
+        active_message: str | None = None,
+        wait_progress: int | None = None,
+        active_progress: int | None = None,
+    ) -> Any:
         ...
 
     @property

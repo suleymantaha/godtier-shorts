@@ -88,9 +88,9 @@ describe('editor helpers', () => {
   });
 
   it('validates time ranges and resolves editor video sources', () => {
-    expect(getTimeRangeError(10, 5)).toBe('Bitiş zamanı başlangıçtan büyük olmalı.');
+    expect(getTimeRangeError(10, 5)).toBe('End time must be greater than start time.');
     expect(resolveEditorVideoSrc('blob:preview', 'master', undefined, undefined)).toBe('blob:preview');
-    expect(resolveEditorVideoSrc(null, 'clip', clip, undefined)).toContain('clip_1.mp4');
+    expect(resolveEditorVideoSrc(null, 'clip', clip, undefined)).toContain(`clip_1.mp4?t=${clip.created_at}`);
     expect(resolveEditorVideoSrc(null, 'master', undefined, 'proj_1')).toContain('/api/projects/proj_1/master');
   });
 });

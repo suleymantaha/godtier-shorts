@@ -1,0 +1,264 @@
+section     , path                                                                 , lines
+backend     , backend/__init__.py                                                  ,     1
+backend     , backend/api/__init__.py                                              ,     1
+backend     , backend/api/clip_events.py                                           ,    64
+backend     , backend/api/error_handlers.py                                        ,   112
+backend     , backend/api/routes/__init__.py                                       ,     1
+backend     , backend/api/routes/account.py                                        ,    32
+backend     , backend/api/routes/auth.py                                           ,   132
+backend     , backend/api/routes/clips.py                                          ,  1336
+backend     , backend/api/routes/editor.py                                         ,   949
+backend     , backend/api/routes/jobs.py                                           ,   492
+backend     , backend/api/routes/social.py                                         ,   630
+backend     , backend/api/schemas.py                                               ,    12
+backend     , backend/api/security.py                                              ,   431
+backend     , backend/api/server.py                                                ,   164
+backend     , backend/api/upload_validation.py                                     ,    71
+backend     , backend/api/websocket.py                                             ,   471
+backend     , backend/config.py                                                    ,   201
+backend     , backend/core/__init__.py                                             ,    20
+backend     , backend/core/clip_events.py                                          ,    53
+backend     , backend/core/command_runner.py                                       ,   117
+backend     , backend/core/exception_handlers.py                                   ,    81
+backend     , backend/core/exceptions.py                                           ,   102
+backend     , backend/core/log_sanitizer.py                                        ,    39
+backend     , backend/core/media_ops.py                                            ,   489
+backend     , backend/core/orchestrator.py                                         ,   378
+backend     , backend/core/render_benchmark.py                                     ,   336
+backend     , backend/core/render_contracts.py                                     ,    57
+backend     , backend/core/render_quality.py                                       ,   259
+backend     , backend/core/subtitle_timing.py                                      ,   403
+backend     , backend/core/workflow_context.py                                     ,   104
+backend     , backend/core/workflow_helpers.py                                     ,  1370
+backend     , backend/core/workflow_runtime.py                                     ,   299
+backend     , backend/core/workflows.py                                            ,    20
+backend     , backend/core/workflows_batch.py                                      ,   110
+backend     , backend/core/workflows_manual.py                                     ,   224
+backend     , backend/core/workflows_pipeline.py                                   ,   178
+backend     , backend/core/workflows_reburn.py                                     ,   144
+backend     , backend/main.py                                                      ,    42
+backend     , backend/models/__init__.py                                           ,    19
+backend     , backend/models/schemas.py                                            ,   221
+backend     , backend/runtime_validation.py                                        ,   103
+backend     , backend/services/__init__.py                                         ,     1
+backend     , backend/services/account_purge.py                                    ,    43
+backend     , backend/services/job_state.py                                        ,   213
+backend     , backend/services/ownership.py                                        ,   483
+backend     , backend/services/social/__init__.py                                  ,    36
+backend     , backend/services/social/constants.py                                 ,    69
+backend     , backend/services/social/content.py                                   ,   170
+backend     , backend/services/social/crypto.py                                    ,    92
+backend     , backend/services/social/postiz.py                                    ,   385
+backend     , backend/services/social/scheduler.py                                 ,    73
+backend     , backend/services/social/service.py                                   ,   868
+backend     , backend/services/social/store.py                                     ,   499
+backend     , backend/services/subtitle_renderer.py                                ,   855
+backend     , backend/services/subtitle_styles.py                                  ,   714
+backend     , backend/services/transcription.py                                    ,   235
+backend     , backend/services/video_processor.py                                  ,  1857
+backend     , backend/services/viral_analyzer.py                                   ,   348
+backend     , backend/services/viral_analyzer_core.py                              ,   340
+backend     , backend/services/viral_llm_adapters.py                               ,    58
+backend     , backend/system_validation.py                                         ,   178
+backend     , backend/tests/__init__.py                                            ,     0
+backend     , backend/tests/compat_testclient.py                                   ,   200
+backend     , backend/tests/conftest.py                                            ,    56
+backend     , backend/tests/integration/test_api_auth_and_errors.py                ,    40
+backend     , backend/tests/integration/test_api_upload_limits.py                  ,    34
+backend     , backend/tests/smoke/test_smoke_job_request.py                        ,     9
+backend     , backend/tests/test_account_deletion_api.py                           ,   105
+backend     , backend/tests/test_api_security.py                                   ,   237
+backend     , backend/tests/test_auth_ownership_recovery.py                        ,   147
+backend     , backend/tests/test_clip_delete_routes.py                             ,   161
+backend     , backend/tests/test_clip_ready_routing.py                             ,    59
+backend     , backend/tests/test_clip_transcript_recovery.py                       ,   293
+backend     , backend/tests/test_clip_transcript_routes.py                         ,   265
+backend     , backend/tests/test_clips_cache.py                                    ,   315
+backend     , backend/tests/test_command_runner.py                                 ,    94
+backend     , backend/tests/test_dependency_manifest.py                            ,    31
+backend     , backend/tests/test_editor_batch_visibility.py                        ,    96
+backend     , backend/tests/test_job_fairness.py                                   ,   104
+backend     , backend/tests/test_job_ownership.py                                  ,   120
+backend     , backend/tests/test_job_request.py                                    ,   159
+backend     , backend/tests/test_job_state_repository.py                           ,    77
+backend     , backend/tests/test_jobs_api_serialization.py                         ,   223
+backend     , backend/tests/test_jobs_cache_invalidation.py                        ,    60
+backend     , backend/tests/test_legacy_quarantine_migration.py                    ,    95
+backend     , backend/tests/test_log_sanitizer.py                                  ,    29
+backend     , backend/tests/test_manual_crop.py                                    ,    43
+backend     , backend/tests/test_media_ops.py                                      ,   307
+backend     , backend/tests/test_orchestrator_facade_dispatch.py                   ,   249
+backend     , backend/tests/test_orchestrator_refactor_guardrails.py               ,    46
+backend     , backend/tests/test_orchestrator_shift.py                             ,    87
+backend     , backend/tests/test_pipeline_cache.py                                 ,   157
+backend     , backend/tests/test_project_layout.py                                 ,    35
+backend     , backend/tests/test_project_ownership.py                              ,   113
+backend     , backend/tests/test_raw_video_saved.py                                ,    59
+backend     , backend/tests/test_render_benchmark.py                               ,    93
+backend     , backend/tests/test_render_contracts.py                               ,    26
+backend     , backend/tests/test_render_quality.py                                 ,    55
+backend     , backend/tests/test_route_imports_smoke.py                            ,    32
+backend     , backend/tests/test_route_ownership_isolation.py                      ,   151
+backend     , backend/tests/test_runtime_validation.py                             ,   159
+backend     , backend/tests/test_social_content.py                                 ,    72
+backend     , backend/tests/test_social_crypto.py                                  ,   131
+backend     , backend/tests/test_social_postiz.py                                  ,    82
+backend     , backend/tests/test_social_routes.py                                  ,   959
+backend     , backend/tests/test_static_project_owner_migration.py                 ,    51
+backend     , backend/tests/test_subject_purge.py                                  ,   158
+backend     , backend/tests/test_subtitle_parity_contract.py                       ,    35
+backend     , backend/tests/test_subtitle_renderer.py                              ,   348
+backend     , backend/tests/test_subtitle_styles.py                                ,   216
+backend     , backend/tests/test_subtitle_timing.py                                ,   131
+backend     , backend/tests/test_support_grants.py                                 ,   130
+backend     , backend/tests/test_system_validation.py                              ,   121
+backend     , backend/tests/test_toolchain_contract.py                             ,    42
+backend     , backend/tests/test_video_processor_crop_bounds.py                    ,    25
+backend     , backend/tests/test_video_processor_layout.py                         ,   292
+backend     , backend/tests/test_viral_analyzer_params.py                          ,   204
+backend     , backend/tests/test_viral_analyzer_refactor_guardrails.py             ,    43
+backend     , backend/tests/test_websocket_auth.py                                 ,   100
+backend     , backend/tests/test_websocket_subject_isolation.py                    ,    53
+backend     , backend/tests/test_workflow_helpers.py                               ,    87
+backend     , backend/tests/test_workflow_runtime.py                               ,   196
+backend     , backend/tests/test_workflows_batch.py                                ,    59
+backend     , backend/tests/test_workflows_pipeline.py                             ,    79
+backend     , backend/tests/test_workflows_refactor_guardrails.py                  ,    40
+backend     , backend/tests/test_workspace_reset.py                                ,    62
+backend     , backend/tests/unit/test_job_lifecycle.py                             ,    68
+backend     , backend/tests/unit/test_upload_prepare_project.py                    ,    91
+backend     , backend/tests/unit/test_upload_validation.py                         ,    45
+frontend-src, frontend/src/App.css                                                 ,    42
+frontend-src, frontend/src/App.tsx                                                 ,    61
+frontend-src, frontend/src/api/client.helpers.ts                                   ,    87
+frontend-src, frontend/src/api/client.ts                                           ,   820
+frontend-src, frontend/src/api/errors.ts                                           ,    55
+frontend-src, frontend/src/app/helpers.ts                                          ,   123
+frontend-src, frontend/src/app/lazyComponents.ts                                   ,    12
+frontend-src, frontend/src/app/sections.tsx                                        ,   490
+frontend-src, frontend/src/app/useAppShellController.ts                            ,   101
+frontend-src, frontend/src/assets/react.svg                                        ,     1
+frontend-src, frontend/src/auth/accountCleanup.ts                                  ,    21
+frontend-src, frontend/src/auth/isolation.ts                                       ,    97
+frontend-src, frontend/src/auth/runtime.ts                                         ,    89
+frontend-src, frontend/src/auth/session.ts                                         ,   137
+frontend-src, frontend/src/auth/useResilientAuth.helpers.ts                        ,   334
+frontend-src, frontend/src/auth/useResilientAuth.ts                                ,   258
+frontend-src, frontend/src/components/AccountDeletionCard.tsx                      ,   100
+frontend-src, frontend/src/components/AutoCutEditor.tsx                            ,    14
+frontend-src, frontend/src/components/ClipGallery.tsx                              ,   100
+frontend-src, frontend/src/components/Editor.tsx                                   ,     8
+frontend-src, frontend/src/components/HoloTerminal.tsx                             ,   559
+frontend-src, frontend/src/components/JobForm.tsx                                  ,    73
+frontend-src, frontend/src/components/JobQueue.tsx                                 ,   208
+frontend-src, frontend/src/components/RangeSlider.tsx                              ,    77
+frontend-src, frontend/src/components/ShareComposerModal.tsx                       ,    19
+frontend-src, frontend/src/components/SubtitleEditor.tsx                           ,    14
+frontend-src, frontend/src/components/SubtitlePreview.tsx                          ,   558
+frontend-src, frontend/src/components/ThreeCanvas.tsx                              ,    85
+frontend-src, frontend/src/components/TimeRangeHeader.tsx                          ,    32
+frontend-src, frontend/src/components/VideoOverlay.tsx                             ,   325
+frontend-src, frontend/src/components/autoCutEditor/helpers.ts                     ,   170
+frontend-src, frontend/src/components/autoCutEditor/sections.tsx                   ,   682
+frontend-src, frontend/src/components/autoCutEditor/useAutoCutEditorActions.ts     ,   352
+frontend-src, frontend/src/components/autoCutEditor/useAutoCutEditorController.ts  ,   185
+frontend-src, frontend/src/components/autoCutEditor/useAutoCutEditorLifecycle.ts   ,    91
+frontend-src, frontend/src/components/autoCutEditor/useAutoCutEditorState.ts       ,   109
+frontend-src, frontend/src/components/clipGallery/sections.tsx                     ,   717
+frontend-src, frontend/src/components/clipGallery/useClipGalleryController.ts      ,   698
+frontend-src, frontend/src/components/editor/helpers.ts                            ,   193
+frontend-src, frontend/src/components/editor/sections.tsx                          ,   464
+frontend-src, frontend/src/components/editor/useEditorController.ts                ,   777
+frontend-src, frontend/src/components/jobForm/helpers.ts                           ,   144
+frontend-src, frontend/src/components/jobForm/sections.tsx                         ,   628
+frontend-src, frontend/src/components/jobForm/useJobFormController.ts              ,   595
+frontend-src, frontend/src/components/shareComposer/helpers.ts                     ,   208
+frontend-src, frontend/src/components/shareComposer/sections.tsx                   ,   566
+frontend-src, frontend/src/components/shareComposer/useShareComposerController.ts  ,   621
+frontend-src, frontend/src/components/subtitleEditor/helpers.ts                    ,   177
+frontend-src, frontend/src/components/subtitleEditor/sections.tsx                  ,  1434
+frontend-src, frontend/src/components/subtitleEditor/useSubtitleEditorController.ts,  2248
+frontend-src, frontend/src/components/subtitlePreview/helpers.ts                   ,   328
+frontend-src, frontend/src/components/ui/ConnectionChip.tsx                        ,    71
+frontend-src, frontend/src/components/ui/IconButton.tsx                            ,    52
+frontend-src, frontend/src/components/ui/LazyVideo.tsx                             ,   115
+frontend-src, frontend/src/components/ui/Select.tsx                                ,   230
+frontend-src, frontend/src/components/ui/SystemStatusBanner.tsx                    ,    28
+frontend-src, frontend/src/components/ui/VideoControls.tsx                         ,    26
+frontend-src, frontend/src/components/ui/lazyVideo/helpers.ts                      ,    53
+frontend-src, frontend/src/components/ui/protectedMedia.ts                         ,   112
+frontend-src, frontend/src/components/videoOverlay/helpers.ts                      ,    53
+frontend-src, frontend/src/config/subtitleStyles.ts                                ,   565
+frontend-src, frontend/src/config.ts                                               ,    42
+frontend-src, frontend/src/hooks/useDebouncedEffect.ts                             ,    21
+frontend-src, frontend/src/hooks/useThrottle.ts                                    ,    40
+frontend-src, frontend/src/hooks/useWebSocket.helpers.ts                           ,   190
+frontend-src, frontend/src/hooks/useWebSocket.ts                                   ,   215
+frontend-src, frontend/src/index.css                                               ,   238
+frontend-src, frontend/src/main.tsx                                                ,    19
+frontend-src, frontend/src/store/useJobStore.ts                                    ,   802
+frontend-src, frontend/src/store/useThemeStore.ts                                  ,    23
+frontend-src, frontend/src/test/App.test.tsx                                       ,   319
+frontend-src, frontend/src/test/accountDeletion.test.tsx                           ,    93
+frontend-src, frontend/src/test/api/client.helpers.test.ts                         ,    43
+frontend-src, frontend/src/test/api/client.test.ts                                 ,   384
+frontend-src, frontend/src/test/auth/runtime.test.ts                               ,    61
+frontend-src, frontend/src/test/auth/session.test.ts                               ,    44
+frontend-src, frontend/src/test/auth/useResilientAuth.helpers.test.ts              ,   112
+frontend-src, frontend/src/test/components/AutoCutEditor.flow.test.tsx             ,   131
+frontend-src, frontend/src/test/components/ClipGallery.test.tsx                    ,   597
+frontend-src, frontend/src/test/components/HoloTerminal.test.tsx                   ,   191
+frontend-src, frontend/src/test/components/JobForm.accessibility.test.tsx          ,    64
+frontend-src, frontend/src/test/components/JobForm.preferences.test.tsx            ,    37
+frontend-src, frontend/src/test/components/JobForm.submission.test.tsx             ,   190
+frontend-src, frontend/src/test/components/JobQueue.test.tsx                       ,    87
+frontend-src, frontend/src/test/components/RangeSlider.test.tsx                    ,    51
+frontend-src, frontend/src/test/components/ShareComposerModal.connection.test.tsx  ,   162
+frontend-src, frontend/src/test/components/ShareComposerModal.drafts.test.tsx      ,    55
+frontend-src, frontend/src/test/components/ShareComposerModal.publish.test.tsx     ,    41
+frontend-src, frontend/src/test/components/SubtitleEditor.auth.test.tsx            ,    71
+frontend-src, frontend/src/test/components/SubtitleEditor.clip.test.tsx            ,   745
+frontend-src, frontend/src/test/components/SubtitleEditor.project.test.tsx         ,   289
+frontend-src, frontend/src/test/components/SubtitlePreview.test.tsx                ,   276
+frontend-src, frontend/src/test/components/TimeRangeHeader.test.tsx                ,    19
+frontend-src, frontend/src/test/components/VideoOverlay.test.tsx                   ,    92
+frontend-src, frontend/src/test/components/autoCutEditor.actions.test.tsx          ,    70
+frontend-src, frontend/src/test/components/autoCutEditor.helpers.test.ts           ,   160
+frontend-src, frontend/src/test/components/editor.helpers.test.ts                  ,    96
+frontend-src, frontend/src/test/components/jobForm.helpers.test.ts                 ,    69
+frontend-src, frontend/src/test/components/jobForm.test-helpers.tsx                ,    44
+frontend-src, frontend/src/test/components/shareComposer.helpers.test.ts           ,    97
+frontend-src, frontend/src/test/components/shareComposer.test-helpers.tsx          ,   105
+frontend-src, frontend/src/test/components/subtitleEditor.helpers.test.ts          ,   130
+frontend-src, frontend/src/test/components/subtitleEditor.test-helpers.tsx         ,   115
+frontend-src, frontend/src/test/components/subtitlePreview.helpers.test.ts         ,    24
+frontend-src, frontend/src/test/components/ui/ConnectionChip.test.tsx              ,    82
+frontend-src, frontend/src/test/components/ui/IconButton.test.tsx                  ,    37
+frontend-src, frontend/src/test/components/ui/LazyVideo.test.tsx                   ,   122
+frontend-src, frontend/src/test/components/ui/Select.test.tsx                      ,    64
+frontend-src, frontend/src/test/components/ui/VideoControls.test.tsx               ,    40
+frontend-src, frontend/src/test/components/ui/lazyVideo.helpers.test.ts            ,    38
+frontend-src, frontend/src/test/components/ui/protectedMedia.test.tsx              ,    48
+frontend-src, frontend/src/test/components/videoOverlay.helpers.test.ts            ,    45
+frontend-src, frontend/src/test/config/manualChunks.test.ts                        ,    27
+frontend-src, frontend/src/test/config/subtitleStyles.test.ts                      ,    83
+frontend-src, frontend/src/test/config/watchConfig.test.ts                         ,    29
+frontend-src, frontend/src/test/hooks/useDebouncedEffect.test.ts                   ,    31
+frontend-src, frontend/src/test/hooks/useThrottle.test.ts                          ,    44
+frontend-src, frontend/src/test/integration/Editor.api-error.test.tsx              ,    36
+frontend-src, frontend/src/test/integration/Editor.blob-cleanup.test.tsx           ,    46
+frontend-src, frontend/src/test/setup.ts                                           ,     7
+frontend-src, frontend/src/test/smoke.test.ts                                      ,     7
+frontend-src, frontend/src/test/store/useJobStore.test.ts                          ,   426
+frontend-src, frontend/src/test/unit/useWebSocket.helpers.test.ts                  ,   197
+frontend-src, frontend/src/test/unit/useWebSocket.test.tsx                         ,   267
+frontend-src, frontend/src/test/utils/subtitleTiming.parity.test.ts                ,    58
+frontend-src, frontend/src/test/utils/subtitleTiming.test.ts                       ,   105
+frontend-src, frontend/src/types/clerk.d.ts                                        ,    15
+frontend-src, frontend/src/types/index.ts                                          ,   479
+frontend-src, frontend/src/utils/jobQueue.ts                                       ,    27
+frontend-src, frontend/src/utils/storage.ts                                        ,    14
+frontend-src, frontend/src/utils/subtitleTiming.ts                                 ,   598
+frontend-src, frontend/src/utils/time.ts                                           ,    22
+frontend-src, frontend/src/utils/transcript.ts                                     ,    78
+frontend-src, frontend/src/utils/url.ts                                            ,    22

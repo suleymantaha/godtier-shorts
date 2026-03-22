@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   AlertCircle,
   CheckCircle2,
@@ -15,7 +16,7 @@ import {
 } from 'lucide-react';
 
 import {
-  ANIMATION_SELECT_OPTIONS,
+  getAnimationSelectOptions,
   resolvePreviewLayout,
   STYLE_OPTIONS,
   isStyleName,
@@ -37,11 +38,15 @@ interface AutoCutEditorLayoutProps {
   controller: AutoCutEditorController;
 }
 
-const LAYOUT_SELECT_OPTIONS = [
-  { label: 'Auto', value: 'auto' },
-  { label: 'Single', value: 'single' },
-  { label: 'Split', value: 'split' },
-];
+const ANIMATION_SELECT_OPTIONS = getAnimationSelectOptions();
+
+function getLayoutSelectOptions(t: (key: string) => string) {
+  return [
+    { label: t('autoCut.options.auto'), value: 'auto' },
+    { label: t('autoCut.options.single'), value: 'single' },
+    { label: t('autoCut.options.split'), value: 'split' },
+  ];
+}
 
 export function AutoCutEditorLayout({ controller }: AutoCutEditorLayoutProps) {
   return (
@@ -83,16 +88,18 @@ function AutoCutFilePickerCard({
   projectId?: string;
   selectedFile: File | null;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="glass-card p-5 border-accent/20">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <Film className="w-4 h-4 text-accent" />
-            <h3 className="text-xs font-mono uppercase tracking-[0.2em] text-accent">Otomatik Manual Cut</h3>
+            <h3 className="text-xs font-mono uppercase tracking-[0.2em] text-accent">{t('autoCut.title')}</h3>
           </div>
           <p className="text-[11px] uppercase text-muted-foreground">
-            Video sec, zaman araligini belirle, short pipeline geri kalanini otomatik tamamlasin.
+            {t('autoCut.subtitle')}
           </p>
         </div>
 
@@ -103,7 +110,7 @@ function AutoCutFilePickerCard({
             disabled={processing}
             className="btn-primary py-2 px-5 text-[11px] tracking-[0.2em] disabled:opacity-50"
           >
-            {selectedFile ? 'VIDEOYU DEGISTIR' : 'VIDEO SEC'}
+            {selectedFile ? t('autoCut.changeVideo') : t('autoCut.chooseVideo')}
           </button>
         </div>
       </div>
@@ -112,9 +119,9 @@ function AutoCutFilePickerCard({
         {selectedFile ? (
           <span className="font-mono text-foreground/80">{selectedFile.name}</span>
         ) : projectId ? (
-          <span className="font-mono text-foreground/80">Proje: {projectId}</span>
+          <span className="font-mono text-foreground/80">{t('autoCut.project', { projectId })}</span>
         ) : (
-          'Henuz video secilmedi.'
+          t('autoCut.noVideo')
         )}
       </div>
     </div>
@@ -122,6 +129,8 @@ function AutoCutFilePickerCard({
 }
 
 function AutoCutPreviewCard({ controller }: AutoCutEditorLayoutProps) {
+  const { t } = useTranslation();
+
   return (
     <div className="glass-card overflow-hidden border-primary/20 shadow-lg shadow-primary/5 ring-1 ring-primary/10">
       <AutoCutVideoViewport
@@ -157,7 +166,7 @@ function AutoCutPreviewCard({ controller }: AutoCutEditorLayoutProps) {
           </>
         ) : (
           <div className="rounded-xl border border-border bg-foreground/5 px-4 py-6 text-center text-xs text-muted-foreground">
-            Zaman araligi secmek icin once video yukle.
+            {t('autoCut.uploadHint')}
           </div>
         )}
       </div>
@@ -182,6 +191,7 @@ function AutoCutVideoViewport({
   videoRef: React.RefObject<HTMLVideoElement | null>;
   videoSrc?: string;
 }) {
+  const { t } = useTranslation();
   const resolvedVideoSrc = useResolvedMediaSource(videoSrc);
 
   return (
@@ -203,9 +213,9 @@ function AutoCutVideoViewport({
         <div className="absolute inset-0 flex items-center justify-center p-8">
           <div className="w-full max-w-xl rounded-2xl border border-dashed border-border bg-foreground/5 px-6 py-10 text-center">
             <Scissors className="w-8 h-8 text-primary mx-auto mb-3" />
-            <p className="text-sm font-semibold text-foreground">Bos baslangic hazir</p>
+            <p className="text-sm font-semibold text-foreground">{t('autoCut.emptyStateTitle')}</p>
             <p className="mt-2 text-xs text-muted-foreground">
-              Manual cut ekrani sadece video yuklendikten sonra aktif olur.
+              {t('autoCut.emptyStateDescription')}
             </p>
           </div>
         </div>
@@ -215,8 +225,10 @@ function AutoCutVideoViewport({
 }
 
 function AutoCutRangeHeader({ endTime, startTime }: { endTime: number; startTime: number }) {
+  const { t } = useTranslation();
+
   return (
-    <TimeRangeHeader endTime={endTime} startTime={startTime} title="Kesim Araligi" />
+    <TimeRangeHeader endTime={endTime} startTime={startTime} title={t('autoCut.rangeTitle')} />
   );
 }
 
@@ -229,27 +241,29 @@ function AutoCutPreviewActions({
   jumpToEnd: () => void;
   jumpToStart: () => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="flex gap-2">
       <button
         onClick={jumpToStart}
         className="flex-1 py-1.5 text-[11px] font-mono uppercase tracking-widest bg-primary/10 border border-primary/20 rounded hover:bg-primary/20 transition-colors text-primary"
       >
-        Basi izle
+        {t('autoCut.watchStart')}
       </button>
       <button
         onClick={jumpToEnd}
         className="flex-1 py-1.5 text-[11px] font-mono uppercase tracking-widest bg-accent/10 border border-accent/20 rounded hover:bg-accent/20 transition-colors text-accent"
       >
-        Sonu izle
+        {t('autoCut.watchEnd')}
       </button>
       <button
         onClick={addCurrentMarker}
         className="flex-1 py-1.5 text-[11px] font-mono uppercase tracking-widest bg-secondary/10 border border-secondary/20 rounded hover:bg-secondary/20 transition-colors text-secondary flex items-center justify-center gap-1.5"
-        title="Mevcut zamana kesim noktasi ekle"
+        title={t('autoCut.addCutTitle')}
       >
         <Plus className="w-3 h-3" />
-        Kes
+        {t('autoCut.addCut')}
       </button>
     </div>
   );
@@ -264,12 +278,14 @@ function AutoCutMarkerFeedback({
   markers: number[];
   onRemoveMarker: (index: number) => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <>
       {feedback && <p className="text-[11px] font-mono text-secondary/90 animate-in fade-in">{feedback}</p>}
       {markers.length > 0 && (
         <div className="space-y-2">
-          <span className="text-[11px] text-muted-foreground uppercase">Kesim noktalari ({markers.length + 1} klip)</span>
+          <span className="text-[11px] text-muted-foreground uppercase">{t('autoCut.markersTitle', { count: markers.length + 1 })}</span>
           <div className="flex flex-wrap gap-2">
             {markers.map((marker, index) => (
               <span
@@ -281,7 +297,7 @@ function AutoCutMarkerFeedback({
                   type="button"
                   onClick={() => onRemoveMarker(index)}
                   className="hover:bg-foreground/20 rounded p-0.5"
-                  aria-label="Sil"
+                  aria-label={t('autoCut.deleteMarker')}
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -295,6 +311,8 @@ function AutoCutMarkerFeedback({
 }
 
 function AutoCutOptionsCard({ controller }: AutoCutEditorLayoutProps) {
+  const { t } = useTranslation();
+
   if (!controller.videoSrc) {
     return null;
   }
@@ -303,7 +321,7 @@ function AutoCutOptionsCard({ controller }: AutoCutEditorLayoutProps) {
     <div className="glass-card p-5 space-y-4 border-secondary/20">
       <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-[0.2em] text-secondary">
         <Sparkles className="w-4 h-4" />
-        Altyazi Stili & Uretim
+        {t('autoCut.productionTitle')}
       </div>
       <div className="grid gap-4 md:grid-cols-3">
         <AutoCutSubtitleOptions
@@ -361,44 +379,31 @@ function AutoCutSubtitleOptions({
   skipSubtitles: boolean;
   style: StyleName;
 }) {
+  const { t } = useTranslation();
+  const layoutOptions = getLayoutSelectOptions(t);
+
   return (
     <div className="rounded-xl border border-white/10 bg-foreground/5 p-3 space-y-3 h-full">
-      <div className="flex items-center justify-between gap-2">
-        <label
-          className="text-[11px] text-muted-foreground uppercase"
-          title="Yatay videolari TikTok/Reels formatina donusturur. Kapaliyken sadece sure kesilir."
-        >
-          Short olarak kes (9:16)
-        </label>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={cutAsShort}
-          aria-label="Short olarak kes"
-          title="Yatay videolari dikey 9:16 formata donusturur. Kapaliyken orijinal boyut korunur."
-          onClick={() => setCutAsShort((previous) => !previous)}
-          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 transition-colors ${cutAsShort ? 'bg-primary/20 border-primary/40' : 'bg-foreground/10 border-border'}`}
-        >
-          <span
-            className={`pointer-events-none inline-block h-4 w-4 rounded-full shadow-sm transition-transform ${cutAsShort ? 'translate-x-5 bg-primary' : 'translate-x-0.5 bg-foreground/60'}`}
-          />
-        </button>
-      </div>
-      <div className="flex items-center justify-between">
-        <label className="text-[11px] text-muted-foreground uppercase">Stil</label>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={skipSubtitles}
-          aria-label="Altyazi atla"
-          onClick={() => setSkipSubtitles((previous) => !previous)}
-          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 transition-colors ${skipSubtitles ? 'bg-red-500/30 border-red-500/50' : 'bg-primary/20 border-primary/40'}`}
-        >
-          <span
-            className={`pointer-events-none inline-block h-4 w-4 rounded-full shadow-sm transition-transform ${skipSubtitles ? 'translate-x-5 bg-red-400' : 'translate-x-0.5 bg-primary'}`}
-          />
-        </button>
-      </div>
+      <AutoCutToggleField
+        ariaChecked={cutAsShort}
+        ariaLabel={t('autoCut.controls.cutAsShort')}
+        label={t('autoCut.controls.cutAsShort')}
+        offTone="bg-foreground/10 border-border"
+        onToggle={() => setCutAsShort((previous) => !previous)}
+        onTone="bg-primary/20 border-primary/40"
+        thumbOffTone="translate-x-0.5 bg-foreground/60"
+        thumbOnTone="translate-x-5 bg-primary"
+        title={t('autoCut.controls.cutAsShortHint')}
+      />
+      <AutoCutToggleField
+        ariaChecked={skipSubtitles}
+        ariaLabel={t('autoCut.skipSubtitles')}
+        label={t('autoCut.controls.style')}
+        onToggle={() => setSkipSubtitles((previous) => !previous)}
+        onTone="bg-red-500/30 border-red-500/50"
+        thumbOffTone="translate-x-0.5 bg-primary"
+        thumbOnTone="translate-x-5 bg-red-400"
+      />
       <Select
         value={style}
         onChange={(value) => setStyle(isStyleName(value) ? value : 'HORMOZI')}
@@ -407,16 +412,16 @@ function AutoCutSubtitleOptions({
         className={skipSubtitles ? 'opacity-40' : ''}
       />
       <div className="space-y-1">
-        <label className="text-[11px] text-muted-foreground uppercase block">Layout</label>
+        <label className="text-[11px] text-muted-foreground uppercase block">{t('autoCut.controls.layout')}</label>
         <Select
           value={layout}
           onChange={(value) => setLayout(value === 'split' ? 'split' : value === 'single' ? 'single' : 'auto')}
-          options={LAYOUT_SELECT_OPTIONS}
+          options={layoutOptions}
           icon={<Sparkles className="w-4 h-4 text-secondary/50" />}
         />
       </div>
       <div className="space-y-1">
-        <label className="text-[11px] text-muted-foreground uppercase block">Motion</label>
+        <label className="text-[11px] text-muted-foreground uppercase block">{t('autoCut.controls.animation')}</label>
         <Select
           value={animationType}
           onChange={(value) => setAnimationType(isSubtitleAnimationType(value) ? value : 'default')}
@@ -426,12 +431,65 @@ function AutoCutSubtitleOptions({
           icon={<Waves className="w-4 h-4 text-secondary/50" />}
         />
       </div>
-      {skipSubtitles && (
-        <div className="flex items-center gap-1.5 text-[11px] font-mono text-red-400/80">
-          <Subtitles className="w-3 h-3" />
-          Altyazi devre disi
-        </div>
-      )}
+      <AutoCutSubtitleStatusHint skipSubtitles={skipSubtitles} />
+    </div>
+  );
+}
+
+function AutoCutToggleField({
+  ariaChecked,
+  ariaLabel,
+  label,
+  offTone = 'bg-primary/20 border-primary/40',
+  onToggle,
+  onTone,
+  thumbOffTone,
+  thumbOnTone,
+  title,
+}: {
+  ariaChecked: boolean;
+  ariaLabel: string;
+  label: string;
+  offTone?: string;
+  onToggle: () => void;
+  onTone: string;
+  thumbOffTone: string;
+  thumbOnTone: string;
+  title?: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <label className="text-[11px] text-muted-foreground uppercase" title={title}>
+        {label}
+      </label>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={ariaChecked}
+        aria-label={ariaLabel}
+        title={title}
+        onClick={onToggle}
+        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 transition-colors ${ariaChecked ? onTone : offTone}`}
+      >
+        <span
+          className={`pointer-events-none inline-block h-4 w-4 rounded-full shadow-sm transition-transform ${ariaChecked ? thumbOnTone : thumbOffTone}`}
+        />
+      </button>
+    </div>
+  );
+}
+
+function AutoCutSubtitleStatusHint({ skipSubtitles }: { skipSubtitles: boolean }) {
+  const { t } = useTranslation();
+
+  if (!skipSubtitles) {
+    return null;
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 text-[11px] font-mono text-red-400/80">
+      <Subtitles className="w-3 h-3" />
+      {t('autoCut.subtitlesDisabled')}
     </div>
   );
 }
@@ -445,13 +503,15 @@ function AutoCutClipCountCard({
   numClips: number;
   onChangeClipCount: (value: string) => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="rounded-xl border border-white/10 bg-foreground/5 p-3 space-y-3 h-full">
       <label className="text-[11px] text-muted-foreground uppercase block">
-        {markers.length > 0 ? 'Kesim noktalari' : 'Klip sayisi (AI)'}
+        {markers.length > 0 ? t('autoCut.markersTitle', { count: markers.length + 1 }) : t('autoCut.aiClipCount')}
       </label>
       {markers.length > 0 ? (
-        <p className="text-xs font-mono text-primary">{markers.length + 1} klip (manuel kesim)</p>
+        <p className="text-xs font-mono text-primary">{t('autoCut.manualClipCount', { count: markers.length + 1 })}</p>
       ) : (
         <>
           <input
@@ -463,7 +523,9 @@ function AutoCutClipCountCard({
             className="input-field w-full text-xs"
           />
           <p className="text-[10px] text-muted-foreground">
-            {numClips === 1 ? 'Tek klip (secili aralik)' : `AI tum videodan ${numClips} viral klip uretir`}
+            {numClips === 1
+              ? t('autoCut.aiClipCountSingle')
+              : t('autoCut.aiClipCountMultiple', { count: numClips })}
           </p>
         </>
       )}
@@ -472,6 +534,8 @@ function AutoCutClipCountCard({
 }
 
 function AutoCutJobStatusCard({ controller }: AutoCutEditorLayoutProps) {
+  const { t } = useTranslation();
+
   if (!controller.currentJobId && !controller.currentJob && !controller.errorMessage) {
     return null;
   }
@@ -480,17 +544,17 @@ function AutoCutJobStatusCard({ controller }: AutoCutEditorLayoutProps) {
     <div className="glass-card p-5 space-y-4 border-secondary/20">
       <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-[0.2em] text-secondary">
         {controller.processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-        Is Durumu
+        {t('autoCut.status.title')}
       </div>
       <AutoCutJobProgress currentJob={controller.currentJob} currentJobId={controller.currentJobId} />
       {controller.queuePosition != null && controller.queuePosition > 1 && (
         <div className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground">
-          GPU kuyrugunda sira: {controller.queuePosition}
+          {t('autoCut.status.queuePosition', { position: controller.queuePosition })}
         </div>
       )}
       {controller.generatedClips.length > 0 && (
         <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-3 text-xs text-emerald-100">
-          Hazir klipler: {controller.generatedClips.length}
+          {t('autoCut.status.readyClips', { count: controller.generatedClips.length })}
         </div>
       )}
       {controller.errorMessage && (
@@ -507,6 +571,8 @@ function AutoCutJobProgress({
   currentJob,
   currentJobId,
 }: Pick<AutoCutEditorController, 'currentJob' | 'currentJobId'>) {
+  const { t } = useTranslation();
+
   if (currentJob) {
     return (
       <div className="space-y-2">
@@ -528,7 +594,7 @@ function AutoCutJobProgress({
     return null;
   }
 
-  return <div className="text-xs font-mono text-muted-foreground">Job baglandi: {currentJobId}</div>;
+  return <div className="text-xs font-mono text-muted-foreground">{t('autoCut.status.connectedJob', { jobId: currentJobId })}</div>;
 }
 
 function AutoCutResultCard({
@@ -537,6 +603,7 @@ function AutoCutResultCard({
   handleOpenLibrary,
   resultVideoSrc,
 }: Pick<AutoCutEditorController, 'currentJob' | 'generatedClips' | 'handleOpenLibrary' | 'resultVideoSrc'>) {
+  const { t } = useTranslation();
   const resolvedResultVideoSrc = useResolvedMediaSource(resultVideoSrc);
   const clipCount = Math.max(currentJob?.num_clips ?? 0, generatedClips.length, 1);
 
@@ -548,14 +615,14 @@ function AutoCutResultCard({
     <div className="glass-card p-5 space-y-4 border-green-500/20">
       <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-[0.2em] text-green-300">
         <CheckCircle2 className="w-4 h-4" />
-        {clipCount > 1 ? `${clipCount} Klip Uretildi` : 'Uretilen Klip'}
+        {clipCount > 1 ? t('autoCut.result.clipsGenerated', { count: clipCount }) : t('autoCut.result.clipGenerated')}
       </div>
       {clipCount > 1 && (
-        <p className="text-[11px] text-muted-foreground">Render tamamlandi. Tum klipler ClipGallery icinde indekslenir; ilk hazir klip asagida.</p>
+        <p className="text-[11px] text-muted-foreground">{t('autoCut.result.renderCompleted')}</p>
       )}
       {generatedClips.length > 0 && (
         <div className="rounded-xl border border-border bg-foreground/5 px-4 py-3">
-          <div className="mb-2 text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">Hazir Klipler</div>
+          <div className="mb-2 text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">{t('autoCut.result.readyClips')}</div>
           <div className="space-y-2">
             {generatedClips.map((clip) => (
               <div key={`${clip.job_id}:${clip.projectId ?? 'legacy'}:${clip.clipName}:${clip.at}`} className="flex items-center justify-between gap-3 text-xs">
@@ -581,7 +648,7 @@ function AutoCutResultCard({
             onClick={() => void openMediaSource(resolvedResultVideoSrc ?? resultVideoSrc)}
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-foreground/5 px-4 py-2 text-[11px] font-mono uppercase tracking-[0.2em] text-foreground/80 hover:bg-foreground/10"
           >
-            Ciktiyi ac
+            {t('autoCut.result.openOutput')}
           </button>
         )}
         <button
@@ -589,7 +656,7 @@ function AutoCutResultCard({
           onClick={handleOpenLibrary}
           className="inline-flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-4 py-2 text-[11px] font-mono uppercase tracking-[0.2em] text-primary hover:bg-primary/20"
         >
-          Clip Library
+          {t('autoCut.result.openLibrary')}
         </button>
       </div>
     </div>
@@ -597,18 +664,19 @@ function AutoCutResultCard({
 }
 
 function AutoCutRenderCard({ controller }: AutoCutEditorLayoutProps) {
+  const { t } = useTranslation();
   const title =
     controller.markers.length > 0
-      ? 'Kesim Noktalari ile Render'
+      ? t('autoCut.render.withMarkersTitle')
       : controller.numClips > 1
-        ? 'AI ile Toplu Render'
-        : 'Tek Adim Render';
+        ? t('autoCut.render.batchTitle')
+        : t('autoCut.render.singleTitle');
   const description =
     controller.markers.length > 0
-      ? `${controller.markers.length + 1} klip, belirlediginiz kesim noktalarina gore uretilir.`
+      ? t('autoCut.render.withMarkersDescription', { count: controller.markers.length + 1 })
       : controller.numClips > 1
-        ? `AI tum videodan ${controller.numClips} viral klip secer ve uretir.`
-        : 'faster-whisper transkripsiyon, smart crop, altyazi, format donusumu ve render short pipeline ile ayni akista calisir.';
+        ? t('autoCut.render.batchDescription', { count: controller.numClips })
+        : t('autoCut.render.singleDescription');
 
   return (
     <div className="glass-card p-5 space-y-4 border-primary/20">
@@ -624,21 +692,21 @@ function AutoCutRenderCard({ controller }: AutoCutEditorLayoutProps) {
         {controller.busy ? (
           <>
             <Clock className="w-4 h-4" />
-            Sirada / Isleniyor
+            {t('autoCut.render.queued')}
           </>
         ) : controller.processing ? (
           <>
             <Loader2 className="w-4 h-4 animate-spin" />
-            RENDER...
+            {t('autoCut.render.processing')}
           </>
         ) : (
           <>
             <ChevronRight className="w-5 h-5" />
             {controller.markers.length > 0
-              ? `KESIM NOKTALARI ILE ${controller.markers.length + 1} KLIP URET`
+              ? t('autoCut.render.withMarkersAction', { count: controller.markers.length + 1 })
               : controller.numClips > 1
-                ? `AI ILE ${controller.numClips} KLIP URET`
-                : 'OTOMATIK CUT URET'}
+                ? t('autoCut.render.batchAction', { count: controller.numClips })
+                : t('autoCut.render.singleAction')}
           </>
         )}
       </button>

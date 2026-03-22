@@ -1,8 +1,10 @@
 import { AlertCircle, CalendarClock, CheckCircle2, Link2, Loader2, Send, Share2, X } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
+import { formatDateTime, normalizeLocale } from '../../i18n';
 import type { Clip, PublishJob, ShareDraftContent, SocialAccount, SocialPlatform } from '../../types';
-import { PLATFORM_LABELS } from './helpers';
+import { getPlatformLabel } from './helpers';
 import type { ShareComposerController } from './useShareComposerController';
 
 export function ShareComposerLayout({
@@ -24,10 +26,15 @@ export function ShareComposerLayout({
             <ConnectionCard
               apiKey={controller.apiKey}
               connected={controller.connected}
+              connectUrl={controller.connectUrl}
+              connectionMode={controller.connectionMode}
               loading={controller.loading}
+              managedConnectionPending={controller.managedConnectionPending}
               onApiKeyChange={controller.setApiKey}
               onConnect={controller.handleConnect}
               onDisconnect={controller.handleDisconnect}
+              onManagedConnectOpen={controller.handleManagedConnectOpen}
+              onRefresh={controller.handleRefreshConnection}
             />
             <AccountsCard
               accounts={controller.accounts}
@@ -70,12 +77,14 @@ export function ShareComposerLayout({
 }
 
 function ShareComposerHeader({ clipName, onClose }: { clipName: string; onClose: () => void }) {
+  const { t } = useTranslation();
+
   return (
     <div className="flex items-start justify-between gap-4">
       <div>
         <h3 className="text-sm font-mono uppercase tracking-[0.2em] text-primary flex items-center gap-2">
           <Share2 className="w-4 h-4" />
-          Sosyal Paylaşım
+          {t('shareComposer.title')}
         </h3>
         <p className="text-[11px] text-muted-foreground mt-1">{clipName}</p>
       </div>
@@ -91,10 +100,12 @@ function ShareComposerHeader({ clipName, onClose }: { clipName: string; onClose:
 }
 
 function ProjectWarning() {
+  const { t } = useTranslation();
+
   return (
     <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300 flex items-center gap-2">
       <AlertCircle className="w-4 h-4" />
-      Bu klip için proje kimliği yok. Paylaşım sadece proje kliplerinde çalışır.
+      {t('shareComposer.projectWarning')}
     </div>
   );
 }
@@ -102,59 +113,147 @@ function ProjectWarning() {
 function ConnectionCard({
   apiKey,
   connected,
+  connectUrl,
+  connectionMode,
   loading,
+  managedConnectionPending,
   onApiKeyChange,
   onConnect,
   onDisconnect,
+  onManagedConnectOpen,
+  onRefresh,
 }: {
   apiKey: string;
   connected: boolean;
+  connectUrl: string | null;
+  connectionMode: 'managed' | 'manual_api_key';
   loading: boolean;
+  managedConnectionPending: boolean;
   onApiKeyChange: (value: string) => void;
   onConnect: () => void;
   onDisconnect: () => void;
+  onManagedConnectOpen: () => void;
+  onRefresh: () => Promise<void>;
 }) {
+  const { t } = useTranslation();
+  const isManaged = connectionMode === 'managed';
+
   return (
     <div className="rounded-xl border border-border bg-foreground/5 p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-mono uppercase text-muted-foreground">Postiz Bağlantısı</span>
+        <span className="text-xs font-mono uppercase text-muted-foreground">{t('shareComposer.connection.title')}</span>
         {connected ? (
           <span className="text-[11px] text-green-400 inline-flex items-center gap-1">
             <CheckCircle2 className="w-3 h-3" />
-            Bağlı
+            {t('shareComposer.connection.connected')}
           </span>
         ) : (
-          <span className="text-[11px] text-muted-foreground">Bağlı değil</span>
+          <span className="text-[11px] text-muted-foreground">{t('shareComposer.connection.disconnected')}</span>
         )}
       </div>
 
-      <input
-        value={apiKey}
-        onChange={(event) => onApiKeyChange(event.target.value)}
-        placeholder="Postiz API Key"
-        className="w-full h-9 rounded-lg bg-background/70 border border-border px-3 text-xs"
-        autoComplete="off"
-      />
+      {isManaged ? (
+        <div className="rounded-lg border border-border bg-background/40 px-3 py-2 text-xs text-muted-foreground">
+          {t('shareComposer.connection.managedHint')}
+        </div>
+      ) : (
+        <input
+          value={apiKey}
+          onChange={(event) => onApiKeyChange(event.target.value)}
+          placeholder={t('shareComposer.connection.apiKeyPlaceholder')}
+          className="w-full h-9 rounded-lg bg-background/70 border border-border px-3 text-xs"
+          autoComplete="off"
+        />
+      )}
 
       <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={onConnect}
-          disabled={loading}
-          className="flex-1 h-9 rounded-lg bg-primary/20 border border-primary/40 hover:bg-primary/30 text-xs font-mono uppercase disabled:opacity-50"
-        >
-          {loading ? 'Bağlanıyor...' : 'Bağla'}
-        </button>
-        <button
-          type="button"
-          onClick={onDisconnect}
-          disabled={loading || !connected}
-          className="flex-1 h-9 rounded-lg bg-foreground/10 border border-border hover:bg-foreground/20 text-xs font-mono uppercase disabled:opacity-50"
-        >
-          Kaldır
-        </button>
+        <ConnectionActions
+          connected={connected}
+          connectUrl={connectUrl}
+          isManaged={isManaged}
+          loading={loading}
+          managedConnectionPending={managedConnectionPending}
+          onConnect={onConnect}
+          onDisconnect={onDisconnect}
+          onManagedConnectOpen={onManagedConnectOpen}
+          onRefresh={onRefresh}
+        />
       </div>
     </div>
+  );
+}
+
+function ConnectionActions({
+  connected,
+  connectUrl,
+  isManaged,
+  loading,
+  managedConnectionPending,
+  onConnect,
+  onDisconnect,
+  onManagedConnectOpen,
+  onRefresh,
+}: {
+  connected: boolean;
+  connectUrl: string | null;
+  isManaged: boolean;
+  loading: boolean;
+  managedConnectionPending: boolean;
+  onConnect: () => void;
+  onDisconnect: () => void;
+  onManagedConnectOpen: () => void;
+  onRefresh: () => Promise<void>;
+}) {
+  const { t } = useTranslation();
+
+  if (isManaged) {
+    return (
+      <>
+        {connectUrl ? (
+          <a
+            href={connectUrl}
+            onClick={onManagedConnectOpen}
+            className="flex-1 h-9 rounded-lg bg-primary/20 border border-primary/40 hover:bg-primary/30 text-xs font-mono uppercase inline-flex items-center justify-center"
+          >
+            {t('shareComposer.connection.openManaged')}
+          </a>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => void onRefresh()}
+          disabled={loading}
+          className="flex-1 h-9 rounded-lg bg-foreground/10 border border-border hover:bg-foreground/20 text-xs font-mono uppercase disabled:opacity-50"
+        >
+          {loading ? t('shareComposer.connection.refreshing') : t('shareComposer.connection.refreshAccounts')}
+        </button>
+        {managedConnectionPending ? (
+          <div className="basis-full rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
+            {t('shareComposer.connection.returnHint')}
+          </div>
+        ) : null}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onConnect}
+        disabled={loading}
+        className="flex-1 h-9 rounded-lg bg-primary/20 border border-primary/40 hover:bg-primary/30 text-xs font-mono uppercase disabled:opacity-50"
+      >
+        {loading ? t('shareComposer.connection.connecting') : t('shareComposer.connection.connect')}
+      </button>
+      <button
+        type="button"
+        onClick={onDisconnect}
+        disabled={loading || !connected}
+        className="flex-1 h-9 rounded-lg bg-foreground/10 border border-border hover:bg-foreground/20 text-xs font-mono uppercase disabled:opacity-50"
+      >
+        {t('shareComposer.connection.remove')}
+      </button>
+    </>
   );
 }
 
@@ -167,11 +266,13 @@ function AccountsCard({
   onToggleAccount: (accountId: string) => void;
   selectedAccountIds: string[];
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="rounded-xl border border-border bg-foreground/5 p-4 space-y-2">
-      <div className="text-xs font-mono uppercase text-muted-foreground">Bağlı Hesaplar</div>
+      <div className="text-xs font-mono uppercase text-muted-foreground">{t('shareComposer.accounts.title')}</div>
       <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
-        {accounts.length === 0 && <p className="text-[11px] text-muted-foreground">Hesap bulunamadı.</p>}
+        {accounts.length === 0 && <p className="text-[11px] text-muted-foreground">{t('shareComposer.accounts.empty')}</p>}
         {accounts.map((account) => (
           <label
             key={account.id}
@@ -185,7 +286,7 @@ function AccountsCard({
             />
             <span className="min-w-0">
               <span className="block font-medium truncate">{account.name}</span>
-              <span className="block text-[11px] text-muted-foreground">{PLATFORM_LABELS[account.platform]}</span>
+              <span className="block text-[11px] text-muted-foreground">{getPlatformLabel(account.platform)}</span>
             </span>
           </label>
         ))}
@@ -213,6 +314,8 @@ function ContentCard({
   onUpdateHashtags: (value: string) => void;
   selectedPlatform: SocialPlatform;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="rounded-xl border border-border bg-foreground/5 p-4 space-y-3">
       {(draftState.hasServerDrafts || draftState.hasLocalBuffer) && (
@@ -220,7 +323,7 @@ function ContentCard({
           <div className="flex items-center gap-2 min-w-0">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span className="min-w-0">
-              Kayıtlı paylaşım taslağı yüklendi. Bu yüzden Başlık ve Metin, `viral.json` önerisi yerine önceki taslaktan geliyor olabilir.
+              {t('shareComposer.content.draftLoaded')}
             </span>
           </div>
           <button
@@ -229,13 +332,13 @@ function ContentCard({
             disabled={loading}
             className="shrink-0 px-3 py-1.5 rounded-lg bg-background/50 border border-amber-300/30 hover:bg-background/70 text-[11px] font-mono uppercase disabled:opacity-50"
           >
-            AI Önerisine Dön
+            {t('shareComposer.content.resetToAi')}
           </button>
         </div>
       )}
 
       <div className="flex flex-wrap gap-2">
-        {(Object.keys(PLATFORM_LABELS) as SocialPlatform[]).map((platform) => (
+        {(['youtube_shorts', 'tiktok', 'instagram_reels', 'facebook_reels', 'x', 'linkedin'] as SocialPlatform[]).map((platform) => (
           <button
             key={platform}
             type="button"
@@ -244,13 +347,13 @@ function ContentCard({
               ? 'bg-primary/20 border-primary/40 text-foreground'
               : 'bg-transparent border-border text-muted-foreground hover:text-foreground'}`}
           >
-            {PLATFORM_LABELS[platform]}
+            {getPlatformLabel(platform)}
           </button>
         ))}
       </div>
 
       {!activeContent ? (
-        <div className="text-xs text-muted-foreground">İçerik yükleniyor...</div>
+        <div className="text-xs text-muted-foreground">{t('shareComposer.content.loading')}</div>
       ) : (
         <ShareContentFields
           activeContent={activeContent}
@@ -271,23 +374,25 @@ function ShareContentFields({
   onUpdateContent: (patch: Partial<ShareDraftContent>) => void;
   onUpdateHashtags: (value: string) => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <>
-      <label className="block text-[11px] text-muted-foreground uppercase">Başlık</label>
+      <label className="block text-[11px] text-muted-foreground uppercase">{t('shareComposer.content.titleLabel')}</label>
       <input
         value={activeContent.title ?? ''}
         onChange={(event) => onUpdateContent({ title: event.target.value })}
         className="w-full h-10 rounded-lg bg-background/70 border border-border px-3 text-sm"
       />
 
-      <label className="block text-[11px] text-muted-foreground uppercase">Metin</label>
+      <label className="block text-[11px] text-muted-foreground uppercase">{t('shareComposer.content.textLabel')}</label>
       <textarea
         value={activeContent.text ?? ''}
         onChange={(event) => onUpdateContent({ text: event.target.value })}
         className="w-full min-h-28 rounded-lg bg-background/70 border border-border px-3 py-2 text-sm resize-y"
       />
 
-      <label className="block text-[11px] text-muted-foreground uppercase">Hashtag (virgülle)</label>
+      <label className="block text-[11px] text-muted-foreground uppercase">{t('shareComposer.content.hashtagsLabel')}</label>
       <input
         value={(activeContent.hashtags ?? []).join(', ')}
         onChange={(event) => onUpdateHashtags(event.target.value)}
@@ -316,11 +421,13 @@ function PublishCard({
   onPublish: (mode: 'now' | 'scheduled', approvalRequired: boolean) => Promise<void>;
   onScheduleAtChange: (value: string) => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="rounded-xl border border-border bg-foreground/5 p-4 space-y-3">
       <div className="flex flex-col md:flex-row gap-3 md:items-center">
         <div className="flex-1">
-          <label className="block text-[11px] text-muted-foreground uppercase mb-1">Takvim Zamanı</label>
+          <label className="block text-[11px] text-muted-foreground uppercase mb-1">{t('shareComposer.publish.scheduleAt')}</label>
           <input
             type="datetime-local"
             value={scheduleAt}
@@ -331,21 +438,21 @@ function PublishCard({
         <PublishButton
           disabled={publishing || !projectAvailable || loading}
           icon={publishing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-          label="Hemen Paylaş"
+          label={t('shareComposer.publish.now')}
           onClick={() => void onPublish('now', false)}
           tone="primary"
         />
         <PublishButton
           disabled={publishing || !projectAvailable || loading}
           icon={<CalendarClock className="w-3.5 h-3.5" />}
-          label="Takvime Ekle"
+          label={t('shareComposer.publish.schedule')}
           onClick={() => void onPublish('scheduled', false)}
           tone="secondary"
         />
         <PublishButton
           disabled={publishing || !projectAvailable || loading}
           icon={<Link2 className="w-3.5 h-3.5" />}
-          label="Onaya Gönder"
+          label={t('shareComposer.publish.approve')}
           onClick={() => void onPublish('scheduled', true)}
           tone="accent"
         />
@@ -411,13 +518,16 @@ function JobsCard({
   onApprove: (jobId: string) => Promise<void>;
   onCancel: (jobId: string) => Promise<void>;
 }) {
+  const { t, i18n } = useTranslation();
+  const locale = normalizeLocale(i18n.language);
+
   return (
     <div className="rounded-xl border border-border bg-foreground/5 p-4 space-y-2">
-      <div className="text-xs font-mono uppercase text-muted-foreground">Yayın Jobları</div>
+      <div className="text-xs font-mono uppercase text-muted-foreground">{t('shareComposer.jobs.title')}</div>
       <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
-        {jobs.length === 0 && <p className="text-[11px] text-muted-foreground">Henüz paylaşım jobı yok.</p>}
+        {jobs.length === 0 && <p className="text-[11px] text-muted-foreground">{t('shareComposer.jobs.empty')}</p>}
         {jobs.map((job) => (
-          <JobRow key={job.id} job={job} onApprove={onApprove} onCancel={onCancel} />
+          <JobRow key={job.id} job={job} locale={locale} onApprove={onApprove} onCancel={onCancel} />
         ))}
       </div>
     </div>
@@ -426,19 +536,23 @@ function JobsCard({
 
 function JobRow({
   job,
+  locale,
   onApprove,
   onCancel,
 }: {
   job: PublishJob;
+  locale: 'en' | 'tr';
   onApprove: (jobId: string) => Promise<void>;
   onCancel: (jobId: string) => Promise<void>;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="rounded-lg border border-border px-3 py-2 text-xs bg-background/40">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold">{PLATFORM_LABELS[job.platform]}</span>
+        <span className="font-semibold">{getPlatformLabel(job.platform)}</span>
         <span className="text-muted-foreground">{job.state}</span>
-        {job.scheduled_at && <span className="text-muted-foreground">{new Date(job.scheduled_at).toLocaleString()}</span>}
+        {job.scheduled_at && <span className="text-muted-foreground">{formatDateTime(job.scheduled_at, locale)}</span>}
         {job.last_error && <span className="text-red-300 truncate">{job.last_error}</span>}
         <span className="ml-auto text-[11px] text-muted-foreground">#{job.id.slice(0, 8)}</span>
       </div>
@@ -449,7 +563,7 @@ function JobRow({
             onClick={() => void onApprove(job.id)}
             className="px-2 py-1 rounded bg-primary/20 border border-primary/40 hover:bg-primary/30"
           >
-            Onayla
+            {t('shareComposer.jobs.approve')}
           </button>
         )}
         {!['published', 'failed', 'cancelled', 'publishing'].includes(job.state) && (
@@ -458,7 +572,7 @@ function JobRow({
             onClick={() => void onCancel(job.id)}
             className="px-2 py-1 rounded bg-foreground/10 border border-border hover:bg-foreground/20"
           >
-            İptal
+            {t('shareComposer.jobs.cancel')}
           </button>
         )}
       </div>
@@ -467,10 +581,12 @@ function JobRow({
 }
 
 function LoadingFooter() {
+  const { t } = useTranslation();
+
   return (
     <div className="text-xs text-muted-foreground inline-flex items-center gap-2">
       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-      Paylaşım verileri yükleniyor...
+      {t('shareComposer.loading')}
     </div>
   );
 }

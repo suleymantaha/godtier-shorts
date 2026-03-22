@@ -59,10 +59,13 @@ class PipelineWorkflow:
         self.ctx._check_cancelled()
 
         self.ctx.project = await prepare_pipeline_project(self.ctx, youtube_url)
+        project = self.ctx.project
+        if project is None:
+            raise RuntimeError("Pipeline proje bağlamı hazırlanamadı.")
         master_video, master_audio = await ensure_pipeline_master_assets(self.ctx, youtube_url, resolution)
         metadata_file = await self._ensure_transcript(master_audio)
         cache_identity = build_pipeline_cache_identity(
-            project=self.ctx.project,
+            project=project,
             ai_engine=str(getattr(self.ctx.analyzer, "engine", "local") or "local"),
             num_clips=num_clips,
             duration_min=duration_min,
@@ -74,7 +77,7 @@ class PipelineWorkflow:
             video_model_identifier=resolve_video_model_identifier(getattr(self.ctx.video_processor, "_model_path", None)),
         )
         viral_results = None if force_reanalyze else load_cached_pipeline_analysis(
-            self.ctx.project,
+            project,
             analysis_key=cache_identity.analysis_key,
         )
         if viral_results is not None:
@@ -89,7 +92,7 @@ class PipelineWorkflow:
                 duration_max=duration_max,
             )
             record_pipeline_analysis_cache(
-                self.ctx.project,
+                project,
                 identity=cache_identity,
                 viral_results=viral_results,
             )
@@ -107,7 +110,7 @@ class PipelineWorkflow:
         segments_signature = build_segments_signature(segments)
         if not force_rerender:
             render_hit = load_pipeline_render_cache_hit(
-                self.ctx.project,
+                project,
                 render_key=cache_identity.render_key,
                 segments_signature=segments_signature,
             )
@@ -134,11 +137,12 @@ class PipelineWorkflow:
             render_key=cache_identity.render_key,
         )
         record_pipeline_render_cache(
-            self.ctx.project,
+            project,
             identity=cache_identity,
             segments_signature=segments_signature,
             clip_names=rendered_clip_names,
             skip_subtitles=skip_subtitles,
+            clip_event_port=self.ctx.clip_event_port,
         )
 
         elapsed = round(time.time() - global_start, 2)
@@ -146,7 +150,11 @@ class PipelineWorkflow:
         logger.success(f"🎉 {elapsed}s içinde {len(segments)} video üretildi!")
 
     async def _ensure_transcript(self, master_audio: str) -> str:
-        metadata_file = str(self.ctx.project.transcript)
+        project = self.ctx.project
+        if project is None:
+            raise RuntimeError("Pipeline proje bağlamı bulunamadı.")
+
+        metadata_file = str(project.transcript)
         if os.path.exists(metadata_file):
             self.ctx._update_status("✅ Transkript kütüphanede bulundu, analiz atlanıyor.", 45)
             logger.info(f"♻️ Transkript zaten mevcut: {metadata_file}")

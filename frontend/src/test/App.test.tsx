@@ -3,9 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import App from '../App';
 import { APP_STATE_STORAGE_KEY } from '../app/helpers';
-import { AUTH_IDENTITY_STORAGE_KEY } from '../auth/isolation';
+import { AUTH_IDENTITY_STORAGE_KEY, JOB_HISTORY_STORAGE_KEY } from '../auth/isolation';
 import { AUTH_SNAPSHOT_STORAGE_KEY } from '../auth/session';
 import type { ResilientAuthState } from '../auth/useResilientAuth';
+import i18n from '../i18n';
 
 const toggleThemeMock = vi.fn();
 const useWebSocketMock = vi.fn();
@@ -104,26 +105,26 @@ vi.mock('../components/ui/ConnectionChip', () => ({
   ConnectionChip: ({ status }: { status: string }) => <div>{`Connection:${status}`}</div>,
 }));
 
-describe('App', () => {
-  beforeEach(() => {
-    localStorage.clear();
-    document.documentElement.removeAttribute('data-theme');
-    toggleThemeMock.mockClear();
-    useWebSocketMock.mockClear();
-    resetJobStoreMock.mockClear();
-    resilientAuthState.backendAuthStatus = 'fresh';
-    resilientAuthState.canAccessApp = true;
-    resilientAuthState.canUseBackend = true;
-    resilientAuthState.error = null;
-    resilientAuthState.identityKey = 'user-1';
-    resilientAuthState.isOnline = true;
-    resilientAuthState.notice = null;
-    resilientAuthState.pauseReason = null;
-    resilientAuthState.showUserMenu = true;
-    resilientAuthState.status = 'authenticated';
-    resilientAuthState.tokenExpiresAt = null;
-  });
+beforeEach(() => {
+  localStorage.clear();
+  document.documentElement.removeAttribute('data-theme');
+  toggleThemeMock.mockClear();
+  useWebSocketMock.mockClear();
+  resetJobStoreMock.mockClear();
+  resilientAuthState.backendAuthStatus = 'fresh';
+  resilientAuthState.canAccessApp = true;
+  resilientAuthState.canUseBackend = true;
+  resilientAuthState.error = null;
+  resilientAuthState.identityKey = 'user-1';
+  resilientAuthState.isOnline = true;
+  resilientAuthState.notice = null;
+  resilientAuthState.pauseReason = null;
+  resilientAuthState.showUserMenu = true;
+  resilientAuthState.status = 'authenticated';
+  resilientAuthState.tokenExpiresAt = null;
+});
 
+describe('App navigation and workspace restoration', () => {
   it('restores the saved mode and persists navigation changes', async () => {
     localStorage.setItem(AUTH_IDENTITY_STORAGE_KEY, 'user-1');
     localStorage.setItem(APP_STATE_STORAGE_KEY, JSON.stringify({ viewMode: 'subtitle', editingClip: null, subtitleTargetClip: null }));
@@ -166,6 +167,22 @@ describe('App', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /open subtitle clip/i }));
     expect(await screen.findByText('SubtitleEditor:clip-1.mp4:true')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(JSON.parse(localStorage.getItem(APP_STATE_STORAGE_KEY) ?? '{}')).toEqual({
+        editingClip: null,
+        subtitleTargetClip: {
+          created_at: 1,
+          has_transcript: true,
+          name: 'clip-1.mp4',
+          project: 'proj-1',
+          resolved_project_id: null,
+          transcript_status: 'ready',
+          url: '/clip-1.mp4',
+        },
+        viewMode: 'subtitle',
+      });
+    });
   });
 
   it('switches to the auto cut page from the main navigation', async () => {
@@ -183,6 +200,18 @@ describe('App', () => {
     });
   });
 
+  it('renders Turkish navigation and form labels in tr locale', async () => {
+    await i18n.changeLanguage('tr');
+
+    render(<App />);
+
+    expect(screen.getByRole('button', { name: 'YAPILANDIR' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'OTOMATİK KES' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'ALTYAZI DÜZENLE' })).toBeInTheDocument();
+  });
+});
+
+describe('App auth and fallback rendering', () => {
   it('clears locked subtitle targets when opening subtitle mode from navigation', async () => {
     localStorage.setItem(AUTH_IDENTITY_STORAGE_KEY, 'user-1');
     localStorage.setItem(APP_STATE_STORAGE_KEY, JSON.stringify({
@@ -196,6 +225,34 @@ describe('App', () => {
     expect(await screen.findByText('SubtitleEditor:clip-1.mp4:true')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /subtitle edit/i }));
     expect(await screen.findByText('SubtitleEditor:none:false')).toBeInTheDocument();
+  });
+
+  it('normalizes stored subtitle targets that predate transcript status fields', async () => {
+    localStorage.setItem(AUTH_IDENTITY_STORAGE_KEY, 'user-1');
+    localStorage.setItem(APP_STATE_STORAGE_KEY, JSON.stringify({
+      editingClip: null,
+      subtitleTargetClip: { created_at: 1, has_transcript: true, name: 'clip-1.mp4', project: 'proj-1', url: '/clip-1.mp4' },
+      viewMode: 'subtitle',
+    }));
+
+    render(<App />);
+
+    expect(await screen.findByText('SubtitleEditor:clip-1.mp4:true')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(JSON.parse(localStorage.getItem(APP_STATE_STORAGE_KEY) ?? '{}')).toEqual({
+        editingClip: null,
+        subtitleTargetClip: {
+          created_at: 1,
+          has_transcript: true,
+          name: 'clip-1.mp4',
+          project: 'proj-1',
+          resolved_project_id: null,
+          transcript_status: 'ready',
+          url: '/clip-1.mp4',
+        },
+        viewMode: 'subtitle',
+      });
+    });
   });
 
   it('shows offline fallback banner and hides the user menu when auth falls back to cache', async () => {
@@ -233,7 +290,9 @@ describe('App', () => {
     expect(screen.queryByText('AUTH_FALLBACK')).not.toBeInTheDocument();
     expect(useWebSocketMock).toHaveBeenCalledWith(false);
   });
+});
 
+describe('App identity reset handling', () => {
   it('clears user-scoped persisted state when the authenticated identity changes', async () => {
     localStorage.setItem(AUTH_IDENTITY_STORAGE_KEY, 'user-legacy');
     localStorage.setItem(APP_STATE_STORAGE_KEY, JSON.stringify({
@@ -242,6 +301,7 @@ describe('App', () => {
       viewMode: 'subtitle',
     }));
     localStorage.setItem(AUTH_SNAPSHOT_STORAGE_KEY, JSON.stringify({ isSignedIn: true }));
+    localStorage.setItem(JOB_HISTORY_STORAGE_KEY, JSON.stringify({ version: 1, jobs: [], clipReadyByJob: {}, jobHistoryExpiresAt: null, terminalHistoryCutoffAt: 1 }));
     localStorage.setItem('godtier-auto-cut-session', JSON.stringify({ projectId: 'proj-1' }));
     localStorage.setItem('godtier-editor-master-session', JSON.stringify({ projectId: 'proj-1' }));
     localStorage.setItem('godtier-editor-clip-session:proj-1:clip-1.mp4', JSON.stringify({ projectId: 'proj-1' }));
@@ -253,6 +313,7 @@ describe('App', () => {
     await waitFor(() => {
       expect(localStorage.getItem(AUTH_IDENTITY_STORAGE_KEY)).toBe('user-2');
       expect(localStorage.getItem(AUTH_SNAPSHOT_STORAGE_KEY)).toBeNull();
+      expect(localStorage.getItem(JOB_HISTORY_STORAGE_KEY)).toBeNull();
       expect(localStorage.getItem('godtier-auto-cut-session')).toBeNull();
       expect(localStorage.getItem('godtier-editor-master-session')).toBeNull();
       expect(localStorage.getItem('godtier-editor-clip-session:proj-1:clip-1.mp4')).toBeNull();

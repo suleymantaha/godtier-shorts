@@ -4,7 +4,7 @@
 1. URL doğrulama
 2. Proje çözümleme (`ProjectPaths`)
 3. Master asset hazırlığı (yt-dlp + ffmpeg)
-4. Transkript üretimi (WhisperX)
+4. Transkript üretimi (faster-whisper)
 5. Viral segment analizi
 6. Segment render + metadata persist
 
@@ -14,7 +14,7 @@
 |---|---|---|---|---|
 | URL doğrulama | `ValueError` | İş başlamadan hata | Geçersiz URL/ID | Erken validation + anlaşılır mesaj |
 | Komut çalıştırma | `RuntimeError` timeout | Uzun bekleme sonrası fail | Dış süreç yanıt vermiyor | `CommandRunner` timeout + cancel kill |
-| Transkript | `RuntimeError` | Pipeline 30-45% civarı durur | WhisperX/IO problemi | Stage-level try/except + status güncelleme |
+| Transkript | `RuntimeError` | Pipeline 30-45% civarı durur | faster-whisper/IO problemi | Stage-level try/except + status güncelleme |
 | LLM analiz | segment yok | "viral segment bulunamadı" | düşük kaliteli transcript veya model cevabı | fallback/prompt tuning + retry stratejisi |
 | Render | ffmpeg/yolo hatası | klip üretimi yarım kalır | GPU/codec/asset bozukluğu | per-clip izolasyon + temp cleanup |
 | Reburn | metadata overwrite riski | JSON bozulması | beklenmeyen metadata shape | load/merge guard + schema doğrulama |

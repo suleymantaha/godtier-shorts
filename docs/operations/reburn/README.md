@@ -48,6 +48,6 @@ python scripts/reburn_clip.py --project ID --clip NAME [--layout split] [--style
 
 ## İlgili
 
-- [Subtitle Renderer](../logic/subtitle-renderer/README.md)
-- [Subtitle Styles](../logic/subtitle-styles/README.md)
+- [Subtitle Renderer](../../logic/subtitle-renderer/README.md)
+- [Subtitle Styles](../../logic/subtitle-styles/README.md)
 - [Orchestrator](../../backend/core/orchestrator.py) – `reburn_subtitles`

@@ -15,7 +15,9 @@ from typing import Any, Dict, Optional
 from fastapi import WebSocket
 from loguru import logger
 
+from backend.config import JOB_STATE_PATH
 from backend.core.exceptions import RateLimitError
+from backend.services.job_state import JobStateRepository
 
 
 class ConnectionManager:
@@ -29,10 +31,11 @@ class ConnectionManager:
     DEFAULT_MAX_PENDING_JOBS_PER_SUBJECT = 3
     MAX_JOB_TIMELINE_ENTRIES = 300
 
-    def __init__(self) -> None:
+    def __init__(self, *, job_repository: JobStateRepository | None = None) -> None:
         self.active_connections: dict[WebSocket, str] = {}
+        self.processing_lock = asyncio.Lock()
         self.gpu_lock = asyncio.Lock()
-        self.jobs: Dict[str, Dict[str, Any]] = {}
+        self.jobs: Dict[str, Dict[str, Any]] = job_repository if job_repository is not None else JobStateRepository()
         self._cleanup_task: asyncio.Task | None = None
 
     @staticmethod
@@ -171,6 +174,38 @@ class ConnectionManager:
             return "clip_ready"
         return "worker"
 
+    @staticmethod
+    def _normalize_download_progress(download_progress: Any) -> dict[str, Any] | None:
+        if not isinstance(download_progress, dict):
+            return None
+        normalized: dict[str, Any] = {"phase": "download"}
+        for key in ("downloaded_bytes", "total_bytes", "total_bytes_estimate"):
+            value = download_progress.get(key)
+            if isinstance(value, int):
+                normalized[key] = value
+        percent = download_progress.get("percent")
+        if isinstance(percent, (int, float)):
+            normalized["percent"] = float(percent)
+        for key in ("speed_text", "eta_text", "status"):
+            value = download_progress.get(key)
+            if isinstance(value, str) and value:
+                normalized[key] = value
+        return normalized if len(normalized) > 1 else None
+
+    def _apply_job_extra(
+        self,
+        job: dict[str, Any],
+        event: dict[str, Any],
+        extra: dict[str, Any] | None,
+    ) -> None:
+        if not extra:
+            return
+        download_progress = self._normalize_download_progress(extra.get("download_progress"))
+        if download_progress is None:
+            return
+        event["download_progress"] = download_progress
+        job["download_progress"] = download_progress
+
     def append_job_timeline_event(
         self,
         job_id: str,
@@ -181,6 +216,7 @@ class ConnectionManager:
         source: str = "worker",
         at: str | None = None,
         event_id: str | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         job = self.jobs.get(job_id)
         if job is None:
@@ -206,6 +242,7 @@ class ConnectionManager:
                 job["status"] = resolved_status
                 job["progress"] = progress
                 job["last_message"] = message
+                self._apply_job_extra(job, existing_event, extra)
                 return existing_event
 
         event = {
@@ -217,6 +254,7 @@ class ConnectionManager:
             "message": message,
             "source": source,
         }
+        self._apply_job_extra(job, event, extra)
         timeline.append(event)
         job["timeline"] = timeline[-self.MAX_JOB_TIMELINE_ENTRIES :]
         job["status"] = resolved_status
@@ -309,12 +347,15 @@ class ConnectionManager:
                 source=resolved_source,
                 at=str(payload.get("at") or "") or None,
                 event_id=str(payload.get("event_id") or "") or None,
+                extra=extra,
             )
             if event is not None:
                 payload["event_id"] = event["id"]
                 payload["at"] = event["at"]
                 payload["status"] = event["status"]
                 payload["source"] = event["source"]
+                if "download_progress" in event:
+                    payload["download_progress"] = event["download_progress"]
 
         target_subject = None
         if job_id:
@@ -331,7 +372,7 @@ class ConnectionManager:
 
 
 # Singleton — tüm route modülleri bu nesneyi import eder
-manager = ConnectionManager()
+manager = ConnectionManager(job_repository=JobStateRepository(JOB_STATE_PATH))
 
 # Ana event loop referansı (thread'lerden güvenli erişim için)
 _main_loop: asyncio.AbstractEventLoop | None = None
@@ -391,7 +432,15 @@ def thread_safe_broadcast(
     loop = get_main_loop()
     if loop and loop.is_running():
         bucket = _broadcast_bucket(job_id)
-        is_priority = _is_priority_broadcast(status, extra)
+        merged_extra = {
+            key: value
+            for key, value in status.items()
+            if key not in {"message", "progress", "status"}
+        }
+        if extra:
+            merged_extra.update(extra)
+        normalized_extra = merged_extra or None
+        is_priority = _is_priority_broadcast(status, normalized_extra)
 
         with _pending_lock:
             pending_count = _pending_broadcasts.get(bucket, 0)
@@ -410,7 +459,7 @@ def thread_safe_broadcast(
                     status["progress"],
                     job_id,
                     status.get("status"),
-                    extra,
+                    normalized_extra,
                 ),
                 loop,
             )

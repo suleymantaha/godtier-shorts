@@ -1,0 +1,50 @@
+---
+alwaysApply: true
+---
+
+# GodTier Shorts Testing Rule
+
+Treat verification as mandatory for every code or configuration change.
+
+## Required Behavior
+
+- After making changes, run at least the smallest relevant verification command that exercises the edited surface area.
+- Do not end a coding session with untested changes unless verification is blocked by a real environment limitation or missing dependency.
+- If verification is blocked, record the exact blocker, the command that could not be run, and the next recommended check in `PROJECT_MEMORY.md`.
+- If a change touches multiple surfaces, combine targeted checks or escalate to `bash scripts/verify.sh`.
+
+## Minimum Test Policy
+
+- Backend-only Python changes:
+  - Run the most relevant `pytest backend/tests/... -q` target for the edited area.
+- Frontend-only changes:
+  - Run the most relevant `bash -lc "cd frontend && npm run test -- ... --reporter=dot"` target.
+  - Run `bash -lc "cd frontend && npm run lint"` when editing frontend application code.
+- Shared contract, config, scripts, build, or cross-surface changes:
+  - Prefer `bash scripts/verify.sh`.
+- Rule, docs, or memory-only changes:
+  - No full test suite is required, but note that no tests were run.
+
+## Escalation Rules
+
+- If the smallest relevant test fails, do not stop there unless the user explicitly asks you to.
+- Either fix the failure or run broader checks when failure scope is unclear.
+- Before finishing substantial work, prefer one broader confidence check in addition to the narrowest targeted check.
+
+## Recording Rules
+
+- Update `PROJECT_MEMORY.md` with the exact commands run.
+- Record pass/fail/blocked status, not vague statements like "verified".
+- When no tests are run, state why that was acceptable for the specific change.
+
+## Canonical Commands
+
+- Broad verification: `bash scripts/verify.sh`
+- Backend sweep: `pytest backend/tests -q`
+- Frontend lint: `bash -lc "cd frontend && npm run lint"`
+- Frontend tests: `bash -lc "cd frontend && npm run test -- --reporter=dot"`
+- Frontend build: `bash -lc "cd frontend && npm run build"`
+
+---
+
+## alwaysApply: true

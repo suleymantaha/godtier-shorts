@@ -1,0 +1,42 @@
+{
+  "job_id": "manualcut_1774131473_842a3e",
+  "sample_video": "/home/arch/godtier-shorts/workspace/projects/a4069ffa93794396e1a7bf578c6a7b8b/up_a4069ffa93794396e1a7bf578c6a7b8b_1f063fc510c6/shorts/cut_2_3837_3840.mp4",
+  "request": {
+    "start_time": 0.0,
+    "end_time": 2.5,
+    "style_name": "TIKTOK",
+    "animation_type": "default",
+    "skip_subtitles": false,
+    "num_clips": 1,
+    "cut_as_short": true,
+    "layout": "auto"
+  },
+  "response": {
+    "status": "started",
+    "job_id": "manualcut_1774131473_842a3e",
+    "project_id": "up_a4069ffa93794396e1a7bf578c6a7b8b_2efdba3ca75c",
+    "clip_name": "manual_manualcut_1774131473_842a3e.mp4",
+    "output_url": "/api/projects/up_a4069ffa93794396e1a7bf578c6a7b8b_2efdba3ca75c/shorts/manual_manualcut_1774131473_842a3e.mp4"
+  },
+  "poll_sequence": [
+    { "attempt": 0, "status": "processing", "progress": 5, "message": "Ses çıkarılıyor..." },
+    { "attempt": 1, "status": "processing", "progress": 31, "message": "faster-whisper modeli (large-v3) yükleniyor..." },
+    { "attempt": 6, "status": "processing", "progress": 33, "message": "Ses analiz ediliyor (konuşma → metin)..." },
+    { "attempt": 7, "status": "processing", "progress": 45, "message": "Manuel klip için GPU render slotu alındı." },
+    { "attempt": 12, "status": "completed", "progress": 100, "message": "Otomatik manual cut işlemi tamamlandı." }
+  ],
+  "timeline": [
+    { "progress": 0, "message": "Video alındı, otomatik kesim kuyruğa alındı...", "source": "api" },
+    { "progress": 0, "message": "İşlem sırası bekleniyor...", "source": "worker" },
+    { "progress": 1, "message": "Video hazırlanıyor...", "source": "worker" },
+    { "progress": 5, "message": "Ses çıkarılıyor...", "source": "worker" },
+    { "progress": 31, "message": "faster-whisper modeli (large-v3) yükleniyor...", "source": "worker" },
+    { "progress": 33, "message": "Ses analiz ediliyor (konuşma → metin)...", "source": "worker" },
+    { "progress": 41, "message": "Transkript sonuçları diske yazılıyor...", "source": "worker" },
+    { "progress": 10, "message": "Manuel klip: 0.0 - 2.5 sn", "source": "worker" },
+    { "progress": 45, "message": "Manuel klip için GPU render slotu alındı.", "source": "worker" },
+    { "progress": 99, "message": "Manuel klip hazır.", "source": "clip_ready" },
+    { "progress": 100, "message": "Manuel klip hazır: /home/arch/godtier-shorts/workspace/projects/a4069ffa93794396e1a7bf578c6a7b8b/up_a4069ffa93794396e1a7bf578c6a7b8b_2efdba3ca75c/shorts/manual_manualcut_1774131473_842a3e.mp4", "source": "worker" },
+    { "progress": 100, "message": "Otomatik manual cut işlemi tamamlandı.", "source": "worker" }
+  ]
+}

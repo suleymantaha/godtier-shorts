@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from backend.core.subtitle_timing import (
+    build_words_from_segment_text,
+    canonicalize_transcript_segments,
     build_chunk_payload,
     chunk_words,
     collect_valid_words,
@@ -81,3 +83,49 @@ def test_compute_word_coverage_ratio_counts_valid_words_against_normalized_token
         ]
     )
     assert ratio == 1.0
+
+
+def test_canonicalize_transcript_segments_preserves_word_slots_for_same_token_count() -> None:
+    canonical = canonicalize_transcript_segments(
+        [
+            {
+                "text": "fresh copy",
+                "start": 0.0,
+                "end": 2.0,
+                "words": [
+                    {"word": "hello", "start": 0.0, "end": 0.8, "score": 0.7},
+                    {"word": "world", "start": 0.8, "end": 2.0, "score": 0.9},
+                ],
+            }
+        ]
+    )
+
+    assert canonical == [
+        {
+            "text": "fresh copy",
+            "start": 0.0,
+            "end": 2.0,
+            "words": [
+                {"word": "fresh", "start": 0.0, "end": 0.8, "score": 0.7},
+                {"word": "copy", "start": 0.8, "end": 2.0, "score": 0.9},
+            ],
+        }
+    ]
+
+
+def test_canonicalize_transcript_segments_rebuilds_words_when_token_count_changes() -> None:
+    canonical = canonicalize_transcript_segments(
+        [
+            {
+                "text": "fresh new copy",
+                "start": 0.0,
+                "end": 3.0,
+                "words": [
+                    {"word": "hello", "start": 0.0, "end": 1.0, "score": 0.7},
+                    {"word": "world", "start": 1.0, "end": 3.0, "score": 0.9},
+                ],
+            }
+        ]
+    )
+
+    assert canonical[0]["words"] == build_words_from_segment_text("fresh new copy", 0.0, 3.0)

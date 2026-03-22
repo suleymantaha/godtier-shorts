@@ -93,6 +93,38 @@ def test_validate_auth_configuration_requires_audience(monkeypatch: pytest.Monke
         validate_auth_configuration()
 
 
+def test_clerk_auth_accepts_comma_separated_audiences(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("API_BEARER_TOKENS", raising=False)
+    monkeypatch.setenv("CLERK_ISSUER_URL", "https://example.clerk.accounts.dev")
+    monkeypatch.setenv("CLERK_AUDIENCE", "godtier-shorts-api,godtier-backend")
+    captured: dict[str, object] = {}
+
+    def _decode(_token: str, _issuer: str, audience: str | list[str]):
+        from backend.api.security import AuthContext
+
+        captured["audience"] = audience
+        return AuthContext(
+            subject="user_123",
+            roles={"viewer"},
+            token_type="jwt",
+            auth_mode="clerk_jwt",
+        )
+
+    monkeypatch.setattr("backend.api.security._decode_jwt", _decode)
+
+    app = FastAPI()
+
+    @app.get("/projects")
+    def projects(_: object = Depends(require_policy("view_projects"))):
+        return {"ok": True}
+
+    client = TestClient(app)
+    response = client.get("/projects", headers={"Authorization": "Bearer jwt-token"})
+
+    assert response.status_code == 200
+    assert captured["audience"] == ["godtier-shorts-api", "godtier-backend"]
+
+
 def test_authenticate_websocket_token_with_static_token(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("API_BEARER_TOKENS", "token123:viewer")
     auth = authenticate_websocket_token("token123")

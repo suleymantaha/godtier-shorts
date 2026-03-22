@@ -6,12 +6,150 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
 
 class PostizApiError(RuntimeError):
     pass
+
+
+def _build_postiz_root_candidates() -> list[str]:
+    configured_base_url = os.getenv("POSTIZ_API_BASE_URL", "http://localhost:4007/api/public/v1").rstrip("/")
+    candidates: list[str] = []
+
+    def add(url: str) -> None:
+        normalized = url.rstrip("/")
+        if normalized and normalized not in candidates:
+            candidates.append(normalized)
+
+    if configured_base_url.endswith("/api/public/v1"):
+        root = configured_base_url[: -len("/api/public/v1")]
+        add(root)
+        add(f"{root}/api")
+        return candidates
+
+    if configured_base_url.endswith("/public/v1"):
+        root = configured_base_url[: -len("/public/v1")]
+        add(root)
+        add(f"{root}/api")
+        return candidates
+
+    if configured_base_url.endswith("/api"):
+        root = configured_base_url[: -len("/api")]
+        add(root)
+        add(configured_base_url)
+        return candidates
+
+    add(configured_base_url)
+    add(f"{configured_base_url}/api")
+    return candidates
+
+
+def build_postiz_oauth_authorize_url(
+    *,
+    client_id: str,
+    redirect_uri: str,
+    integration: str,
+    state: str,
+) -> str:
+    if not client_id.strip():
+        raise PostizApiError("POSTIZ_OAUTH_CLIENT_ID tanımlı olmalı")
+    if not redirect_uri.strip():
+        raise PostizApiError("SOCIAL_OAUTH_CALLBACK_URL tanımlı olmalı")
+
+    roots = _build_postiz_root_candidates()
+    if not roots:
+        raise PostizApiError("POSTIZ OAuth authorize URL oluşturulamadı")
+
+    query = urlencode(
+        {
+            "client_id": client_id.strip(),
+            "redirect_uri": redirect_uri.strip(),
+            "response_type": "code",
+            "state": state,
+            "integration": integration,
+            "provider": integration,
+        }
+    )
+    return f"{roots[0]}/oauth/authorize?{query}"
+
+
+def exchange_postiz_oauth_code(
+    *,
+    client_id: str,
+    client_secret: str,
+    code: str,
+    redirect_uri: str,
+    timeout: float = 30.0,
+) -> dict[str, Any]:
+    if not client_id.strip():
+        raise PostizApiError("POSTIZ_OAUTH_CLIENT_ID tanımlı olmalı")
+    if not client_secret.strip():
+        raise PostizApiError("POSTIZ_OAUTH_CLIENT_SECRET tanımlı olmalı")
+    if not code.strip():
+        raise PostizApiError("OAuth code boş olamaz")
+    if not redirect_uri.strip():
+        raise PostizApiError("SOCIAL_OAUTH_CALLBACK_URL tanımlı olmalı")
+
+    payload = {
+        "grant_type": "authorization_code",
+        "client_id": client_id.strip(),
+        "client_secret": client_secret.strip(),
+        "code": code.strip(),
+        "redirect_uri": redirect_uri.strip(),
+    }
+    headers = {"Accept": "application/json"}
+    roots = _build_postiz_root_candidates()
+    token_urls = [f"{root}/oauth/token" for root in roots]
+    last_error: PostizApiError | None = None
+
+    for index, token_url in enumerate(token_urls):
+        try:
+            response = httpx.post(
+                token_url,
+                json=payload,
+                headers=headers,
+                timeout=timeout,
+            )
+        except httpx.HTTPError as exc:
+            last_error = PostizApiError(f"Postiz token exchange failed: {exc}")
+            if index < len(token_urls) - 1:
+                continue
+            raise last_error from exc
+
+        if response.status_code == 404 and index < len(token_urls) - 1:
+            last_error = PostizApiError("Postiz oauth token endpoint not found")
+            continue
+
+        if response.status_code >= 400:
+            raise PostizApiError(f"Postiz OAuth HTTP {response.status_code}: {response.text[:600]}")
+
+        try:
+            data = response.json() if response.text else {}
+        except ValueError as exc:
+            raise PostizApiError("Postiz OAuth token response is not valid JSON") from exc
+
+        if not isinstance(data, dict):
+            raise PostizApiError("Postiz OAuth token response must be an object")
+
+        access_token = str(data.get("access_token") or data.get("accessToken") or "").strip()
+        if not access_token:
+            raise PostizApiError("Postiz OAuth token response missing access_token")
+
+        return {
+            "access_token": access_token,
+            "refresh_token": data.get("refresh_token") or data.get("refreshToken"),
+            "expires_in": data.get("expires_in") or data.get("expiresIn"),
+            "token_type": data.get("token_type") or data.get("tokenType"),
+            "scope": data.get("scope"),
+            "raw": data,
+        }
+
+    if last_error is not None:
+        raise last_error
+    raise PostizApiError("Postiz token exchange failed")
 
 
 def _serialize_postiz_tags(tags: list[str] | None) -> list[dict[str, str]]:

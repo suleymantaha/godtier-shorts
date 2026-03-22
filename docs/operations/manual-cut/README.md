@@ -64,4 +64,4 @@ Her aralık için `run_manual_clip()` çağrılır.
 
 - [Editor routes](../../backend/api/routes/editor.py)
 - [Orchestrator](../../backend/core/orchestrator.py) – `run_manual_clip`, `run_manual_clips_from_cut_points`
-- [Video Processor](../logic/video-processor/README.md)
+- [Video Processor](../../logic/video-processor/README.md)

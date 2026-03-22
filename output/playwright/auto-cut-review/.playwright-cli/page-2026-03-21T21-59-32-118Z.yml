@@ -1,0 +1,67 @@
+- generic [ref=e6]:
+  - banner [ref=e11]:
+    - generic [ref=e12]:
+      - heading "GOD-TIER SHORTS" [level=1] [ref=e13]:
+        - img [ref=e15]
+        - text: GOD-TIER SHORTS
+      - generic [ref=e19]:
+        - generic [ref=e20]: Nebula AI Architect
+        - generic [ref=e22]: v1.0.SPACE
+    - generic [ref=e23]:
+      - navigation "Ana navigasyon" [ref=e24]:
+        - button "CONFIGURE" [ref=e25]:
+          - img [ref=e26]
+          - text: CONFIGURE
+        - button "AUTO CUT" [ref=e29]:
+          - img [ref=e30]
+          - text: AUTO CUT
+        - button "SUBTITLE EDIT" [ref=e36]:
+          - img [ref=e37]
+          - text: SUBTITLE EDIT
+      - generic [ref=e40]:
+        - button "Toggle Theme" [ref=e41]:
+          - img [ref=e42]
+        - link "GitHub" [ref=e48] [cursor=pointer]:
+          - /url: https://github.com
+          - img [ref=e49]
+        - link "Twitter" [ref=e52] [cursor=pointer]:
+          - /url: https://twitter.com
+          - img [ref=e53]
+        - button "Open user menu" [ref=e57] [cursor=pointer]:
+          - img "Babek Babek's logo" [ref=e60]
+  - main [ref=e473]:
+    - generic [ref=e475]:
+      - generic [ref=e476]:
+        - generic [ref=e477]:
+          - generic [ref=e478]:
+            - generic [ref=e479]:
+              - img [ref=e480]
+              - heading "Otomatik Manual Cut" [level=3] [ref=e482]
+            - paragraph [ref=e483]: Video sec, zaman araligini belirle, short pipeline geri kalanini otomatik tamamlasin.
+          - button "VIDEO SEC" [active] [ref=e485]
+        - generic [ref=e486]: Henuz video secilmedi.
+      - generic [ref=e487]:
+        - generic [ref=e490]:
+          - img [ref=e491]
+          - paragraph [ref=e497]: Bos baslangic hazir
+          - paragraph [ref=e498]: Manual cut ekrani sadece video yuklendikten sonra aktif olur.
+        - generic [ref=e499]:
+          - generic [ref=e500]:
+            - img [ref=e501]
+            - generic [ref=e504]: Kesim Araligi
+            - generic [ref=e505]:
+              - text: 0.0s - 60.0s
+              - generic [ref=e506]: (0:00.0 - 1:00.0)
+              - generic [ref=e507]: "[Toplam: 60.0s | 1.0 dk]"
+          - generic [ref=e508]: Zaman araligi secmek icin once video yukle.
+      - generic [ref=e509]:
+        - generic [ref=e510]:
+          - heading "AI ile Toplu Render" [level=3] [ref=e511]
+          - paragraph [ref=e512]: AI tum videodan 3 viral klip secer ve uretir.
+        - button "AI ILE 3 KLIP URET" [disabled] [ref=e513]:
+          - img [ref=e514]
+          - text: AI ILE 3 KLIP URET
+  - contentinfo [ref=e468]:
+    - paragraph [ref=e469]: © 2026 GOD-TIER SHORTS. AI_ARCHITECT_ENABLED
+    - 'status "Backend durumu: AUTH:PAUSED" [ref=e470]':
+      - generic [ref=e472]: AUTH:PAUSED

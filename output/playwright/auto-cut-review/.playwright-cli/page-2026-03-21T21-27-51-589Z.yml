@@ -1,0 +1,7 @@
+- generic [ref=e3]:
+  - status [ref=e11]:
+    - paragraph [ref=e12]: Kimlik dogrulama basliyor
+    - paragraph [ref=e13]: Clerk baslatma kontrolu uzadi. Internet baglantinizi ve Clerk erisiminizi kontrol edin.
+  - generic [ref=e5]:
+    - paragraph [ref=e6]: AUTH CHECK
+    - paragraph [ref=e7]: Oturum ve baglanti durumu kontrol ediliyor. Bu adim uzarsa Clerk veya internet erisimi gecici olarak sorun yasiyor olabilir.

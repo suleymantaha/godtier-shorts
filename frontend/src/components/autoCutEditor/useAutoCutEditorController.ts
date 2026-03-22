@@ -65,6 +65,61 @@ interface AutoCutControllerOptions {
   onOpenLibrary?: () => void;
 }
 
+function buildAutoCutEditorControllerModel({
+  actions,
+  currentJob,
+  generatedClips,
+  handleOpenLibrary,
+  jobs,
+  resolvedResultUrl,
+  state,
+  jobState,
+}: {
+  actions: ReturnType<typeof useAutoCutEditorActions>;
+  currentJob: Job | null;
+  generatedClips: ClipReadyEntry[];
+  handleOpenLibrary: () => void;
+  jobs: Job[];
+  resolvedResultUrl: string | null;
+  state: ReturnType<typeof useAutoCutEditorState>;
+  jobState: ReturnType<typeof deriveAutoCutJobState>;
+}) {
+  return {
+    ...actions,
+    ...jobState,
+    animationType: state.animationType,
+    busy: isProjectBusy(state.projectId, jobs),
+    currentJob,
+    currentJobId: state.currentJobId,
+    cutAsShort: state.cutAsShort,
+    duration: state.duration,
+    endTime: state.endTime,
+    fileInputRef: state.fileInputRef,
+    generatedClips,
+    handleOpenLibrary,
+    isPlaying: state.isPlaying,
+    kesFeedback: state.kesFeedback,
+    layout: state.layout,
+    markers: state.markers,
+    numClips: state.numClips,
+    projectId: state.projectId,
+    queuePosition: state.currentJobId ? getQueuePosition(state.currentJobId, jobs) : null,
+    resultVideoSrc: resolvedResultUrl ? getClipUrl({ url: resolvedResultUrl }) : undefined,
+    selectedFile: state.selectedFile,
+    setAnimationType: state.setAnimationType,
+    setCutAsShort: state.setCutAsShort,
+    setIsPlaying: state.setIsPlaying,
+    setLayout: state.setLayout,
+    setSkipSubtitles: state.setSkipSubtitles,
+    setStyle: state.setStyle,
+    skipSubtitles: state.skipSubtitles,
+    startTime: state.startTime,
+    style: state.style,
+    videoRef: state.videoRef,
+    videoSrc: state.localSrc ?? (state.projectId ? `${API_BASE}/api/projects/${state.projectId}/master` : undefined),
+  };
+}
+
 export function useAutoCutEditorController({ onOpenLibrary }: AutoCutControllerOptions = {}) {
   const initialSession = useMemo(() => readStoredAutoCutSession(), []);
   const { clipReadyByJob, jobs, fetchJobs } = useJobStore();
@@ -115,40 +170,16 @@ export function useAutoCutEditorController({ onOpenLibrary }: AutoCutControllerO
   });
   useRevokeLocalVideoUrl(state.localSrc);
 
-  return {
-    ...actions,
-    ...jobState,
-    animationType: state.animationType,
-    busy: isProjectBusy(state.projectId, jobs),
+  return buildAutoCutEditorControllerModel({
+    actions,
     currentJob,
-    currentJobId: state.currentJobId,
-    cutAsShort: state.cutAsShort,
-    duration: state.duration,
-    endTime: state.endTime,
-    fileInputRef: state.fileInputRef,
     generatedClips,
     handleOpenLibrary,
-    isPlaying: state.isPlaying,
-    kesFeedback: state.kesFeedback,
-    layout: state.layout,
-    markers: state.markers,
-    numClips: state.numClips,
-    projectId: state.projectId,
-    queuePosition: state.currentJobId ? getQueuePosition(state.currentJobId, jobs) : null,
-    resultVideoSrc: resolvedResultUrl ? getClipUrl({ url: resolvedResultUrl }) : undefined,
-    selectedFile: state.selectedFile,
-    setAnimationType: state.setAnimationType,
-    setCutAsShort: state.setCutAsShort,
-    setIsPlaying: state.setIsPlaying,
-    setLayout: state.setLayout,
-    setSkipSubtitles: state.setSkipSubtitles,
-    setStyle: state.setStyle,
-    skipSubtitles: state.skipSubtitles,
-    startTime: state.startTime,
-    style: state.style,
-    videoRef: state.videoRef,
-    videoSrc: state.localSrc ?? (state.projectId ? `${API_BASE}/api/projects/${state.projectId}/master` : undefined),
-  };
+    jobs,
+    jobState,
+    resolvedResultUrl,
+    state,
+  });
 }
 
 export type AutoCutEditorController = ReturnType<typeof useAutoCutEditorController>;

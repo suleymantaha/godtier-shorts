@@ -11,11 +11,11 @@ function createToken(expSecondsFromNow: number): string {
   return `${header}.${payload}.signature`;
 }
 
-describe('useResilientAuth helpers', () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
+beforeEach(() => {
+  localStorage.clear();
+});
 
+describe('useResilientAuth helpers - authenticated states', () => {
   it('returns authenticated state when Clerk is loaded and signed in', () => {
     expect(resolveResilientAuthState({
       authError: null,
@@ -64,7 +64,9 @@ describe('useResilientAuth helpers', () => {
       status: 'offline_authenticated',
     });
   });
+});
 
+describe('useResilientAuth helpers - fallback handling', () => {
   it('returns error state when there is no usable fallback snapshot', () => {
     expect(resolveResilientAuthState({
       authError: createAppError('auth_provider_unavailable', 'auth down'),

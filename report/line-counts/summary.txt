@@ -1,0 +1,13 @@
+ALL_FILES
+backend_files=391
+backend_lines=42327
+frontend_files=21714
+frontend_lines=5679595
+all_lines=5721922
+
+SOURCE_ONLY
+backend_files=129
+backend_lines=26326
+frontend_src_files=134
+frontend_src_lines=27340
+all_lines=53666

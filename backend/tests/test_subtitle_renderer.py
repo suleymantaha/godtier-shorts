@@ -39,7 +39,7 @@ def test_generate_ass_file_escapes_ass_control_chars(tmp_path: Path) -> None:
     assert r"slash\\word" in content
 
 
-def test_generate_ass_file_prefers_real_word_timestamps_when_segment_text_mismatches(tmp_path: Path) -> None:
+def test_generate_ass_file_syncs_words_to_segment_text_when_they_mismatch(tmp_path: Path) -> None:
     transcript = [
         {
             "text": "hello world",
@@ -58,8 +58,8 @@ def test_generate_ass_file_prefers_real_word_timestamps_when_segment_text_mismat
     renderer.generate_ass_file(str(transcript_path), str(output_path))
 
     content = output_path.read_text(encoding="utf-8")
-    assert "planet" in content
-    assert "world" not in content
+    assert "world" in content
+    assert "planet" not in content
 
 
 def test_generate_ass_file_uses_split_safe_area_header(tmp_path: Path) -> None:

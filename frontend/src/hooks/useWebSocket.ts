@@ -1,9 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type MutableRefObject } from 'react';
 
 import { getFreshToken } from '../api/client';
 import { useAuthRuntimeStore } from '../auth/runtime';
 import { WS_BASE } from '../config';
-import { useJobStore } from '../store/useJobStore';
+import { useJobStore, type JobState } from '../store/useJobStore';
 import {
   MAX_WEBSOCKET_RETRY,
   RETRY_DELAY_MS,
@@ -23,6 +23,141 @@ function useLatestRef<T>(value: T) {
   return ref;
 }
 
+function useWebSocketStoreRefs() {
+  const { mergeJobTimelineEvent, markClipReady, fetchJobs, setWsStatus } = useJobStore();
+
+  return {
+    fetchJobsRef: useLatestRef(fetchJobs),
+    markClipReadyRef: useLatestRef(markClipReady),
+    mergeJobTimelineEventRef: useLatestRef(mergeJobTimelineEvent),
+    setWsStatusRef: useLatestRef(setWsStatus),
+  };
+}
+
+function hasFreshProtectedAuth() {
+  const runtimeState = useAuthRuntimeStore.getState();
+  return runtimeState.canUseProtectedRequests && runtimeState.backendAuthStatus === 'fresh';
+}
+
+function clearReconnectTimeout(reconnectTimeoutId: MutableRefObject<number | null>) {
+  if (reconnectTimeoutId.current !== null) {
+    clearTimeout(reconnectTimeoutId.current);
+    reconnectTimeoutId.current = null;
+  }
+}
+
+function closeSocket(
+  ws: MutableRefObject<WebSocket | null>,
+  reconnectTimeoutId: MutableRefObject<number | null>,
+  isUnmounted: MutableRefObject<boolean>,
+) {
+  isUnmounted.current = true;
+
+  if (ws.current) {
+    ws.current.close();
+    ws.current = null;
+  }
+
+  clearReconnectTimeout(reconnectTimeoutId);
+}
+
+function handleProgressEvent(
+  eventData: string,
+  mergeJobTimelineEvent: JobState['mergeJobTimelineEvent'],
+  markClipReady: JobState['markClipReady'],
+) {
+  const progressMessage = parseProgressMessage(eventData);
+  if (!progressMessage) {
+    return;
+  }
+
+  mergeJobTimelineEvent({
+    at: progressMessage.at,
+    event_id: progressMessage.event_id,
+    job_id: progressMessage.job_id,
+    message: progressMessage.message,
+    progress: progressMessage.progress,
+    source: progressMessage.source,
+    status: progressMessage.status,
+    download_progress: progressMessage.download_progress,
+  });
+
+  if (progressMessage.event_type === 'clip_ready' && progressMessage.clip_name) {
+    markClipReady({
+      at: progressMessage.at,
+      clipName: progressMessage.clip_name,
+      job_id: progressMessage.job_id,
+      message: progressMessage.message,
+      progress: progressMessage.progress,
+      projectId: progressMessage.project_id,
+      uiTitle: progressMessage.ui_title,
+    });
+  }
+}
+
+function attachSocketHandlers({
+  connect,
+  fetchJobsRef,
+  isUnmounted,
+  markClipReadyRef,
+  mergeJobTimelineEventRef,
+  reconnectTimeoutId,
+  retryCount,
+  setWsStatusRef,
+  ws,
+}: {
+  connect: () => Promise<void>;
+  fetchJobsRef: MutableRefObject<JobState['fetchJobs']>;
+  isUnmounted: MutableRefObject<boolean>;
+  markClipReadyRef: MutableRefObject<JobState['markClipReady']>;
+  mergeJobTimelineEventRef: MutableRefObject<JobState['mergeJobTimelineEvent']>;
+  reconnectTimeoutId: MutableRefObject<number | null>;
+  retryCount: MutableRefObject<number>;
+  setWsStatusRef: MutableRefObject<JobState['setWsStatus']>;
+  ws: MutableRefObject<WebSocket | null>;
+}) {
+  if (!ws.current) {
+    return;
+  }
+
+  ws.current.onopen = () => {
+    retryCount.current = 0;
+    setWsStatusRef.current('connected');
+    void fetchJobsRef.current();
+  };
+
+  ws.current.onmessage = (event) => {
+    handleProgressEvent(event.data, mergeJobTimelineEventRef.current, markClipReadyRef.current);
+  };
+
+  ws.current.onerror = () => {
+    /* onclose will fire after onerror */
+  };
+
+  ws.current.onclose = () => {
+    if (isUnmounted.current || !hasFreshProtectedAuth()) {
+      setWsStatusRef.current('disconnected');
+      return;
+    }
+
+    const reconnectState = getReconnectState(retryCount.current, MAX_WEBSOCKET_RETRY);
+    retryCount.current = reconnectState.nextRetryCount;
+    if (!reconnectState.shouldReconnect) {
+      setWsStatusRef.current('disconnected');
+      return;
+    }
+
+    setWsStatusRef.current(reconnectState.status);
+    reconnectTimeoutId.current = window.setTimeout(() => {
+      if (!hasFreshProtectedAuth()) {
+        setWsStatusRef.current('disconnected');
+        return;
+      }
+      void connect();
+    }, RETRY_DELAY_MS);
+  };
+}
+
 export const useWebSocket = (enabled = true) => {
   const ws = useRef<WebSocket | null>(null);
   const retryCount = useRef(0);
@@ -30,11 +165,7 @@ export const useWebSocket = (enabled = true) => {
   const isUnmounted = useRef(false);
   const backendAuthStatus = useAuthRuntimeStore((state) => state.backendAuthStatus);
   const canUseProtectedRequests = useAuthRuntimeStore((state) => state.canUseProtectedRequests);
-  const { mergeJobTimelineEvent, markClipReady, fetchJobs, setWsStatus } = useJobStore();
-  const mergeJobTimelineEventRef = useLatestRef(mergeJobTimelineEvent);
-  const markClipReadyRef = useLatestRef(markClipReady);
-  const fetchJobsRef = useLatestRef(fetchJobs);
-  const setWsStatusRef = useLatestRef(setWsStatus);
+  const { fetchJobsRef, markClipReadyRef, mergeJobTimelineEventRef, setWsStatusRef } = useWebSocketStoreRefs();
   const canConnect = enabled && canUseProtectedRequests && backendAuthStatus === 'fresh';
 
   useEffect(() => {
@@ -44,6 +175,7 @@ export const useWebSocket = (enabled = true) => {
     }
 
     isUnmounted.current = false;
+    void fetchJobsRef.current();
 
     const connect = async () => {
       if (retryCount.current >= MAX_WEBSOCKET_RETRY) {
@@ -63,90 +195,21 @@ export const useWebSocket = (enabled = true) => {
         return;
       }
 
-      ws.current.onopen = () => {
-        retryCount.current = 0;
-        setWsStatusRef.current('connected');
-        void fetchJobsRef.current();
-      };
-
-      ws.current.onmessage = (event) => {
-        const progressMessage = parseProgressMessage(event.data);
-        if (!progressMessage) {
-          return;
-        }
-
-        mergeJobTimelineEventRef.current({
-          at: progressMessage.at,
-          event_id: progressMessage.event_id,
-          job_id: progressMessage.job_id,
-          message: progressMessage.message,
-          progress: progressMessage.progress,
-          source: progressMessage.source,
-          status: progressMessage.status,
-        });
-
-        if (progressMessage.event_type === 'clip_ready' && progressMessage.clip_name) {
-          markClipReadyRef.current({
-            at: progressMessage.at,
-            clipName: progressMessage.clip_name,
-            job_id: progressMessage.job_id,
-            message: progressMessage.message,
-            progress: progressMessage.progress,
-            projectId: progressMessage.project_id,
-            uiTitle: progressMessage.ui_title,
-          });
-        }
-      };
-
-      ws.current.onerror = () => {
-        /* onclose will fire after onerror */
-      };
-
-      ws.current.onclose = () => {
-        if (isUnmounted.current) {
-          return;
-        }
-
-        const runtimeState = useAuthRuntimeStore.getState();
-        if (!runtimeState.canUseProtectedRequests || runtimeState.backendAuthStatus !== 'fresh') {
-          setWsStatusRef.current('disconnected');
-          return;
-        }
-
-        const reconnectState = getReconnectState(retryCount.current, MAX_WEBSOCKET_RETRY);
-        retryCount.current = reconnectState.nextRetryCount;
-
-        if (!reconnectState.shouldReconnect) {
-          setWsStatusRef.current('disconnected');
-          return;
-        }
-
-        setWsStatusRef.current(reconnectState.status);
-        reconnectTimeoutId.current = window.setTimeout(() => {
-          const runtimeState = useAuthRuntimeStore.getState();
-          if (!runtimeState.canUseProtectedRequests || runtimeState.backendAuthStatus !== 'fresh') {
-            setWsStatusRef.current('disconnected');
-            return;
-          }
-          void connect();
-        }, RETRY_DELAY_MS);
-      };
+      attachSocketHandlers({
+        connect,
+        fetchJobsRef,
+        isUnmounted,
+        markClipReadyRef,
+        mergeJobTimelineEventRef,
+        reconnectTimeoutId,
+        retryCount,
+        setWsStatusRef,
+        ws,
+      });
     };
 
     void connect();
 
-    return () => {
-      isUnmounted.current = true;
-
-      if (ws.current) {
-        ws.current.close();
-        ws.current = null;
-      }
-
-      if (reconnectTimeoutId.current !== null) {
-        clearTimeout(reconnectTimeoutId.current);
-        reconnectTimeoutId.current = null;
-      }
-    };
+    return () => closeSocket(ws, reconnectTimeoutId, isUnmounted);
   }, [canConnect, fetchJobsRef, markClipReadyRef, mergeJobTimelineEventRef, setWsStatusRef]);
 };

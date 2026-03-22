@@ -1,0 +1,3 @@
+- generic [ref=e8]:
+  - paragraph [ref=e9]: AUTH CHECK
+  - paragraph [ref=e10]: Oturum ve baglanti durumu kontrol ediliyor. Bu adim uzarsa Clerk veya internet erisimi gecici olarak sorun yasiyor olabilir.

@@ -457,6 +457,34 @@ def resolve_clip_asset_paths(clip_name: str, project_id: str | None = None) -> t
     )
 
 
+def _clip_asset_exists(project_id: str, clip_name: str) -> bool:
+    video_path, metadata_path, _resolved_project_id = resolve_clip_asset_paths(clip_name, project_id)
+    return video_path.exists() or metadata_path.exists()
+
+
+def resolve_accessible_clip_project_id(
+    subject: str,
+    clip_name: str,
+    requested_project_id: str | None,
+) -> str | None:
+    normalized_requested = _normalize_project_match(requested_project_id)
+    accessible_ids = list_accessible_project_ids(subject)
+
+    if normalized_requested and normalized_requested in accessible_ids and _clip_asset_exists(normalized_requested, clip_name):
+        return normalized_requested
+
+    matching_projects = [
+        project_id
+        for project_id in accessible_ids
+        if _clip_asset_exists(project_id, clip_name)
+    ]
+
+    if len(matching_projects) == 1:
+        return matching_projects[0]
+
+    return None
+
+
 def load_clip_payload(clip_name: str, project_id: str | None = None) -> tuple[dict, Path, Path, str | None]:
     """Load clip metadata and normalize legacy/list payload variants."""
     video_path, metadata_path, resolved_project_id = resolve_clip_asset_paths(clip_name, project_id)
@@ -722,6 +750,82 @@ def extract_ui_title(payload: object) -> str:
     return ""
 
 
+def extract_clip_duration(payload: object) -> float | None:
+    if not isinstance(payload, dict):
+        return None
+
+    render_metadata = payload.get("render_metadata")
+    if not isinstance(render_metadata, dict):
+        return None
+
+    start_time = render_metadata.get("start_time")
+    end_time = render_metadata.get("end_time")
+    if isinstance(start_time, (int, float)) and isinstance(end_time, (int, float)):
+        duration = float(end_time) - float(start_time)
+        if duration > 0:
+            return duration
+
+    debug_timing = render_metadata.get("debug_timing")
+    if not isinstance(debug_timing, dict):
+        return None
+
+    merged_output_duration = debug_timing.get("merged_output_duration")
+    if isinstance(merged_output_duration, (int, float)) and float(merged_output_duration) > 0:
+        return float(merged_output_duration)
+
+    return None
+
+
+def _build_clip_index_entry(
+    project_id: str,
+    clip_file: Path,
+    *,
+    has_transcript: bool,
+    duration: float | None = None,
+    resolved_project_id: str | None = None,
+    transcript_status: str | None = None,
+    ui_title: str = "",
+) -> dict[str, object]:
+    return {
+        "name": clip_file.name,
+        "project": project_id,
+        "url": build_project_file_url(project_id, "clip", clip_file.name),
+        "has_transcript": has_transcript,
+        "resolved_project_id": resolved_project_id,
+        "transcript_status": transcript_status,
+        "ui_title": ui_title,
+        "created_at": clip_file.stat().st_ctime,
+        "duration": duration,
+    }
+
+
+def _resolve_clip_index_transcript_details(
+    project_id: str,
+    clip_file: Path,
+    metadata_path: Path,
+    payload: dict | None = None,
+) -> tuple[bool, str | None, str | None]:
+    normalized_payload = payload if payload is not None else normalize_clip_payload([], clip_file.name, project_id)
+    capabilities = build_clip_transcript_capabilities(
+        normalized_payload,
+        clip_file,
+        metadata_path,
+        project_id,
+    )
+    state = resolve_clip_transcript_state(
+        clip_name=clip_file.name,
+        requested_project_id=project_id,
+        payload=normalized_payload,
+        capabilities=capabilities,
+        resolved_project_id=project_id,
+    )
+    return (
+        bool(capabilities.get("has_clip_transcript")),
+        state.get("transcript_status"),
+        capabilities.get("resolved_project_id"),
+    )
+
+
 def _is_internal_short_asset(filename: str) -> bool:
     """Exclude non-user-facing intermediate shorts assets from listings."""
     stem = Path(filename).stem
@@ -787,31 +891,68 @@ def _scan_clips_index() -> list[dict]:
 
             meta_path = shorts_dir / clip_file.name.replace(".mp4", ".json")
             if not meta_path.exists():
+                has_transcript, transcript_status, resolved_project_id = _resolve_clip_index_transcript_details(
+                    project_dir.name,
+                    clip_file,
+                    meta_path,
+                )
                 stats["files_metadata_missing_skipped"] += 1
+                clips.append(
+                    _build_clip_index_entry(
+                        project_dir.name,
+                        clip_file,
+                        has_transcript=has_transcript,
+                        resolved_project_id=resolved_project_id,
+                        transcript_status=transcript_status,
+                    )
+                )
+                stats["clips_indexed"] += 1
                 continue
 
             ui_title = ""
+            duration = None
+            has_transcript = False
+            transcript_status = None
+            resolved_project_id = project_dir.name
             try:
                 with open(meta_path, "r", encoding="utf-8") as metadata_file:
                     meta_data = json.load(metadata_file)
+                    normalized_payload = normalize_clip_payload(meta_data, clip_file.name, project_dir.name)
                     ui_title = extract_ui_title(meta_data)
+                    duration = extract_clip_duration(meta_data)
+                    has_transcript, transcript_status, resolved_project_id = _resolve_clip_index_transcript_details(
+                        project_dir.name,
+                        clip_file,
+                        meta_path,
+                        normalized_payload,
+                    )
             except json.JSONDecodeError as e:
                 stats["files_metadata_invalid_skipped"] += 1
                 logger.warning(f"JSON decode error in {meta_path}: {e}")
-                continue
+                has_transcript, transcript_status, resolved_project_id = _resolve_clip_index_transcript_details(
+                    project_dir.name,
+                    clip_file,
+                    meta_path,
+                )
             except OSError as e:
                 stats["files_metadata_invalid_skipped"] += 1
                 logger.error(f"Error reading metadata {meta_path}: {e}")
-                continue
-
-            clips.append({
-                "name": clip_file.name,
-                "project": project_dir.name,
-                "url": build_project_file_url(project_dir.name, "clip", clip_file.name),
-                "has_transcript": True,
-                "ui_title": ui_title,
-                "created_at": clip_file.stat().st_ctime,
-            })
+                has_transcript, transcript_status, resolved_project_id = _resolve_clip_index_transcript_details(
+                    project_dir.name,
+                    clip_file,
+                    meta_path,
+                )
+            clips.append(
+                _build_clip_index_entry(
+                    project_dir.name,
+                    clip_file,
+                    has_transcript=has_transcript,
+                    duration=duration,
+                    resolved_project_id=resolved_project_id,
+                    transcript_status=transcript_status,
+                    ui_title=ui_title,
+                )
+            )
             stats["clips_indexed"] += 1
 
     sorted_clips = sorted(clips, key=lambda x: x["created_at"], reverse=True)
@@ -1091,9 +1232,13 @@ async def get_clip_transcript(
         safe_project_id = sanitize_project_name(project_id)
     except ValueError as e:
         raise InvalidInputError(str(e)) from e
-    ensure_project_access(request, auth, safe_project_id, clip_name=clip_name)
+    resolved_project_id = resolve_accessible_clip_project_id(auth.subject, clip_name, safe_project_id)
+    if not resolved_project_id:
+        ensure_project_access(request, auth, safe_project_id, clip_name=clip_name)
+        raise HTTPException(status_code=404, detail="Kaynak bulunamadı")
 
-    return build_clip_transcript_response(clip_name, safe_project_id)
+    ensure_project_access(request, auth, resolved_project_id, clip_name=clip_name)
+    return build_clip_transcript_response(clip_name, resolved_project_id)
 
 
 @router.get("/projects/{project_id}/files/{file_kind}")
@@ -1167,10 +1312,10 @@ async def upload_local_video(
 
     async def _run() -> None:
         manager.jobs[job_id]["status"] = "queued"
-        manager.jobs[job_id]["last_message"] = "GPU sırası bekleniyor..."
-        thread_safe_broadcast({"message": "GPU sırası bekleniyor...", "progress": 0}, job_id)
+        manager.jobs[job_id]["last_message"] = "İşlem sırası bekleniyor..."
+        thread_safe_broadcast({"message": "İşlem sırası bekleniyor...", "progress": 0}, job_id)
 
-        async with manager.gpu_lock:
+        async with manager.processing_lock:
             try:
                 manager.jobs[job_id]["status"] = "processing"
                 manager.jobs[job_id]["last_message"] = "Transkripsiyon başladı..."

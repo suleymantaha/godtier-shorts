@@ -1,7 +1,8 @@
 import { AlertCircle, ChevronRight, Film, Save, Scissors, Sparkles, Waves } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import { MAX_UPLOAD_BYTES } from '../../config';
-import { ANIMATION_SELECT_OPTIONS, STYLE_OPTIONS, isStyleName, isSubtitleAnimationType } from '../../config/subtitleStyles';
+import { getAnimationSelectOptions, STYLE_OPTIONS, isStyleName, isSubtitleAnimationType } from '../../config/subtitleStyles';
 import { toTimeStr } from '../../utils/time';
 import { RangeSlider } from '../RangeSlider';
 import { TimeRangeHeader } from '../TimeRangeHeader';
@@ -84,6 +85,8 @@ function EditorUploadCard({
   transcribing: boolean;
   uploading: boolean;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="glass-card p-5 border-accent/20">
       <div className="flex items-center justify-between gap-4">
@@ -91,13 +94,17 @@ function EditorUploadCard({
           <div className="flex items-center gap-2">
             <Film className="w-4 h-4 text-accent" />
             <h3 className="text-xs font-mono uppercase tracking-[0.2em] text-accent">
-              {uploading ? 'Yükleniyor...' : transcribing ? 'Transkripsiyon çalışıyor...' : 'Video Yükle'}
+              {uploading
+                ? t('editorWorkspace.upload.uploadingTitle')
+                : transcribing
+                  ? t('editorWorkspace.upload.transcribingTitle')
+                  : t('editorWorkspace.upload.idleTitle')}
             </h3>
           </div>
           <p className="text-[11px] text-muted-foreground uppercase">
-            {transcribing ? 'faster-whisper analiz ediyor, lütfen bekle...' : 'Kırmak istediğin videoyu seç'}
+            {transcribing ? t('editorWorkspace.upload.transcribingSubtitle') : t('editorWorkspace.upload.idleSubtitle')}
           </p>
-          <p className="text-[10px] text-muted-foreground">Maksimum dosya boyutu: {formatUploadLimit(MAX_UPLOAD_BYTES)}</p>
+          <p className="text-[10px] text-muted-foreground">{t('editorWorkspace.upload.maxFileSize', { size: formatUploadLimit(MAX_UPLOAD_BYTES) })}</p>
         </div>
         <div className="flex items-center gap-2">
           {transcribing && <div className="w-3 h-3 border-2 border-accent border-t-transparent animate-spin rounded-full" />}
@@ -107,7 +114,7 @@ function EditorUploadCard({
             disabled={uploading || transcribing}
             className="btn-primary py-2 px-5 text-[11px] tracking-[0.2em] flex items-center gap-2 disabled:opacity-50"
           >
-            {uploading ? 'UPLOADING...' : 'VIDEO SEÇ'}
+            {uploading ? t('editorWorkspace.upload.buttonUploading') : t('editorWorkspace.upload.buttonIdle')}
           </button>
         </div>
       </div>
@@ -158,6 +165,7 @@ function EditorPreviewCard({
   videoRef: React.RefObject<HTMLVideoElement | null>;
   videoSrc?: string;
 }) {
+  const { t } = useTranslation();
   const resolvedVideoSrc = useResolvedMediaSource(videoSrc);
 
   return (
@@ -184,11 +192,11 @@ function EditorPreviewCard({
         <VideoControls isPlaying={isPlaying} onTogglePlay={togglePlay} />
       </div>
       <div className="p-5 bg-black/30 space-y-6">
-        <TimeRangeHeader endTime={endTime} startTime={startTime} title="Kırpma Aralığı" />
+        <TimeRangeHeader endTime={endTime} startTime={startTime} title={t('editorWorkspace.preview.rangeTitle')} />
         <RangeSlider min={0} max={duration || 100} start={startTime} end={endTime} onChange={onRangeChange} />
         <div className="flex gap-2">
-          <PreviewJumpButton label="▶ Baştan izle" onClick={jumpToStart} tone="primary" />
-          <PreviewJumpButton label="▶ Sonu izle" onClick={jumpToEnd} tone="accent" />
+          <PreviewJumpButton label={`▶ ${t('editorWorkspace.preview.watchStart')}`} onClick={jumpToStart} tone="primary" />
+          <PreviewJumpButton label={`▶ ${t('editorWorkspace.preview.watchEnd')}`} onClick={jumpToEnd} tone="accent" />
         </div>
       </div>
     </div>
@@ -232,6 +240,8 @@ function EditorTranscriptCard({
   transcribing: boolean;
   visibleTranscript: EditorController['visibleTranscript'];
 }) {
+  const { t } = useTranslation();
+
   if (visibleTranscript.length === 0 && !transcribing) {
     return null;
   }
@@ -241,7 +251,7 @@ function EditorTranscriptCard({
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-bold uppercase tracking-[0.2em] flex items-center gap-2">
           <Scissors className="w-4 h-4 text-primary" />
-          {transcribing ? 'Transkripsiyon bekleniyor...' : 'Altyazı Düzenleme'}
+          {transcribing ? t('editorWorkspace.transcript.loadingTitle') : t('editorWorkspace.transcript.title')}
         </h3>
         {!transcribing && (
           <button
@@ -250,7 +260,7 @@ function EditorTranscriptCard({
             className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-[11px] font-mono uppercase transition-all flex items-center gap-2"
           >
             {saving ? <div className="w-3 h-3 border-2 border-primary border-t-transparent animate-spin rounded-full" /> : <Save className="w-3 h-3" />}
-            {mode === 'clip' ? 'Kaydet + Reburn' : 'Kaydet'}
+            {mode === 'clip' ? t('editorWorkspace.transcript.saveAndReburn') : t('editorWorkspace.transcript.save')}
           </button>
         )}
       </div>
@@ -323,10 +333,12 @@ function EditorRenderCard({
   style: EditorController['style'];
   transcribing: boolean;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="glass-card p-5 space-y-4 border-secondary/20">
       <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-[0.2em] text-secondary">
-        <Sparkles className="w-4 h-4" /> Altyazı Stili & Render
+        <Sparkles className="w-4 h-4" /> {t('editorWorkspace.render.title')}
       </div>
       <EditorStyleControls
         animationType={animationType}
@@ -370,10 +382,12 @@ function EditorStyleControls({
   onStyleChange: React.Dispatch<React.SetStateAction<EditorController['style']>>;
   style: EditorController['style'];
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
       <div className="space-y-2">
-        <label className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground">Visual Style</label>
+        <label className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground">{t('editorWorkspace.render.visualStyle')}</label>
         <Select
           value={style}
           onChange={(value) => onStyleChange(isStyleName(value) ? value : 'HORMOZI')}
@@ -382,7 +396,7 @@ function EditorStyleControls({
         />
       </div>
       <div className="space-y-2">
-        <label className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground">Motion Style</label>
+        <label className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground">{t('editorWorkspace.render.motionStyle')}</label>
         <Select
           value={animationType}
           onChange={(value) => onAnimationTypeChange(isSubtitleAnimationType(value) ? value : 'default')}
@@ -409,9 +423,11 @@ function EditorBatchPanel({
   processing: boolean;
   transcribing: boolean;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="p-3 rounded-xl bg-primary/5 border border-primary/10 space-y-3">
-      <span className="text-[11px] font-mono text-primary uppercase tracking-widest block">AI Batch Üretimi</span>
+      <span className="text-[11px] font-mono text-primary uppercase tracking-widest block">{t('editorWorkspace.render.batchTitle')}</span>
       <div className="flex items-center gap-2">
         <input
           type="number"
@@ -427,7 +443,7 @@ function EditorBatchPanel({
         disabled={processing || transcribing || duration === 0}
         className="w-full py-2.5 rounded-lg bg-primary/10 border border-primary/30 hover:bg-primary/20 text-primary text-[11px] font-mono uppercase transition-all disabled:opacity-30"
       >
-        AI ILE TOPLU ÜRET
+        {t('editorWorkspace.render.batchAction')}
       </button>
     </div>
   );
@@ -444,6 +460,8 @@ function EditorManualRenderButton({
   processing: boolean;
   transcribing: boolean;
 }) {
+  const { t } = useTranslation();
+
   return (
     <button
       onClick={onManualRender}
@@ -452,13 +470,14 @@ function EditorManualRenderButton({
     >
       {processing ? (
         <>
-          <div className="w-4 h-4 border-2 border-background border-t-transparent animate-spin rounded-full" /> RENDER...
+          <div className="w-4 h-4 border-2 border-background border-t-transparent animate-spin rounded-full" /> {t('editorWorkspace.render.processing')}
         </>
       ) : (
         <>
-          <ChevronRight className="w-5 h-5" /> SEÇİMİ RENDER ET
+          <ChevronRight className="w-5 h-5" /> {t('editorWorkspace.render.manualAction')}
         </>
       )}
     </button>
   );
 }
+const ANIMATION_SELECT_OPTIONS = getAnimationSelectOptions();

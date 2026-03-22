@@ -24,6 +24,9 @@ load_dotenv()
 
 from backend.api.server import create_app
 from backend.config import API_HOST, API_PORT
+from backend.services.social.crypto import sanitize_managed_postiz_env_fallback
+
+sanitize_managed_postiz_env_fallback(logger.warning)
 
 app = create_app()
 

@@ -1,4 +1,1 @@
-interface:
-  display_name: "GodTier Shorts"
-  short_description: "GodTier Shorts repo workflow"
-  default_prompt: "Use $godtier-shorts to work on this repo's pipeline, subtitle, auth, or workflow code safely."
+../../.agents/agents/openai.yaml

@@ -29,5 +29,16 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     css: false,
     testTimeout: 10000,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json-summary', 'html'],
+      reportsDirectory: './coverage',
+      thresholds: {
+        statements: 75,
+        branches: 65,
+        functions: 75,
+        lines: 75,
+      },
+    },
   },
 })

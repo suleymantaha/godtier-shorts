@@ -28,6 +28,7 @@ describe('ConnectionChip', () => {
     render(
       <ConnectionChip
         backendAuthStatus="paused"
+        canUseProtectedRequests={false}
         isOnline
         pauseReason="auth_provider_unavailable"
         status="disconnected"
@@ -41,6 +42,7 @@ describe('ConnectionChip', () => {
     render(
       <ConnectionChip
         backendAuthStatus="paused"
+        canUseProtectedRequests={false}
         isOnline
         pauseReason="token_expired"
         status="disconnected"
@@ -54,6 +56,7 @@ describe('ConnectionChip', () => {
     render(
       <ConnectionChip
         backendAuthStatus="paused"
+        canUseProtectedRequests={false}
         isOnline={false}
         pauseReason="network_offline"
         status="disconnected"
@@ -61,5 +64,19 @@ describe('ConnectionChip', () => {
     );
 
     expect(screen.getByText(/network:offline/i)).toBeInTheDocument();
+  });
+
+  it('shows auth fallback when cached protected access is still usable', () => {
+    render(
+      <ConnectionChip
+        backendAuthStatus="paused"
+        canUseProtectedRequests
+        isOnline
+        pauseReason="auth_provider_unavailable"
+        status="disconnected"
+      />,
+    );
+
+    expect(screen.getByText(/auth:fallback/i)).toBeInTheDocument();
   });
 });

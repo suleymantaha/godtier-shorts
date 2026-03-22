@@ -45,6 +45,6 @@ Video yükleme, zaman aralığı seçimi ve otomatik/manuel kesim işlemleri. Au
 
 ## İlgili Dokümantasyon
 
-- [Upload & Transcribe](../operations/upload-transcribe/README.md)
-- [Manual Cut](../operations/manual-cut/README.md)
-- [Batch Clips](../operations/batch-clips/README.md)
+- [Upload & Transcribe](../../operations/upload-transcribe/README.md)
+- [Manual Cut](../../operations/manual-cut/README.md)
+- [Batch Clips](../../operations/batch-clips/README.md)

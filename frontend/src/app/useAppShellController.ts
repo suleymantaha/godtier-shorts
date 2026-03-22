@@ -3,9 +3,10 @@ import { startTransition, useCallback, useEffect, useState } from 'react';
 import { syncIdentityBoundary } from '../auth/isolation';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useJobStore } from '../store/useJobStore';
+import { useLocaleStore } from '../store/useLocaleStore';
 import { useThemeStore } from '../store/useThemeStore';
 import type { Clip } from '../types';
-import { persistAppState, readAppState, type AppViewMode } from './helpers';
+import { normalizeStoredClip, persistAppState, readAppState, type AppViewMode } from './helpers';
 import type { SubtitleAnimationType } from '../config/subtitleStyles';
 
 export function useAppShellController(canUseBackend = true, identityKey: string | null = null) {
@@ -14,10 +15,12 @@ export function useAppShellController(canUseBackend = true, identityKey: string 
   const [viewMode, setViewMode] = useState<AppViewMode>(() => readAppState().viewMode);
   const [editingClip, setEditingClip] = useState<Clip | null>(() => readAppState().editingClip);
   const [subtitleTargetClip, setSubtitleTargetClip] = useState<Clip | null>(() => readAppState().subtitleTargetClip);
+  const [subtitleSessionNonce, setSubtitleSessionNonce] = useState(0);
   const [currentStyle, setCurrentStyle] = useState('TIKTOK');
   const [currentAnimationType, setCurrentAnimationType] = useState<SubtitleAnimationType>('default');
   const [subtitlesDisabled, setSubtitlesDisabled] = useState(false);
   const { theme, toggleTheme } = useThemeStore();
+  const { locale, setLocale } = useLocaleStore();
 
   const openConfig = useCallback(() => {
     setViewMode('config');
@@ -35,12 +38,14 @@ export function useAppShellController(canUseBackend = true, identityKey: string 
     setViewMode('subtitle');
     setEditingClip(null);
     setSubtitleTargetClip(null);
+    setSubtitleSessionNonce((nonce) => nonce + 1);
   }, []);
 
   const openClipSubtitleEditor = useCallback((clip: Clip) => {
     setViewMode('subtitle');
     setEditingClip(null);
-    setSubtitleTargetClip(clip);
+    setSubtitleTargetClip(normalizeStoredClip({ ...clip }));
+    setSubtitleSessionNonce((nonce) => nonce + 1);
   }, []);
 
   const closeEditor = useCallback(() => setEditingClip(null), []);
@@ -62,6 +67,7 @@ export function useAppShellController(canUseBackend = true, identityKey: string 
         setViewMode('config');
         setEditingClip(null);
         setSubtitleTargetClip(null);
+        setSubtitleSessionNonce(0);
       });
       useJobStore.getState?.().reset?.();
     }, 0);
@@ -85,7 +91,10 @@ export function useAppShellController(canUseBackend = true, identityKey: string 
     openConfig,
     openManual,
     openSubtitle,
+    locale,
+    setLocale,
     setEditingClip,
+    subtitleSessionNonce,
     subtitleTargetClip,
     subtitlesDisabled,
     theme,

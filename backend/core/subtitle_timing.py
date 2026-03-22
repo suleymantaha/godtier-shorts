@@ -40,6 +40,13 @@ def count_normalized_tokens(text: str) -> int:
     return len([token for token in scrubbed.split(" ") if token])
 
 
+def tokenize_subtitle_text(text: str) -> list[str]:
+    normalized = normalize_subtitle_text(text)
+    if not normalized:
+        return []
+    return [token for token in normalized.split(" ") if token]
+
+
 def normalize_word_payload(word: dict) -> dict | None:
     raw_text = normalize_subtitle_text(str(word.get("word", "")).strip())
     if not raw_text:
@@ -59,6 +66,68 @@ def normalize_word_payload(word: dict) -> dict | None:
     if "segment_end" in word:
         normalized["segment_end"] = float(word["segment_end"])
     return normalized
+
+
+def build_words_from_segment_text(text: str, start: float, end: float) -> list[dict]:
+    tokens = tokenize_subtitle_text(text)
+    if not tokens or end <= start:
+        return []
+
+    total_duration = max(float(end) - float(start), 0.01)
+    word_duration = total_duration / len(tokens)
+    words: list[dict] = []
+    for index, token in enumerate(tokens):
+        word_start = float(start) + (index * word_duration)
+        word_end = float(end) if index == len(tokens) - 1 else float(start) + ((index + 1) * word_duration)
+        words.append(
+            {
+                "word": token,
+                "start": word_start,
+                "end": word_end,
+                "score": 1.0,
+            }
+        )
+    return words
+
+
+def sync_segment_text_and_words(segment: dict) -> dict:
+    synced = dict(segment)
+    text = normalize_subtitle_text(str(segment.get("text", "")))
+    start = float(segment.get("start", 0.0) or 0.0)
+    end = float(segment.get("end", start) or start)
+    valid_words = resolve_word_overlaps(
+        [
+            normalized
+            for raw_word in segment.get("words", []) or []
+            if (normalized := normalize_word_payload(dict(raw_word))) is not None
+        ]
+    )
+    tokens = tokenize_subtitle_text(text)
+
+    synced["text"] = text
+    synced["start"] = start
+    synced["end"] = end
+
+    if not tokens or end <= start:
+        synced["words"] = []
+        return synced
+
+    if len(valid_words) == len(tokens):
+        synced["words"] = [
+            {
+                **word,
+                "word": tokens[index],
+            }
+            for index, word in enumerate(valid_words)
+        ]
+        return synced
+
+    synced["words"] = build_words_from_segment_text(text, start, end)
+    return synced
+
+
+def canonicalize_transcript_segments(segments: Sequence[dict]) -> list[dict]:
+    return [sync_segment_text_and_words(segment) for segment in segments]
 
 
 def collect_valid_words(segments: Sequence[dict]) -> list[dict]:

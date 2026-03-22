@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import backend.config as config
-from backend.core.workflow_helpers import persist_debug_artifacts
+from backend.core.workflow_helpers import extract_youtube_video_id, persist_debug_artifacts
 from backend.services.ownership import build_owner_scoped_project_id
 
 
@@ -73,3 +73,15 @@ def test_persist_debug_artifacts_marks_missing_overlay_as_partial(monkeypatch, t
     assert result is not None
     assert result["status"] == "partial"
     assert "tracking_overlay" not in result
+
+
+def test_extract_youtube_video_id_supports_common_url_shapes() -> None:
+    assert extract_youtube_video_id("mvYVI3wbY_g") == "mvYVI3wbY_g"
+    assert extract_youtube_video_id("https://www.youtube.com/watch?v=mvYVI3wbY_g&t=2s") == "mvYVI3wbY_g"
+    assert extract_youtube_video_id("https://youtu.be/mvYVI3wbY_g?si=test") == "mvYVI3wbY_g"
+    assert extract_youtube_video_id("https://www.youtube.com/shorts/mvYVI3wbY_g") == "mvYVI3wbY_g"
+
+
+def test_extract_youtube_video_id_returns_none_for_non_youtube_urls() -> None:
+    assert extract_youtube_video_id("https://example.com/watch?v=mvYVI3wbY_g") is None
+    assert extract_youtube_video_id("https://www.youtube.com/watch?v=short") is None

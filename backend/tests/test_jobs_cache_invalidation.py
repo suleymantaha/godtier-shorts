@@ -54,6 +54,7 @@ def test_run_gpu_job_invalidates_clip_cache_after_success(monkeypatch) -> None:
     assert job["status"] == "completed"
     assert job["progress"] == 100
     assert invalidate_calls == ["job_success:job-cache"]
+    assert created["instance"].kwargs["gpu_stage_lock"] is manager.gpu_lock
     assert created["instance"].cleanup_gpu_called is True
 
     manager.jobs.clear()

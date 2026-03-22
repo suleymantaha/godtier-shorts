@@ -1,0 +1,62 @@
+- generic [ref=e6]:
+  - banner [ref=e11]:
+    - generic [ref=e12]:
+      - heading "GOD-TIER SHORTS" [level=1] [ref=e13]:
+        - img [ref=e15]
+        - text: GOD-TIER SHORTS
+      - generic [ref=e19]:
+        - generic [ref=e20]: Nebula AI Architect
+        - generic [ref=e22]: v1.0.SPACE
+    - generic [ref=e23]:
+      - navigation "Ana navigasyon" [ref=e24]:
+        - button "CONFIGURE" [ref=e25]:
+          - img [ref=e26]
+          - text: CONFIGURE
+        - button "AUTO CUT" [ref=e29]:
+          - img [ref=e30]
+          - text: AUTO CUT
+        - button "SUBTITLE EDIT" [ref=e36]:
+          - img [ref=e37]
+          - text: SUBTITLE EDIT
+      - generic [ref=e40]:
+        - button "Toggle Theme" [ref=e41]:
+          - img [ref=e42]
+        - link "GitHub" [ref=e48] [cursor=pointer]:
+          - /url: https://github.com
+          - img [ref=e49]
+        - link "Twitter" [ref=e52] [cursor=pointer]:
+          - /url: https://twitter.com
+          - img [ref=e53]
+        - button "Open user menu" [ref=e271] [cursor=pointer]:
+          - img "Babek Babek's logo" [ref=e274]
+  - main [ref=e948]:
+    - generic [ref=e950]:
+      - button "Play" [ref=e955]:
+        - img [ref=e956]
+      - generic [ref=e958]:
+        - generic [ref=e959]:
+          - generic [ref=e960]:
+            - heading "Altyazı (0 / 0 segment)" [level=3] [ref=e961]:
+              - img [ref=e962]
+              - text: Altyazı (0 / 0 segment)
+            - paragraph [ref=e964]: "ODAK KLIP: cut_1_3736_3837.mp4"
+          - generic [ref=e965]:
+            - button "HORMOZI" [ref=e968] [cursor=pointer]:
+              - generic [ref=e970]: HORMOZI
+              - img [ref=e971]
+            - button "Preset Default" [ref=e975] [cursor=pointer]:
+              - generic [ref=e977]: Preset Default
+              - img [ref=e978]
+            - button "Kaydet + Reburn" [disabled] [ref=e981]:
+              - img [ref=e982]
+              - text: Kaydet + Reburn
+        - generic [ref=e986]:
+          - generic [ref=e987]:
+            - img [ref=e988]
+            - text: Klip transkripti bulunamadi
+          - paragraph [ref=e990]: Sistem önce otomatik toparlamayı dener. Aşağıdaki butonlar gerektiğinde manuel override içindir.
+          - paragraph [ref=e991]: Bu klip icin otomatik kurtarma kaynagi bulunamadi. Gelismis duzenleme veya kaynagi yeniden uretme gerekebilir.
+  - contentinfo [ref=e264]:
+    - paragraph [ref=e265]: © 2026 GOD-TIER SHORTS. AI_ARCHITECT_ENABLED
+    - 'status "Backend durumu: AUTH:PAUSED" [ref=e266]':
+      - generic [ref=e268]: AUTH:PAUSED

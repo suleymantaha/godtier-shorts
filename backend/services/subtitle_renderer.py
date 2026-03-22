@@ -23,6 +23,7 @@ from backend.core.subtitle_timing import (
     DEFAULT_MAX_WORDS_PER_SCREEN,
     average_chunk_words,
     build_chunk_payload,
+    canonicalize_transcript_segments,
     chunk_words,
     collect_valid_words,
     get_chunk_duration,
@@ -640,6 +641,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         if not isinstance(segments, list):
             raise ValueError("Transcript JSON list formatında olmalı")
+
+        segments = canonicalize_transcript_segments(segments)
 
         ass_lines: list[str] = []
         all_words = collect_valid_words(segments)

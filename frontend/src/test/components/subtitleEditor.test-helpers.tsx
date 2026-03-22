@@ -1,19 +1,12 @@
 import { act, render } from '@testing-library/react';
 import { vi } from 'vitest';
 
-import type { Clip, Segment } from '../../types';
+import { SUBTITLE_SESSION_STORAGE_KEY } from '../../app/helpers';
+import type { Clip, Job, Segment } from '../../types';
 
 export const storeMock = {
   fetchJobs: vi.fn(),
-  jobs: [] as Array<{
-    created_at: number;
-    job_id: string;
-    last_message: string;
-    progress: number;
-    status: 'queued' | 'processing' | 'completed' | 'cancelled' | 'error' | 'empty';
-    style: string;
-    url: string;
-  }>,
+  jobs: [] as Job[],
 };
 
 export const mockGetProjects = vi.fn();
@@ -68,9 +61,10 @@ export const subtitleTranscript: Segment[] = [
 
 export function resetSubtitleEditorMocks() {
   vi.clearAllMocks();
+  window.localStorage.removeItem(SUBTITLE_SESSION_STORAGE_KEY);
   storeMock.jobs = [];
   storeMock.fetchJobs.mockResolvedValue(undefined);
-  mockGetProjects.mockResolvedValue({ error: null, projects: subtitleProjects });
+  mockGetProjects.mockResolvedValue({ error: null, projects: subtitleProjects, status: 'good' });
   mockGetProjectTranscript.mockResolvedValue({
     active_job_id: null,
     last_error: null,

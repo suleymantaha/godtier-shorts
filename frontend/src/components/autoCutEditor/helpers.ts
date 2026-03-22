@@ -1,4 +1,5 @@
 import type { RequestedSubtitleLayout, StyleName, SubtitleAnimationType } from '../../config/subtitleStyles';
+import { tSafe } from '../../i18n';
 import type { Job } from '../../types';
 
 const TERMINAL_JOB_STATUSES = new Set<Job['status']>(['completed', 'cancelled', 'error']);
@@ -104,7 +105,7 @@ export function getMarkerAdditionResult({
   const inRange = currentTime > startTime + 0.1 && currentTime < endTime - 0.1;
   if (!inRange) {
     return {
-      feedback: 'Once videoyu oynatip kesmek istediginiz zamana gidin.',
+      feedback: tSafe('autoCut.markerFeedback.moveToTime'),
       markers,
     };
   }
@@ -112,13 +113,13 @@ export function getMarkerAdditionResult({
   const hasNearbyMarker = markers.some((marker) => Math.abs(marker - currentTime) < 0.5);
   if (hasNearbyMarker) {
     return {
-      feedback: 'Bu noktada zaten kesim var.',
+      feedback: tSafe('autoCut.markerFeedback.duplicate'),
       markers,
     };
   }
 
   return {
-    feedback: 'Kesim noktasi eklendi.',
+    feedback: tSafe('autoCut.markerFeedback.added'),
     markers: [...markers, currentTime].sort((left, right) => left - right),
   };
 }
@@ -140,7 +141,7 @@ function resolveAutoCutErrorMessage(currentJob: Job | null, requestError: string
     return null;
   }
 
-  return currentJob.error ?? currentJob.last_message ?? 'Islem tamamlanamadi.';
+  return currentJob.error ?? currentJob.last_message ?? tSafe('autoCut.errors.generic');
 }
 
 function resolveAutoCutResultUrl(

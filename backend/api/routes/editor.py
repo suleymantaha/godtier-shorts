@@ -24,6 +24,7 @@ from backend.config import (
     TEMP_DIR, VIDEO_METADATA, ProjectPaths,
     get_project_path, sanitize_project_name,
 )
+from backend.api.clip_events import build_api_clip_event_port
 from backend.api.websocket import manager, thread_safe_broadcast
 from backend.api.security import AuthContext, ensure_project_access, require_policy
 from backend.api.routes.clips import (
@@ -310,13 +311,18 @@ async def process_batch_clips(
     )
 
     async def _run() -> None:
-        thread_safe_broadcast({"message": "GPU sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
-        async with manager.gpu_lock:
+        thread_safe_broadcast({"message": "İşlem sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
+        async with manager.processing_lock:
             manager.jobs[job_id]["status"] = "processing"
             manager.jobs[job_id]["last_message"] = "Toplu üretim başladı..."
             thread_safe_broadcast({"message": "Toplu üretim başladı...", "progress": 1, "status": "processing"}, job_id)
             cb = lambda s: thread_safe_broadcast(s, job_id)
-            orchestrator = GodTierShortsCreator(ui_callback=cb, subject=auth.subject)
+            orchestrator = GodTierShortsCreator(
+                ui_callback=cb,
+                subject=auth.subject,
+                clip_event_port=build_api_clip_event_port(),
+                gpu_stage_lock=manager.gpu_lock,
+            )
             try:
                 resolved_duration_min, resolved_duration_max = resolve_duration_range(
                     request.duration_min,
@@ -452,9 +458,9 @@ async def manual_cut_upload(
     )
 
     async def _run() -> None:
-        thread_safe_broadcast({"message": "GPU sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
+        thread_safe_broadcast({"message": "İşlem sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
         try:
-            async with manager.gpu_lock:
+            async with manager.processing_lock:
                 manager.jobs[job_id]["status"] = "processing"
                 manager.jobs[job_id]["last_message"] = "Video hazırlanıyor..."
                 thread_safe_broadcast({"message": "Video hazırlanıyor...", "progress": 1, "status": "processing"}, job_id)
@@ -469,7 +475,12 @@ async def manual_cut_upload(
                     transcript_data = json.load(f)
 
                 cb = lambda s: thread_safe_broadcast(s, job_id)
-                orchestrator = GodTierShortsCreator(ui_callback=cb, subject=auth.subject)
+                orchestrator = GodTierShortsCreator(
+                    ui_callback=cb,
+                    subject=auth.subject,
+                    clip_event_port=build_api_clip_event_port(),
+                    gpu_stage_lock=manager.gpu_lock,
+                )
                 try:
                     if use_cut_points:
                         assert pts is not None  # use_cut_points implies pts is not None
@@ -671,9 +682,9 @@ async def recover_project_transcript(
     )
 
     async def _run() -> None:
-        thread_safe_broadcast({"message": "GPU sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
+        thread_safe_broadcast({"message": "İşlem sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
         try:
-            async with manager.gpu_lock:
+            async with manager.processing_lock:
                 manager.jobs[job_id]["status"] = "processing"
                 manager.jobs[job_id]["last_message"] = "Proje transkripti yeniden çıkarılıyor..."
                 thread_safe_broadcast(
@@ -752,36 +763,37 @@ async def recover_clip_transcript(
     async def _run() -> None:
         thread_safe_broadcast({"message": "Kurtarma sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
         try:
-            if request.strategy == "auto":
-                manager.jobs[job_id]["status"] = "processing"
-                manager.jobs[job_id]["last_message"] = "Akilli transcript kurtarma başlatıldı..."
-                await _run_auto_clip_transcript_recovery(
-                    request.clip_name,
-                    effective_project_id,
-                    response,
-                    job_id,
-                )
-            elif request.strategy == "transcribe_source":
-                async with manager.gpu_lock:
+            async with manager.processing_lock:
+                if request.strategy == "auto":
                     manager.jobs[job_id]["status"] = "processing"
-                    manager.jobs[job_id]["last_message"] = "Kaynak videodan transkript çıkarılıyor..."
-                    thread_safe_broadcast({"message": "Kaynak videodan transkript çıkarılıyor...", "progress": 1, "status": "processing"}, job_id)
+                    manager.jobs[job_id]["last_message"] = "Akilli transcript kurtarma başlatıldı..."
+                    await _run_auto_clip_transcript_recovery(
+                        request.clip_name,
+                        effective_project_id,
+                        response,
+                        job_id,
+                    )
+                elif request.strategy == "transcribe_source":
+                    async with manager.gpu_lock:
+                        manager.jobs[job_id]["status"] = "processing"
+                        manager.jobs[job_id]["last_message"] = "Kaynak videodan transkript çıkarılıyor..."
+                        thread_safe_broadcast({"message": "Kaynak videodan transkript çıkarılıyor...", "progress": 1, "status": "processing"}, job_id)
+                        await asyncio.to_thread(
+                            _recover_clip_transcript_from_source,
+                            request.clip_name,
+                            effective_project_id,
+                            lambda msg, pct: thread_safe_broadcast({"message": msg, "progress": pct}, job_id),
+                        )
+                else:
+                    manager.jobs[job_id]["status"] = "processing"
+                    manager.jobs[job_id]["last_message"] = "Proje transkriptinden klip metadata kurtarılıyor..."
+                    thread_safe_broadcast({"message": "Proje transkriptinden klip metadata kurtarılıyor...", "progress": 1, "status": "processing"}, job_id)
                     await asyncio.to_thread(
-                        _recover_clip_transcript_from_source,
+                        _recover_clip_transcript_from_project,
                         request.clip_name,
                         effective_project_id,
                         lambda msg, pct: thread_safe_broadcast({"message": msg, "progress": pct}, job_id),
                     )
-            else:
-                manager.jobs[job_id]["status"] = "processing"
-                manager.jobs[job_id]["last_message"] = "Proje transkriptinden klip metadata kurtarılıyor..."
-                thread_safe_broadcast({"message": "Proje transkriptinden klip metadata kurtarılıyor...", "progress": 1, "status": "processing"}, job_id)
-                await asyncio.to_thread(
-                    _recover_clip_transcript_from_project,
-                    request.clip_name,
-                    effective_project_id,
-                    lambda msg, pct: thread_safe_broadcast({"message": msg, "progress": pct}, job_id),
-                )
 
             finalize_job_success(job_id, "Klip transkripti kurtarma tamamlandı.")
         except (RuntimeError, ValueError, OSError, InvalidInputError, JobExecutionError) as exc:
@@ -831,13 +843,18 @@ async def process_manual_clip(
     )
 
     async def _run() -> None:
-        thread_safe_broadcast({"message": "GPU sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
-        async with manager.gpu_lock:
+        thread_safe_broadcast({"message": "İşlem sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
+        async with manager.processing_lock:
             manager.jobs[job_id]["status"] = "processing"
             manager.jobs[job_id]["last_message"] = "Manuel render başladı..."
             thread_safe_broadcast({"message": "Manuel render başladı...", "progress": 1, "status": "processing"}, job_id)
             cb = lambda s: thread_safe_broadcast(s, job_id)
-            orchestrator = GodTierShortsCreator(ui_callback=cb, subject=auth.subject)
+            orchestrator = GodTierShortsCreator(
+                ui_callback=cb,
+                subject=auth.subject,
+                clip_event_port=build_api_clip_event_port(),
+                gpu_stage_lock=manager.gpu_lock,
+            )
             try:
                 await orchestrator.run_manual_clip_async(
                     start_t=request.start_time,
@@ -899,13 +916,18 @@ async def reburn_clip(
     )
 
     async def _run() -> None:
-        thread_safe_broadcast({"message": "GPU sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
-        async with manager.gpu_lock:
+        thread_safe_broadcast({"message": "İşlem sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
+        async with manager.processing_lock:
             manager.jobs[job_id]["status"] = "processing"
             manager.jobs[job_id]["last_message"] = "Altyazı yeniden basım başladı..."
             thread_safe_broadcast({"message": "Altyazı yeniden basım başladı...", "progress": 1, "status": "processing"}, job_id)
             cb = lambda s: thread_safe_broadcast(s, job_id)
-            orchestrator = GodTierShortsCreator(ui_callback=cb, subject=auth.subject)
+            orchestrator = GodTierShortsCreator(
+                ui_callback=cb,
+                subject=auth.subject,
+                clip_event_port=build_api_clip_event_port(),
+                gpu_stage_lock=manager.gpu_lock,
+            )
             try:
                 await orchestrator.reburn_subtitles_async(
                     clip_name=request.clip_name,

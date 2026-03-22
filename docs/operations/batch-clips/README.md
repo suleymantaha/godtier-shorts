@@ -48,6 +48,6 @@ Aralık seçimi → overlap bazlı transcript filtreleme → viral analiz → sn
 
 ## İlgili
 
-- [Viral Analyzer](../logic/viral-analyzer/README.md) – `analyze_transcript_segment`
+- [Viral Analyzer](../../logic/viral-analyzer/README.md) – `analyze_transcript_segment`
 - [Orchestrator](../../backend/core/orchestrator.py) – `run_batch_manual_clips`
-- [Manual Cut](./manual-cut/README.md)
+- [Manual Cut](../manual-cut/README.md)

@@ -6,7 +6,19 @@ import {
   planSubtitleChunkForDisplay,
 } from '../../utils/subtitleTiming';
 
-describe('subtitleTiming', () => {
+const splitLayoutOptions = {
+  layout: 'split' as const,
+  fontSizeRem: 2.4,
+  fontWeight: 900,
+};
+
+const singleLayoutOptions = {
+  layout: 'single' as const,
+  fontSizeRem: 2.4,
+  fontWeight: 900,
+};
+
+describe('subtitleTiming chunk planning', () => {
   it('does not extend chunk end back to segmentEnd', () => {
     const chunks = buildSubtitleChunks([
       {
@@ -40,11 +52,7 @@ describe('subtitleTiming', () => {
           { word: 'makamlarımızda', start: 0.95, end: 1.9 },
         ],
       },
-    ], {
-      layout: 'split',
-      fontSizeRem: 2.4,
-      fontWeight: 900,
-    });
+    ], splitLayoutOptions);
 
     expect(chunks[0].lineBreakAfter).toBe(0);
     expect(getSubtitleChunkLines(chunks[0])).toHaveLength(2);
@@ -56,15 +64,13 @@ describe('subtitleTiming', () => {
       { word: 'bir', start: 0.2, end: 0.4 },
       { word: 'demo', start: 0.4, end: 0.6 },
       { word: 'altyazi', start: 0.6, end: 0.8 },
-    ], {
-      layout: 'split',
-      fontSizeRem: 2.4,
-      fontWeight: 900,
-    });
+    ], splitLayoutOptions);
 
     expect(plan.lineBreakAfter).not.toBeNull();
   });
+});
 
+describe('subtitleTiming font clamps', () => {
   it('applies a split font clamp for pathological single-word chunks', () => {
     const chunks = buildSubtitleChunks([
       {
@@ -75,11 +81,7 @@ describe('subtitleTiming', () => {
           { word: 'motivasyonumuzda', start: 0, end: 1.4 },
         ],
       },
-    ], {
-      layout: 'split',
-      fontSizeRem: 2.4,
-      fontWeight: 900,
-    });
+    ], splitLayoutOptions);
 
     expect(chunks[0].fontScale).toBeLessThan(1);
     expect(chunks[0].overflowStrategy).toBe('split_rechunk_1_word');
@@ -95,11 +97,7 @@ describe('subtitleTiming', () => {
           { word: 'motivasyonumuzdakisorumlulugumuz', start: 0, end: 1.4 },
         ],
       },
-    ], {
-      layout: 'single',
-      fontSizeRem: 2.4,
-      fontWeight: 900,
-    });
+    ], singleLayoutOptions);
 
     expect(chunks[0].fontScale).toBeLessThan(1);
     expect(chunks[0].overflowStrategy).toBe('single_font_clamp');

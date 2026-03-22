@@ -58,13 +58,19 @@ En azindan su alanlari dogru olmali:
 Opsiyonel ama sosyal yayin icin gerekli:
 
 - `POSTIZ_API_BASE_URL`
-- `POSTIZ_API_KEY`
+- `SOCIAL_CONNECTION_MODE=managed`
 - `PUBLIC_APP_URL`
+
+Yalniz tek kullanicili lokal dev fallback icin:
+
+- `POSTIZ_API_KEY`
+- `ALLOW_ENV_POSTIZ_API_KEY_FALLBACK=1`
 
 Detayli env rehberi:
 
 - [api-key-setup.md](/home/arch/godtier-shorts/docs/api-key-setup.md)
 - [clerk-auth-setup.md](/home/arch/godtier-shorts/docs/clerk-auth-setup.md)
+- [postiz-global-oauth-standard.md](/home/arch/godtier-shorts/docs/operations/postiz-global-oauth-standard.md)
 
 ## 4. Kurulum sonrasi dogrulama
 

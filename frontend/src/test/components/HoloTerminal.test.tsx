@@ -1,9 +1,11 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import i18n from '../../i18n';
 
 const authRuntimeState = {
   backendAuthStatus: 'fresh' as 'fresh' | 'paused' | 'refreshing',
+  canUseProtectedRequests: true,
   pauseReason: null as string | null,
 };
 
@@ -14,6 +16,15 @@ const storeState = {
     progress: number;
     last_message: string;
     created_at: number;
+    download_progress?: {
+      phase: 'download';
+      downloaded_bytes?: number;
+      total_bytes?: number;
+      percent?: number;
+      speed_text?: string;
+      eta_text?: string;
+      status?: string;
+    };
     timeline?: Array<{
       id: string;
       at: string;
@@ -25,6 +36,9 @@ const storeState = {
     }>;
   }>,
   wsStatus: 'connected' as 'connecting' | 'connected' | 'reconnecting' | 'disconnected',
+  hasRetainedHistory: true,
+  jobHistoryExpiresAt: null as number | null,
+  clearRetainedHistory: vi.fn(),
 };
 
 vi.mock('../../auth/runtime', () => ({
@@ -42,8 +56,12 @@ vi.mock('../../store/useJobStore', async (importOriginal) => {
 describe('HoloTerminal', () => {
   beforeEach(() => {
     authRuntimeState.backendAuthStatus = 'fresh';
+    authRuntimeState.canUseProtectedRequests = true;
     authRuntimeState.pauseReason = null;
     storeState.wsStatus = 'connected';
+    storeState.clearRetainedHistory.mockReset();
+    storeState.hasRetainedHistory = true;
+    storeState.jobHistoryExpiresAt = null;
     storeState.jobs = [
       {
         job_id: 'job-1',
@@ -51,6 +69,15 @@ describe('HoloTerminal', () => {
         progress: 40,
         last_message: 'fourth log',
         created_at: 1,
+        download_progress: {
+          phase: 'download',
+          downloaded_bytes: 1048576,
+          total_bytes: 2097152,
+          percent: 50,
+          speed_text: '1.00MiB/s',
+          eta_text: '00:03',
+          status: 'downloading',
+        },
         timeline: [
           { id: 'evt-1', at: '2026-03-20T10:00:00.000Z', job_id: 'job-1', status: 'processing', progress: 10, message: 'first log', source: 'worker' },
           { id: 'evt-2', at: '2026-03-20T10:00:01.000Z', job_id: 'job-1', status: 'processing', progress: 20, message: 'second log', source: 'worker' },
@@ -98,10 +125,21 @@ describe('HoloTerminal', () => {
     expect(screen.getByText('AUTH:TOKEN-EXPIRED')).toBeInTheDocument();
   });
 
+  it('shows download summary in the terminal chrome when active job is downloading', async () => {
+    const { HoloTerminal } = await import('../../components/HoloTerminal');
+    render(<HoloTerminal compact />);
+
+    expect(screen.getByText(/1.0 MiB \/ 2.0 MiB/i)).toBeInTheDocument();
+    expect(screen.getByText(/ETA 00:03/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /clear history/i })).toBeDisabled();
+  });
+
   it('replaces handshake empty state with auth pause messaging', async () => {
     authRuntimeState.backendAuthStatus = 'paused';
+    authRuntimeState.canUseProtectedRequests = false;
     authRuntimeState.pauseReason = 'token_expired';
     storeState.wsStatus = 'connecting';
+    storeState.hasRetainedHistory = false;
     storeState.jobs = [];
 
     const { HoloTerminal } = await import('../../components/HoloTerminal');
@@ -110,5 +148,63 @@ describe('HoloTerminal', () => {
     expect(screen.getByText('WS:DISCONNECTED')).toBeInTheDocument();
     expect(screen.getByText(/Auth refresh required before live logs can resume\./i)).toBeInTheDocument();
     expect(screen.queryByText(/Waiting for system handshake/i)).not.toBeInTheDocument();
+  });
+
+  it('shows fallback auth messaging when cached protected access is still usable', async () => {
+    authRuntimeState.backendAuthStatus = 'paused';
+    authRuntimeState.canUseProtectedRequests = true;
+    authRuntimeState.pauseReason = 'auth_provider_unavailable';
+    storeState.wsStatus = 'connecting';
+    storeState.hasRetainedHistory = false;
+    storeState.jobs = [];
+
+    const { HoloTerminal } = await import('../../components/HoloTerminal');
+    render(<HoloTerminal compact />);
+
+    expect(screen.getByText('AUTH:FALLBACK')).toBeInTheDocument();
+    expect(screen.getByText(/cached auth still allows protected api access/i)).toBeInTheDocument();
+  });
+
+  it('renders Turkish terminal chrome labels in tr locale', async () => {
+    await i18n.changeLanguage('tr');
+    authRuntimeState.backendAuthStatus = 'paused';
+    authRuntimeState.canUseProtectedRequests = false;
+    authRuntimeState.pauseReason = 'token_expired';
+    storeState.wsStatus = 'connecting';
+    storeState.hasRetainedHistory = false;
+    storeState.jobs = [];
+
+    const { HoloTerminal } = await import('../../components/HoloTerminal');
+    render(<HoloTerminal compact />);
+
+    expect(screen.getByText('Çekirdek Loglar')).toBeInTheDocument();
+    expect(screen.getByText('WS:BAĞLANTI KESİLDİ')).toBeInTheDocument();
+    expect(screen.getByText('AUTH:TOKEN-SÜRESİ-DOLDU')).toBeInTheDocument();
+    expect(screen.getByText(/auth yenilemesi gerekiyor/i)).toBeInTheDocument();
+  });
+
+  it('shows retention countdown and clears retained history when no active jobs remain', async () => {
+    const user = userEvent.setup();
+    storeState.jobHistoryExpiresAt = Date.now() + 5 * 60 * 1000;
+    storeState.jobs = [
+      {
+        job_id: 'job-1',
+        status: 'completed',
+        progress: 100,
+        last_message: 'completed log',
+        created_at: 1,
+        timeline: [
+          { id: 'evt-1', at: '2026-03-20T10:00:00.000Z', job_id: 'job-1', status: 'completed', progress: 100, message: 'completed log', source: 'worker' },
+        ],
+      },
+    ];
+
+    const { HoloTerminal } = await import('../../components/HoloTerminal');
+    render(<HoloTerminal compact />);
+
+    expect(screen.getByText(/Auto clear in/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /clear history/i }));
+    expect(storeState.clearRetainedHistory).toHaveBeenCalledTimes(1);
   });
 });

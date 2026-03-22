@@ -1,0 +1,105 @@
+[
+  {
+    "job_id": "manualcut_1774131523_6ea862",
+    "url": "/home/arch/godtier-shorts/workspace/projects/a4069ffa93794396e1a7bf578c6a7b8b/up_a4069ffa93794396e1a7bf578c6a7b8b_1f063fc510c6/master.mp4",
+    "style": "HORMOZI",
+    "animation_type": "default",
+    "status": "completed",
+    "progress": 100,
+    "last_message": "Otomatik manual cut i\u015flemi tamamland\u0131.",
+    "created_at": 1774131523.4004812,
+    "project_id": "up_a4069ffa93794396e1a7bf578c6a7b8b_1f063fc510c6",
+    "clip_name": "manual_manualcut_1774131523_6ea862.mp4",
+    "output_url": "/api/projects/up_a4069ffa93794396e1a7bf578c6a7b8b_1f063fc510c6/shorts/manual_manualcut_1774131523_6ea862.mp4",
+    "num_clips": 1,
+    "layout": "auto",
+    "subject": "user_3AlQqTFOCNV8pB5j7YahduIr5jN",
+    "timeline": [
+      {
+        "id": "manualcut_1774131523_6ea862:queued",
+        "at": "2026-03-21T22:18:43.401417+00:00",
+        "job_id": "manualcut_1774131523_6ea862",
+        "status": "queued",
+        "progress": 0,
+        "message": "Video al\u0131nd\u0131, otomatik kesim kuyru\u011fa al\u0131nd\u0131...",
+        "source": "api"
+      },
+      {
+        "id": "manualcut_1774131523_6ea862:1774131523407207040",
+        "at": "2026-03-21T22:18:43.407194+00:00",
+        "job_id": "manualcut_1774131523_6ea862",
+        "status": "queued",
+        "progress": 0,
+        "message": "\u0130\u015flem s\u0131ras\u0131 bekleniyor...",
+        "source": "worker"
+      },
+      {
+        "id": "manualcut_1774131523_6ea862:1774131523410477285",
+        "at": "2026-03-21T22:18:43.410459+00:00",
+        "job_id": "manualcut_1774131523_6ea862",
+        "status": "processing",
+        "progress": 1,
+        "message": "Video haz\u0131rlan\u0131yor...",
+        "source": "worker"
+      },
+      {
+        "id": "manualcut_1774131523_6ea862:1774131523414774056",
+        "at": "2026-03-21T22:18:43.414766+00:00",
+        "job_id": "manualcut_1774131523_6ea862",
+        "status": "processing",
+        "progress": 35,
+        "message": "Transkript haz\u0131r, mevcut k\u00fct\u00fcphane kullan\u0131l\u0131yor...",
+        "source": "worker"
+      },
+      {
+        "id": "manualcut_1774131523_6ea862:1774131532272058010",
+        "at": "2026-03-21T22:18:52.272042+00:00",
+        "job_id": "manualcut_1774131523_6ea862",
+        "status": "processing",
+        "progress": 10,
+        "message": "Manuel klip: 3837.7 - 3840.7 sn",
+        "source": "worker"
+      },
+      {
+        "id": "manualcut_1774131523_6ea862:1774131532276577714",
+        "at": "2026-03-21T22:18:52.276555+00:00",
+        "job_id": "manualcut_1774131523_6ea862",
+        "status": "processing",
+        "progress": 45,
+        "message": "Manuel klip i\u00e7in GPU render slotu al\u0131nd\u0131.",
+        "source": "worker"
+      },
+      {
+        "id": "manualcut_1774131523_6ea862:1774131540814361778",
+        "at": "2026-03-21T22:19:00.814346+00:00",
+        "job_id": "manualcut_1774131523_6ea862",
+        "status": "processing",
+        "progress": 99,
+        "message": "Manuel klip haz\u0131r.",
+        "source": "clip_ready"
+      },
+      {
+        "id": "manualcut_1774131523_6ea862:1774131541141925438",
+        "at": "2026-03-21T22:19:01.141903+00:00",
+        "job_id": "manualcut_1774131523_6ea862",
+        "status": "completed",
+        "progress": 100,
+        "message": "Manuel klip haz\u0131r: /home/arch/godtier-shorts/workspace/projects/a4069ffa93794396e1a7bf578c6a7b8b/up_a4069ffa93794396e1a7bf578c6a7b8b_1f063fc510c6/shorts/manual_manualcut_1774131523_6ea862.mp4",
+        "source": "worker"
+      },
+      {
+        "id": "manualcut_1774131523_6ea862:1774131541147632722",
+        "at": "2026-03-21T22:19:01.147613+00:00",
+        "job_id": "manualcut_1774131523_6ea862",
+        "status": "completed",
+        "progress": 100,
+        "message": "Otomatik manual cut i\u015flemi tamamland\u0131.",
+        "source": "worker"
+      }
+    ],
+    "output_path": "/home/arch/godtier-shorts/workspace/projects/a4069ffa93794396e1a7bf578c6a7b8b/up_a4069ffa93794396e1a7bf578c6a7b8b_1f063fc510c6/shorts/manual_manualcut_1774131523_6ea862.mp4",
+    "output_paths": [
+      "/home/arch/godtier-shorts/workspace/projects/a4069ffa93794396e1a7bf578c6a7b8b/up_a4069ffa93794396e1a7bf578c6a7b8b_1f063fc510c6/shorts/manual_manualcut_1774131523_6ea862.mp4"
+    ]
+  }
+]

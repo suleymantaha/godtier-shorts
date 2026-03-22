@@ -1,0 +1,38 @@
+Total messages: 23 (Errors: 15, Warnings: 5)
+Returning 20 messages for level "warning"
+
+[ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ https://helping-jawfish-35.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:0
+[ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ https://helping-jawfish-35.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:0
+[WARNING] THREE.THREE.Clock: This module has been deprecated. Please use THREE.Timer instead. @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-3HQHLTJQ.js?v=221fd7bd:745
+[WARNING] [.WebGL-0x248c000a6c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels @ http://127.0.0.1:5173/:0
+[ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ https://helping-jawfish-35.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:0
+[WARNING] [.WebGL-0x248c000a6c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels @ http://127.0.0.1:5173/:0
+[WARNING] [.WebGL-0x248c000a6c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels @ http://127.0.0.1:5173/:0
+[WARNING] [.WebGL-0x248c000a6c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat) @ http://127.0.0.1:5173/:0
+[ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ https://helping-jawfish-35.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:0
+[ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ https://helping-jawfish-35.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:0
+[ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ https://helping-jawfish-35.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:0
+[ERROR] ClerkRuntimeError2: Clerk: Failed to load Clerk
+
+(code="failed_to_load_clerk_js_timeout")
+
+
+    at handleTimeout (http://127.0.0.1:5173/node_modules/.vite/deps/@clerk_clerk-react.js?v=221fd7bd:4683:44) @ http://127.0.0.1:5173/node_modules/.vite/deps/@clerk_clerk-react.js?v=221fd7bd:6539
+[ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ https://helping-jawfish-35.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:0
+[ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ https://helping-jawfish-35.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:0
+[ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ https://helping-jawfish-35.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:0
+[ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ https://helping-jawfish-35.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:0
+[ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ https://helping-jawfish-35.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:0
+[ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ https://helping-jawfish-35.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:0
+ClerkRuntimeError2: Clerk: Failed to load Clerk, failed to load script: https://helping-jawfish-35.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js
+
+(code="failed_to_load_clerk_js")
+
+
+    at http://127.0.0.1:5173/node_modules/.vite/deps/@clerk_clerk-react.js?v=221fd7bd:4720:11
+ClerkRuntimeError2: Clerk: Failed to load Clerk, failed to load script: https://helping-jawfish-35.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js
+
+(code="failed_to_load_clerk_js")
+
+
+    at http://127.0.0.1:5173/node_modules/.vite/deps/@clerk_clerk-react.js?v=221fd7bd:4720:11

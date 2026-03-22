@@ -8,16 +8,18 @@ backend/api/routes/jobs.py
   GET  /api/styles
 """
 import asyncio
+import json
 import threading
 import time
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from loguru import logger
 
 from backend.config import ProjectPaths, YOLO_MODEL_PATH
-from backend.models.schemas import JobRequest
+from backend.models.schemas import CancelJobRequest, JobRequest
+from backend.api.clip_events import build_api_clip_event_port
 from backend.api.websocket import manager, thread_safe_broadcast
 from backend.api.routes.clips import invalidate_clips_cache
 from backend.api.security import AuthContext, require_policy
@@ -28,6 +30,7 @@ from backend.core.exceptions import JobExecutionError, NotFoundError
 from backend.core.workflow_helpers import (
     build_pipeline_cache_identity,
     build_segments_signature,
+    extract_youtube_video_id,
     extract_pipeline_segments,
     load_cached_pipeline_analysis,
     load_pipeline_render_cache_hit,
@@ -37,6 +40,9 @@ from backend.services.ownership import build_owner_scoped_project_id, ensure_pro
 from backend.services.subtitle_styles import StyleManager
 
 router = APIRouter(prefix="/api", tags=["jobs"])
+DEFAULT_QUEUED_MESSAGE = "İşlem sıraya alındı. İşlem slotu boşaldığında hazırlık başlayacak."
+STARTING_MESSAGE = "İşlem başlatılıyor. Hazırlık aşamaları yürütülüyor..."
+ACTIVE_PIPELINE_JOB_STATUSES = {"queued", "processing"}
 
 
 def _finalize_job(job_id: str, status: str, *, progress: int | None = None, error: str | None = None) -> None:
@@ -48,6 +54,24 @@ def _finalize_job(job_id: str, status: str, *, progress: int | None = None, erro
         job["progress"] = progress
     if error is not None:
         job["error"] = error
+
+
+def _mark_job_cancelled(job_id: str, message: str = "İş iptal edildi.") -> None:
+    job = manager.jobs.get(job_id)
+    if not job:
+        return
+
+    job["status"] = "cancelled"
+    job["last_message"] = message
+    progress = int(job.get("progress") or 0)
+    thread_safe_broadcast(
+        {
+            "message": message,
+            "progress": progress,
+            "status": "cancelled",
+        },
+        job_id,
+    )
 
 
 def _build_cache_status_message(cache_status: dict[str, Any]) -> str:
@@ -66,6 +90,53 @@ def _build_start_job_cached_message(cache_status: dict[str, Any]) -> str:
     return "Bu video daha once islendi. Islem mevcut proje uzerinden devam edecek."
 
 
+def _build_initial_job_message(*, processing_locked: bool) -> str:
+    return DEFAULT_QUEUED_MESSAGE if processing_locked else STARTING_MESSAGE
+
+
+def _build_job_request_signature(request: JobRequest, *, project_id: str | None) -> str:
+    duration_min, duration_max = resolve_duration_range(
+        request.duration_min if not request.auto_mode else None,
+        request.duration_max if not request.auto_mode else None,
+    )
+    payload = {
+        "project_id": project_id,
+        "youtube_url": request.youtube_url if not project_id else None,
+        "style_name": request.style_name,
+        "animation_type": request.animation_type,
+        "ai_engine": request.ai_engine,
+        "skip_subtitles": request.skip_subtitles,
+        "num_clips": request.num_clips,
+        "auto_mode": request.auto_mode,
+        "duration_min": duration_min,
+        "duration_max": duration_max,
+        "resolution": request.resolution,
+        "layout": request.layout,
+        "force_reanalyze": request.force_reanalyze,
+        "force_rerender": request.force_rerender,
+    }
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _find_existing_job_for_request(*, subject: str, request_signature: str) -> dict[str, Any] | None:
+    matching_jobs = [
+        job
+        for job in manager.jobs.values()
+        if str(job.get("subject") or "") == subject
+        and str(job.get("status") or "") in ACTIVE_PIPELINE_JOB_STATUSES
+        and str(job.get("request_signature") or "") == request_signature
+    ]
+    if not matching_jobs:
+        return None
+    return max(matching_jobs, key=lambda job: float(job.get("created_at") or 0.0))
+
+
+def _build_existing_job_message(job: dict[str, Any]) -> str:
+    if str(job.get("status") or "") == "processing":
+        return "Bu ayarlarla zaten aktif bir islem var. Mevcut is takip ediliyor."
+    return "Bu ayarlarla zaten kuyrukta bekleyen bir islem var. Mevcut is takip ediliyor."
+
+
 # -------------------------------------------------------------------------
 # Arka plan iş çalıştırıcısı
 # -------------------------------------------------------------------------
@@ -73,13 +144,22 @@ def _build_start_job_cached_message(cache_status: dict[str, Any]) -> str:
 async def run_gpu_job(job_id: str, request: JobRequest) -> None:
     """GPU işini kuyruğa sokar ve sırası gelince çalıştırır."""
     try:
-        async with manager.gpu_lock:
+        async with manager.processing_lock:
             if manager.jobs.get(job_id, {}).get("status") == "cancelled":
                 logger.warning(f"🚫 Başlamadan iptal edildi: {job_id}")
                 return
 
             manager.jobs[job_id]["status"] = "processing"
-            logger.info(f"🔒 GPU Kilidi Alındı: {job_id}")
+            manager.jobs[job_id]["last_message"] = "İşlem başlatıldı. Hazırlık aşamaları yürütülüyor..."
+            thread_safe_broadcast(
+                {
+                    "message": "İşlem başlatıldı. Hazırlık aşamaları yürütülüyor...",
+                    "progress": 1,
+                    "status": "processing",
+                },
+                job_id,
+            )
+            logger.info(f"🔐 İşlem slotu alındı: {job_id}")
 
             callback = lambda s: thread_safe_broadcast(s, job_id)
             cancel_event = manager.jobs.get(job_id, {}).get("cancel_event")
@@ -87,6 +167,8 @@ async def run_gpu_job(job_id: str, request: JobRequest) -> None:
                 ui_callback=callback,
                 cancel_event=cancel_event,
                 subject=manager.jobs.get(job_id, {}).get("subject"),
+                clip_event_port=build_api_clip_event_port(),
+                gpu_stage_lock=manager.gpu_lock,
             )
             orchestrator.analyzer.engine = request.ai_engine
 
@@ -124,10 +206,10 @@ async def run_gpu_job(job_id: str, request: JobRequest) -> None:
                 orchestrator.cleanup_gpu()
 
     except asyncio.CancelledError:
-        _finalize_job(job_id, "cancelled")
+        _mark_job_cancelled(job_id)
     except (RuntimeError, ValueError, OSError) as exc:
         if "cancelled" in str(exc).lower():
-            _finalize_job(job_id, "cancelled")
+            _mark_job_cancelled(job_id)
             logger.warning(f"🛑 İptal edildi: {job_id}")
         else:
             mapped_error = JobExecutionError("Arka plan işi çalıştırılamadı", details=str(exc))
@@ -157,16 +239,18 @@ async def _inspect_pipeline_cache_state(subject: str, request: JobRequest) -> di
         request.duration_max if not request.auto_mode else None,
     )
 
-    command_runner = CommandRunner(threading.Event())
-    rc, stdout, stderr = await command_runner.run_async(
-        ["yt-dlp", "--get-id", request.youtube_url],
-        timeout=120,
-        error_message="Video ID alma işlemi timeout oldu",
-    )
-    if rc != 0:
-        raise RuntimeError(stderr or "Video ID alınamadı")
-
-    video_id = stdout.strip()
+    video_id = extract_youtube_video_id(request.youtube_url)
+    if not video_id:
+        command_runner = CommandRunner(threading.Event())
+        rc, stdout, stderr = await command_runner.run_async(
+            ["yt-dlp", "--get-id", request.youtube_url],
+            timeout=30,
+            activity_timeout=10,
+            error_message="Video ID alma işlemi timeout oldu",
+        )
+        if rc != 0:
+            raise RuntimeError(stderr or "Video ID alınamadı")
+        video_id = stdout.strip()
     project_id = build_owner_scoped_project_id("yt", subject, video_id)
     project = ProjectPaths(project_id)
     ensure_project_manifest(project_id, owner_subject=subject, source="youtube")
@@ -276,6 +360,9 @@ async def start_processing_job(
             "cache_scope": "none",
         }
 
+    processing_locked = manager.processing_lock.locked()
+    gpu_locked = manager.gpu_lock.locked()
+
     if bool(cache_status.get("render_cached")) and not request.force_reanalyze and not request.force_rerender:
         return {
             "status": "cached",
@@ -284,12 +371,30 @@ async def start_processing_job(
             "cache_hit": True,
             "cache_scope": cache_status.get("cache_scope", "full_render"),
             "message": _build_start_job_cached_message(cache_status),
-            "gpu_locked": manager.gpu_lock.locked(),
+            "processing_locked": processing_locked,
+            "gpu_locked": gpu_locked,
+        }
+
+    request_signature = _build_job_request_signature(request, project_id=cache_status.get("project_id"))
+    existing_job = _find_existing_job_for_request(subject=auth.subject, request_signature=request_signature)
+    if existing_job is not None:
+        existing_status = str(existing_job.get("status") or "")
+        return {
+            "status": "queued",
+            "job_id": existing_job.get("job_id"),
+            "project_id": existing_job.get("project_id") or cache_status.get("project_id"),
+            "cache_hit": False,
+            "cache_scope": cache_status.get("cache_scope", "none"),
+            "message": _build_existing_job_message(existing_job),
+            "processing_locked": existing_status == "processing" or processing_locked,
+            "gpu_locked": gpu_locked,
+            "existing_job": True,
         }
 
     manager.assert_subject_can_enqueue(auth.subject)
     job_id = str(uuid.uuid4())[:8]
     logger.info(f"🚀 Yeni görev: {job_id} | {request.youtube_url}")
+    initial_message = _build_initial_job_message(processing_locked=processing_locked)
 
     cancel_event = threading.Event()
     job_info: dict[str, Any] = {
@@ -299,18 +404,19 @@ async def start_processing_job(
         "animation_type": request.animation_type,
         "status":       "queued",
         "progress":     0,
-        "last_message": "Sıraya alındı...",
+        "last_message": initial_message,
         "created_at":   time.time(),
         "project_id":   cache_status.get("project_id"),
+        "request_signature": request_signature,
         "subject":      auth.subject,
         "cancel_event": cancel_event,
     }
+    manager.jobs[job_id] = job_info
     task = asyncio.create_task(run_gpu_job(job_id, request))
     job_info["task_handle"] = task
-    manager.jobs[job_id] = job_info
     manager.seed_job_timeline(
         job_id,
-        message="İşlem kuyruğa alındı. GPU müsait olduğunda başlayacak.",
+        message=initial_message,
         progress=0,
         status="queued",
         source="api",
@@ -322,8 +428,9 @@ async def start_processing_job(
         "project_id": cache_status.get("project_id"),
         "cache_hit":  False,
         "cache_scope": cache_status.get("cache_scope", "none"),
-        "message":    "İşlem kuyruğa alındı. GPU müsait olduğunda başlayacak.",
-        "gpu_locked": manager.gpu_lock.locked(),
+        "message":    initial_message,
+        "processing_locked": processing_locked,
+        "gpu_locked": gpu_locked,
     }
 
 
@@ -345,9 +452,14 @@ async def list_jobs(
 @router.post("/cancel-job/{job_id}")
 async def cancel_job(
     job_id: str,
+    request: Request,
+    payload: CancelJobRequest | None = None,
     auth: AuthContext = Depends(require_policy("cancel_job")),
 ) -> dict:
     """Belirli bir işi iptal eder."""
+    if payload is None or payload.confirmed is not True:
+        raise HTTPException(status_code=400, detail="Cancel confirmation required.")
+
     if job_id not in manager.jobs:
         raise NotFoundError("İş bulunamadı.")
 
@@ -356,6 +468,16 @@ async def cancel_job(
         raise HTTPException(status_code=404, detail="İş bulunamadı.")
     if job["status"] in ("completed", "error", "cancelled"):
         return {"status": "ignored", "message": f"İş zaten {job['status']} durumunda."}
+
+    logger.warning(
+        "🛑 Cancel requested job_id={} subject={} source={} trace_id={} referer={} user_agent={}",
+        job_id,
+        auth.subject,
+        payload.source,
+        getattr(request.state, "trace_id", "unknown"),
+        request.headers.get("referer", "-"),
+        request.headers.get("user-agent", "-"),
+    )
 
     cancel_event = job.get("cancel_event")
     if cancel_event is not None:
@@ -366,5 +488,5 @@ async def cancel_job(
         task.cancel()
         return {"status": "success", "message": "İş iptal sinyali gönderildi."}
 
-    _finalize_job(job_id, "cancelled")
+    _mark_job_cancelled(job_id)
     return {"status": "success", "message": "İş iptal edildi."}

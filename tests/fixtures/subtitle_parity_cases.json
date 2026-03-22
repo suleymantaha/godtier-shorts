@@ -1,0 +1,81 @@
+[
+  {
+    "name": "split_line_break_for_wide_text",
+    "layout": "split",
+    "style_name": "HORMOZI",
+    "font_size_rem": 2.4,
+    "font_weight": 900,
+    "transcript": [
+      {
+        "text": "mekanlarımızda, makamlarımızda",
+        "start": 0.0,
+        "end": 2.0,
+        "words": [
+          { "word": "mekanlarımızda,", "start": 0.0, "end": 0.9 },
+          { "word": "makamlarımızda", "start": 0.95, "end": 1.9 }
+        ]
+      }
+    ],
+    "expected": {
+      "overflow_strategy": "split_line_break",
+      "chunks": [
+        {
+          "text": "mekanlarımızda, makamlarımızda",
+          "line_break_after": 0
+        }
+      ]
+    }
+  },
+  {
+    "name": "split_single_word_font_clamp",
+    "layout": "split",
+    "style_name": "HORMOZI",
+    "font_size_rem": 2.4,
+    "font_weight": 900,
+    "transcript": [
+      {
+        "text": "motivasyonumuzda",
+        "start": 0.0,
+        "end": 1.4,
+        "words": [
+          { "word": "motivasyonumuzda", "start": 0.0, "end": 1.4 }
+        ]
+      }
+    ],
+    "expected": {
+      "overflow_strategy": "split_rechunk_1_word",
+      "chunks": [
+        {
+          "text": "motivasyonumuzda",
+          "font_scale_below": 1.0
+        }
+      ]
+    }
+  },
+  {
+    "name": "single_single_word_font_clamp",
+    "layout": "single",
+    "style_name": "HORMOZI",
+    "font_size_rem": 2.4,
+    "font_weight": 900,
+    "transcript": [
+      {
+        "text": "motivasyonumuzdakisorumlulugumuz",
+        "start": 0.0,
+        "end": 1.4,
+        "words": [
+          { "word": "motivasyonumuzdakisorumlulugumuz", "start": 0.0, "end": 1.4 }
+        ]
+      }
+    ],
+    "expected": {
+      "overflow_strategy": "single_font_clamp",
+      "chunks": [
+        {
+          "text": "motivasyonumuzdakisorumlulugumuz",
+          "font_scale_below": 1.0
+        }
+      ]
+    }
+  }
+]

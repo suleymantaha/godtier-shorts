@@ -19,7 +19,7 @@ Bu projeyi son kullanici olarak sorunsuz acmak icin en pratik yol su:
 4. AI icin iki yoldan birini sec:
    - Bulut LLM: `OPENROUTER_API_KEY`
    - Lokal LLM: `LMSTUDIO_HOST` ve tercihen `LM_STUDIO_API_KEY=lm-studio`
-5. Sosyal medya paylasimi kullanacaksan `POSTIZ_API_KEY` ve `POSTIZ_API_BASE_URL` ekle.
+5. Sosyal medya paylasimi kullanacaksan paylasimli kullanimda global Postiz + global OAuth app kur ve kullanicinin baglantiyi uygulama icinden yapmasini sagla. Yalniz tek kullanicili lokal gelistirme icin `POSTIZ_API_KEY`, `POSTIZ_API_BASE_URL` ve `ALLOW_ENV_POSTIZ_API_KEY_FALLBACK=1` kullan.
 
 ## Hangileri Gercekten Zorunlu?
 
@@ -46,8 +46,10 @@ AI analizi hic calismayacaksa sistem fallback davranisa gecebilir, ama gercek ku
 
 | Degisken | Durum |
 |----------|-------|
-| `POSTIZ_API_KEY` | Sosyal paylasim ozelligi icin gerekli, diger durumlarda opsiyonel |
+| `POSTIZ_API_KEY` | Yalniz explicit dev fallback acik ise kullanilir; normal akista uygulama ici credential tercih edilir |
+| `ALLOW_ENV_POSTIZ_API_KEY_FALLBACK` | `POSTIZ_API_KEY` env fallback'ini yalniz tek kullanicili dev modunda acmak icin kullanilir |
 | `POSTIZ_API_BASE_URL` | Postiz cloud/self-hosted kullaniyorsan gerekli |
+| `SOCIAL_CONNECTION_MODE` | `managed` ise UI manuel API key istemez; `manual_api_key` ise dev fallback akisi acik kalir |
 | `PUBLIC_APP_URL` | Buyuk videolarin URL import ile Postiz'e yuklenmesinde gerekli |
 | `HF_TOKEN` | Cogu kurulumda opsiyonel |
 | `API_BEARER_TOKENS` | Test/dev fallback, son kullanici icin tavsiye edilmez |
@@ -209,6 +211,21 @@ Not:
 
 Bu kisim sadece sosyal medya yayinlama ozelligini kullanacaksan gerekli.
 
+### 4.0 Onerilen production modeli
+
+Paylasimli/global kullanimda hedef model su olmalidir:
+
+- Postiz operator tarafinda tek kez kurulur
+- Google OAuth client operator tarafinda tek kez tanimlanir
+- Uygulama `.env` tarafinda `SOCIAL_CONNECTION_MODE=managed` kullanilir
+- `POSTIZ_API_KEY` son kullaniciya dagitilmaz
+- Son kullanici uygulamada kendi hesabini baglar
+- Kullanici tokenlari subject bazli saklanir
+
+Detayli operasyon standardi:
+
+- [postiz-global-oauth-standard.md](/home/arch/godtier-shorts/docs/operations/postiz-global-oauth-standard.md)
+
 ### 4.1 Nereden alinir?
 
 Postiz cloud veya self-hosted kullanabilirsiniz.
@@ -216,43 +233,54 @@ Postiz cloud veya self-hosted kullanabilirsiniz.
 - Cloud base URL: `https://api.postiz.com/public/v1`
 - Self-hosted base URL: kendi alan adiniz + `/public/v1` veya `/api/public/v1`
 
-API key alma adimi:
+Managed OAuth2 app bilgileri alma adimi:
 
 1. Postiz'e giris yapin
-2. `Settings -> Developers -> Public API`
-3. API key'i kopyalayin
+2. `Settings -> Developers -> OAuth Apps` (veya self-hosted panelde esdeger ekran)
+3. `Client ID` ve `Client Secret` degerlerini alin
+4. Callback URL'i `SOCIAL_OAUTH_CALLBACK_URL` ile birebir ayni tanimlayin
 
 ### 4.2 `.env` ayari
 
-Cloud kullaniyorsan:
+Managed OAuth2 (onerilen paylasimli/global model):
 
 ```dotenv
 POSTIZ_API_BASE_URL=https://api.postiz.com/public/v1
-POSTIZ_API_KEY=your_postiz_api_key
+SOCIAL_CONNECTION_MODE=managed
+POSTIZ_OAUTH_CLIENT_ID=your_postiz_oauth_client_id
+POSTIZ_OAUTH_CLIENT_SECRET=your_postiz_oauth_client_secret
+SOCIAL_OAUTH_CALLBACK_URL=https://api.yourdomain.com/api/social/oauth/callback
+SOCIAL_OAUTH_RETURN_URL=https://app.yourdomain.com
+SOCIAL_OAUTH_STATE_TTL_SECONDS=600
 PUBLIC_APP_URL=http://localhost:8000
 ```
 
-Self-hosted kullaniyorsan ornek:
+Tek kullanicili lokal dev fallback (opsiyonel):
 
 ```dotenv
-POSTIZ_API_BASE_URL=https://postiz.example.com/public/v1
+POSTIZ_API_BASE_URL=http://localhost:4007/api/public/v1
+SOCIAL_CONNECTION_MODE=manual_api_key
 POSTIZ_API_KEY=your_postiz_api_key
-PUBLIC_APP_URL=https://your-godtier-api.example.com
+ALLOW_ENV_POSTIZ_API_KEY_FALLBACK=1
 ```
 
 ### 4.3 Bu alanlar ne ise yarar?
 
-- `POSTIZ_API_KEY`: Postiz Public API'ye baglanir
+- `POSTIZ_OAUTH_CLIENT_ID` / `POSTIZ_OAUTH_CLIENT_SECRET`: OAuth authorization-code exchange icin kullanilir
+- `SOCIAL_OAUTH_CALLBACK_URL`: Postiz callback'in donecegi backend endpoint URL'i
+- `SOCIAL_OAUTH_RETURN_URL`: callback sonrasinda frontend'e donecek URL
+- `SOCIAL_OAUTH_STATE_TTL_SECONDS`: signed OAuth state suresi (saniye)
 - `POSTIZ_API_BASE_URL`: hangi Postiz sunucusuna gidecegini soyler
+- `POSTIZ_API_KEY`: sadece `manual_api_key` modunda dev fallback icin
 - `PUBLIC_APP_URL`: buyuk videolar dogrudan dosya olarak degil URL ile aktarilacaksa GodTier backend'in public adresi gerekir
 
 ### 4.4 Son kullaniciya en basit anlatim
 
-"Postiz kullanacaksan once Postiz hesabini veya sunucunu hazirla. Sonra Developers > Public API ekranindan key al, `.env` icine ekle."
+"Postiz kullanacaksan operator bir kez OAuth app kurar. Sen uygulamada `Baglantiyi Postiz'de Ac` ile kendi hesabini baglarsin; API key girmen gerekmez."
 
 ### 4.5 Onemli not
 
-Bu projede `POSTIZ_API_KEY` env fallback olarak kullaniliyor. Tek kullanicili lokal kurulumda kolaylik saglar. Daha gelismis akista kullanicilar Postiz credential'larini uygulama icinden de baglayabilir.
+`POSTIZ_API_KEY` env fallback'i varsayilan olarak kapali. Yalniz tek kullanicili lokal gelistirmede `ALLOW_ENV_POSTIZ_API_KEY_FALLBACK=1` ile acilabilir. Cok kullanicili veya paylasilan ortamlarda Postiz credential'larini uygulama icinden subject bazli baglamak gerekir.
 
 ## 5. HF_TOKEN
 

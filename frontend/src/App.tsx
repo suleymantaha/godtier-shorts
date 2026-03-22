@@ -2,6 +2,7 @@ import { AppBackground, SignedInShell, SignedOutScreen } from './app/sections';
 import { useAppShellController } from './app/useAppShellController';
 import { useResilientAuth } from './auth/useResilientAuth';
 import { SystemStatusBanner } from './components/ui/SystemStatusBanner';
+import { useTranslation } from 'react-i18next';
 
 function AuthStateCard({
   message,
@@ -21,6 +22,7 @@ function AuthStateCard({
 }
 
 function App() {
+  const { t } = useTranslation();
   const auth = useResilientAuth();
   const controller = useAppShellController(auth.canUseBackend, auth.identityKey);
 
@@ -31,14 +33,14 @@ function App() {
         {auth.notice ? <SystemStatusBanner {...auth.notice} /> : null}
         {auth.status === 'loading' ? (
           <AuthStateCard
-            title="AUTH CHECK"
-            message="Oturum ve baglanti durumu kontrol ediliyor. Bu adim uzarsa Clerk veya internet erisimi gecici olarak sorun yasiyor olabilir."
+            title={t('app.auth.checkingTitle')}
+            message={t('app.auth.checkingMessage')}
           />
         ) : null}
         {auth.status === 'error' ? (
           <AuthStateCard
-            title="AUTH ERROR"
-            message={auth.error?.message ?? 'Kimlik dogrulama sirasinda beklenmeyen bir hata olustu.'}
+            title={t('app.auth.errorTitle')}
+            message={auth.error?.message ?? t('app.auth.unexpectedError')}
           />
         ) : null}
         {auth.status === 'signed_out' ? <SignedOutScreen /> : null}
@@ -46,6 +48,7 @@ function App() {
           <SignedInShell
             {...controller}
             backendAuthStatus={auth.backendAuthStatus}
+            canUseBackend={auth.canUseBackend}
             authStatus={auth.status}
             isOnline={auth.isOnline}
             pauseReason={auth.pauseReason}

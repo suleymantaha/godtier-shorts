@@ -50,15 +50,22 @@ class FakeWebSocket {
 
 function TestComponent() { useWebSocket(); return <div />; }
 
-describe('useWebSocket', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.clearAllMocks();
-    FakeWebSocket.instances = [];
-    authRuntimeState.backendAuthStatus = 'fresh';
-    authRuntimeState.canUseProtectedRequests = true;
-    getFreshTokenMock.mockResolvedValue(null);
-    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.clearAllMocks();
+  FakeWebSocket.instances = [];
+  authRuntimeState.backendAuthStatus = 'fresh';
+  authRuntimeState.canUseProtectedRequests = true;
+  getFreshTokenMock.mockResolvedValue(null);
+  vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+});
+
+describe('useWebSocket connection lifecycle', () => {
+  it('fetches jobs immediately before websocket opens so refresh can restore visible state', async () => {
+    render(<TestComponent />);
+    await act(async () => {});
+
+    expect(storeMock.fetchJobs).toHaveBeenCalledTimes(1);
   });
 
   it('reconnects and re-syncs jobs after disconnect', async () => {
@@ -66,14 +73,14 @@ describe('useWebSocket', () => {
     await act(async () => {});
     const ws = FakeWebSocket.instances[0];
     act(() => ws.onopen?.());
-    expect(storeMock.fetchJobs).toHaveBeenCalledTimes(1);
+    expect(storeMock.fetchJobs).toHaveBeenCalledTimes(2);
 
     act(() => ws.onclose?.());
     act(() => vi.advanceTimersByTime(3000));
     await act(async () => {});
     const next = FakeWebSocket.instances[1];
     act(() => next.onopen?.());
-    expect(storeMock.fetchJobs).toHaveBeenCalledTimes(2);
+    expect(storeMock.fetchJobs).toHaveBeenCalledTimes(3);
   });
 
   it('cleans reconnect timeout on unmount', async () => {
@@ -85,7 +92,9 @@ describe('useWebSocket', () => {
     act(() => vi.advanceTimersByTime(3000));
     expect(FakeWebSocket.instances).toHaveLength(1);
   });
+});
 
+describe('useWebSocket message handling', () => {
   it('validates incoming message schema before updating store', async () => {
     render(<TestComponent />);
     await act(async () => {});
@@ -111,6 +120,52 @@ describe('useWebSocket', () => {
       progress: 10,
       source: 'worker',
       status: undefined,
+      download_progress: undefined,
+    });
+  });
+
+  it('passes structured download progress through to the store', async () => {
+    render(<TestComponent />);
+    await act(async () => {});
+    const ws = FakeWebSocket.instances[0];
+
+    act(() => ws.onmessage?.({
+      data: JSON.stringify({
+        event_id: 'evt-download-1',
+        at: '2026-03-20T00:00:05.000Z',
+        job_id: 'j-download',
+        message: 'indiriliyor',
+        progress: 15,
+        status: 'processing',
+        download_progress: {
+          phase: 'download',
+          downloaded_bytes: 1024,
+          total_bytes: 2048,
+          percent: 50,
+          speed_text: '1.00MiB/s',
+          eta_text: '00:03',
+          status: 'downloading',
+        },
+      }),
+    }));
+
+    expect(storeMock.mergeJobTimelineEvent).toHaveBeenCalledWith({
+      at: '2026-03-20T00:00:05.000Z',
+      event_id: 'evt-download-1',
+      job_id: 'j-download',
+      message: 'indiriliyor',
+      progress: 15,
+      source: 'worker',
+      status: 'processing',
+      download_progress: {
+        phase: 'download',
+        downloaded_bytes: 1024,
+        total_bytes: 2048,
+        percent: 50,
+        speed_text: '1.00MiB/s',
+        eta_text: '00:03',
+        status: 'downloading',
+      },
     });
   });
 
@@ -143,6 +198,7 @@ describe('useWebSocket', () => {
       progress: 91,
       source: 'clip_ready',
       status: 'processing',
+      download_progress: undefined,
     });
     expect(storeMock.markClipReady).toHaveBeenCalledWith({
       at: '2026-03-20T00:00:01.000Z',
@@ -154,7 +210,9 @@ describe('useWebSocket', () => {
       uiTitle: 'Hook',
     });
   });
+});
 
+describe('useWebSocket auth gating', () => {
   it('uses websocket subprotocol auth when token is present', async () => {
     getFreshTokenMock.mockResolvedValueOnce('jwt-token');
     render(<TestComponent />);
@@ -188,7 +246,9 @@ describe('useWebSocket', () => {
     expect(getFreshTokenMock).not.toHaveBeenCalled();
     expect(FakeWebSocket.instances).toHaveLength(0);
   });
+});
 
+describe('useWebSocket reconnect cancellation', () => {
   it('cancels pending reconnects when auth becomes paused', async () => {
     const view = render(<TestComponent />);
     await act(async () => {});

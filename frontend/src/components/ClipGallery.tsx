@@ -18,21 +18,28 @@ interface ClipGalleryProps {
 
 export const ClipGallery = ({ onEditClip }: ClipGalleryProps) => {
     const {
+        authMode,
         clips,
+        currentSubjectHash,
         deleteClip,
         deleteError,
         handleCloseDelete,
+        handleClaimProject,
         handleConfirmDelete,
         handleRequestDelete,
         errorMsg,
         handleRetry,
         hasMore,
+        isClaimingProjectId,
         isDeleting,
         loadedCount,
+        ownershipNotice,
+        ownershipNoticeTone,
         pageSizeLimit,
         productionInProgress,
         projectFilter,
         projectOptions,
+        reclaimableProjects,
         setProjectFilter,
         setShareClip,
         setSortOrder,
@@ -47,12 +54,19 @@ export const ClipGallery = ({ onEditClip }: ClipGalleryProps) => {
     return (
         <div className="space-y-6">
             <GalleryHeader
+                authMode={authMode}
+                currentSubjectHash={currentSubjectHash}
                 hasMore={hasMore}
+                handleClaimProject={handleClaimProject}
+                isClaimingProjectId={isClaimingProjectId}
                 loadedCount={loadedCount}
+                ownershipNotice={ownershipNotice}
+                ownershipNoticeTone={ownershipNoticeTone}
                 pageSizeLimit={pageSizeLimit}
                 productionInProgress={productionInProgress}
                 projectFilter={projectFilter}
                 projectOptions={projectOptions}
+                reclaimableProjects={reclaimableProjects}
                 setProjectFilter={setProjectFilter}
                 setSortOrder={setSortOrder}
                 sortOrder={sortOrder}

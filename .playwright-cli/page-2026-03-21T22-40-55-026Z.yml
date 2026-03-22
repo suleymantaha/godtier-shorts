@@ -1,0 +1,52 @@
+- generic [ref=e3]:
+  - banner [ref=e11]:
+    - generic [ref=e12]:
+      - heading "GOD-TIER SHORTS" [level=1] [ref=e13]:
+        - img [ref=e15]
+        - text: GOD-TIER SHORTS
+      - generic [ref=e19]:
+        - generic [ref=e20]: Nebula AI Architect
+        - generic [ref=e22]: v1.0.SPACE
+    - generic [ref=e23]:
+      - navigation "Ana navigasyon" [ref=e24]:
+        - button "CONFIGURE" [ref=e25]:
+          - img [ref=e26]
+          - text: CONFIGURE
+        - button "AUTO CUT" [ref=e29]:
+          - img [ref=e30]
+          - text: AUTO CUT
+        - button "SUBTITLE EDIT" [active] [ref=e36]:
+          - img [ref=e37]
+          - text: SUBTITLE EDIT
+      - generic [ref=e40]:
+        - button "Toggle Theme" [ref=e41]:
+          - img [ref=e42]
+        - link "GitHub" [ref=e48] [cursor=pointer]:
+          - /url: https://github.com
+          - img [ref=e49]
+        - link "Twitter" [ref=e52] [cursor=pointer]:
+          - /url: https://twitter.com
+          - img [ref=e53]
+        - button "Open user menu" [ref=e271] [cursor=pointer]:
+          - img "Babek Babek's logo" [ref=e274]
+  - main [ref=e276]:
+    - generic [ref=e279]:
+      - heading "Altyazı Düzenleme" [level=2] [ref=e280]:
+        - img [ref=e281]
+        - text: Altyazı Düzenleme
+      - generic [ref=e284]:
+        - generic [ref=e285]:
+          - generic [ref=e286]: Mod
+          - generic [ref=e287]:
+            - button "Proje" [ref=e288]
+            - button "Klip" [ref=e289]
+        - generic [ref=e290]:
+          - generic [ref=e291]: Proje
+          - button "Proje seçin" [ref=e294] [cursor=pointer]:
+            - generic [ref=e296]: Proje seçin
+            - img [ref=e297]
+      - paragraph [ref=e299]: Proje ve klip listesi hazırlanıyor...
+  - contentinfo [ref=e264]:
+    - paragraph [ref=e265]: © 2026 GOD-TIER SHORTS. AI_ARCHITECT_ENABLED
+    - 'status "Backend durumu: AUTH:PAUSED" [ref=e266]':
+      - generic [ref=e268]: AUTH:PAUSED

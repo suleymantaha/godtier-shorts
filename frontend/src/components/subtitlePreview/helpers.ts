@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 
 import {
-  ANIMATION_LABELS,
+  getAnimationLabel,
   resolveSubtitleStyle,
   type PreviewAnimationType,
   type PreviewBandVariant,
@@ -57,6 +57,72 @@ export function buildTextShadow(outlineColor: string, width: number, isGlow = fa
   ].join(', ');
 }
 
+function resolvePreviewShellType(cutAsShort: boolean): PreviewShellType {
+  return cutAsShort ? 'phone' : 'landscape';
+}
+
+function buildBasePreviewTextStyle({
+  fontStyle,
+  fontWeight,
+  isGlass,
+  isGlow,
+  letterSpacing,
+  outlineColor,
+  outlineWidth,
+  primaryColor,
+  shellType,
+  textDecoration,
+  textTransform,
+  fontFamily,
+  fontSize,
+}: {
+  fontStyle?: string;
+  fontWeight: CSSProperties['fontWeight'];
+  isGlass: boolean;
+  isGlow: boolean;
+  letterSpacing: string | undefined;
+  outlineColor: string;
+  outlineWidth: number;
+  primaryColor: string;
+  shellType: PreviewShellType;
+  textDecoration?: string;
+  textTransform?: string;
+  fontFamily: string;
+  fontSize: string;
+}): CSSProperties {
+  return {
+    color: primaryColor,
+    display: 'inline-block',
+    fontFamily,
+    fontSize: clampPreviewFontSize(fontSize, shellType),
+    fontStyle: fontStyle ?? 'normal',
+    fontWeight,
+    letterSpacing: clampLetterSpacing(letterSpacing, shellType),
+    lineHeight: shellType === 'phone' ? 1.12 : 1.05,
+    textShadow: buildTextShadow(isGlow ? primaryColor : outlineColor, outlineWidth, isGlow),
+    textTransform: textTransform ?? 'none',
+    transformOrigin: 'center bottom',
+    whiteSpace: 'nowrap',
+    ...(textDecoration ? { textDecoration } : {}),
+    ...(isGlass ? { color: 'rgba(255,255,255,0.94)' } : {}),
+  };
+}
+
+function buildPreviewColorStyles(
+  baseStylePrimary: CSSProperties,
+  highlightColor: string,
+  highlightShadow: string,
+) {
+  return {
+    baseStyleHighlight: {
+      ...baseStylePrimary,
+      color: highlightColor,
+      textShadow: highlightShadow,
+    },
+    baseStylePrimary,
+  };
+}
+
 export function getSubtitlePreviewModel(
   styleName: string,
   cutAsShort = true,
@@ -64,38 +130,31 @@ export function getSubtitlePreviewModel(
 ): SubtitlePreviewModel {
   const resolved = resolveSubtitleStyle(styleName, animationType);
   const style = resolved.inline;
-  const shellType: PreviewShellType = cutAsShort ? 'phone' : 'landscape';
+  const shellType = resolvePreviewShellType(cutAsShort);
   const isGlow = resolved.resolvedStyle === 'GLOW_KARAOKE';
   const isGlass = resolved.resolvedStyle === 'GLASS_MORPH';
   const bandVariant = resolved.preview.bandVariant;
   const shouldUsePlate = bandVariant !== 'plain';
   const outlineWidth = clampOutlineWidth(style.outlineWidth, shellType, isGlow);
-  const primaryShadow = buildTextShadow(isGlow ? style.primaryColor : style.outlineColor, outlineWidth, isGlow);
   const highlightShadow = buildTextShadow(isGlow ? style.highlightColor : style.outlineColor, outlineWidth, isGlow);
-  const baseStylePrimary: CSSProperties = {
-    color: style.primaryColor,
-    display: 'inline-block',
+  const baseStylePrimary = buildBasePreviewTextStyle({
     fontFamily: style.fontFamily,
-    fontSize: clampPreviewFontSize(style.fontSize, shellType),
-    fontStyle: style.fontStyle ?? 'normal',
+    fontSize: style.fontSize,
+    fontStyle: style.fontStyle,
     fontWeight: style.fontWeight,
-    letterSpacing: clampLetterSpacing(style.letterSpacing, shellType),
-    lineHeight: shellType === 'phone' ? 1.12 : 1.05,
-    textShadow: primaryShadow,
-    textTransform: style.textTransform ?? 'none',
-    transformOrigin: 'center bottom',
-    whiteSpace: 'nowrap',
-    ...(style.textDecoration ? { textDecoration: style.textDecoration } : {}),
-    ...(isGlass ? { color: 'rgba(255,255,255,0.94)' } : {}),
-  };
+    isGlass,
+    isGlow,
+    letterSpacing: style.letterSpacing,
+    outlineColor: style.outlineColor,
+    outlineWidth,
+    primaryColor: isGlass ? style.highlightColor : style.primaryColor,
+    shellType,
+    textDecoration: style.textDecoration,
+    textTransform: style.textTransform,
+  });
 
   return {
-    baseStyleHighlight: {
-      ...baseStylePrimary,
-      color: style.highlightColor,
-      textShadow: highlightShadow,
-    },
-    baseStylePrimary,
+    ...buildPreviewColorStyles(baseStylePrimary, style.highlightColor, highlightShadow),
     bandVariant,
     hasBackground: style.backgroundColor !== null,
     highlightColor: style.highlightColor,
@@ -103,8 +162,8 @@ export function getSubtitlePreviewModel(
     shouldUsePlate,
     motionProfile: resolved.preview.motion,
     motionLabel: resolved.requestedAnimationType === 'default'
-      ? `${ANIMATION_LABELS.default} · ${ANIMATION_LABELS[resolved.resolvedAnimationType]}`
-      : ANIMATION_LABELS[resolved.resolvedAnimationType],
+      ? `${getAnimationLabel('default')} · ${getAnimationLabel(resolved.resolvedAnimationType)}`
+      : getAnimationLabel(resolved.resolvedAnimationType),
     primaryColor: style.primaryColor,
     requestedAnimationType: resolved.requestedAnimationType,
     resolvedAnimationType: resolved.resolvedAnimationType,

@@ -11,3 +11,11 @@ markers = [
     "unit: fast unit tests",
     "smoke: minimum CI smoke tests",
 ]
+
+[tool.coverage.run]
+source = ["backend"]
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = true
+skip_covered = false

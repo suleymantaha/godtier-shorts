@@ -4,9 +4,11 @@ import asyncio
 import json
 import re
 import threading
-from typing import Callable, Optional
+from contextlib import asynccontextmanager
+from typing import Any, Callable, Optional
 from loguru import logger
 from backend.config import LOGS_DIR, OUTPUTS_DIR, VIDEO_METADATA, YOLO_MODEL_PATH, ProjectPaths
+from backend.core.clip_events import ClipEventPort, NullClipEventPort
 from backend.core.command_runner import CommandRunner
 from backend.core.media_ops import cut_and_burn_clip, download_full_video_async as download_video_assets_async, shift_timestamps
 from backend.core.workflows import BatchClipWorkflow, CutPointsWorkflow, ManualClipWorkflow, PipelineWorkflow, ReburnWorkflow
@@ -22,15 +24,19 @@ class GodTierShortsCreator:
         ui_callback: Optional[StatusCallback] = None,
         cancel_event: Optional[threading.Event] = None,
         subject: Optional[str] = None,
+        clip_event_port: ClipEventPort | None = None,
+        gpu_stage_lock: asyncio.Lock | None = None,
     ):
         logger.info("👑 GOD-TIER SHORTS ORKESTRATÖRÜ BAŞLATILDI 👑")
         self.ui_callback = ui_callback
         self.cancel_event = cancel_event or threading.Event()
         self.subject = subject
+        self.clip_event_port = clip_event_port or NullClipEventPort()
         self.project: Optional[ProjectPaths] = None
         self.command_runner = CommandRunner(cancel_event=self.cancel_event)
         self.analyzer = ViralAnalyzer(engine="local")
         self.video_processor = VideoProcessor(model_version=str(YOLO_MODEL_PATH), device="cuda")
+        self.gpu_stage_lock = gpu_stage_lock
     def cleanup_gpu(self) -> None:
         try:
             release_whisper_models()
@@ -61,13 +67,7 @@ class GodTierShortsCreator:
         error_message: str,
     ) -> tuple[int, str, str]:
         return await self.command_runner.run_async(cmd, timeout=timeout, error_message=error_message)
-    def _run_command_with_cancel(
-        self,
-        cmd: list[str],
-        *,
-        timeout: float,
-        error_message: str,
-    ):
+    def _run_command_with_cancel(self, cmd: list[str], *, timeout: float, error_message: str):
         """DEPRECATED: retained for backward compatibility."""
         return self.command_runner.run_sync(cmd, timeout=timeout, error_message=error_message)
     @staticmethod
@@ -82,17 +82,8 @@ class GodTierShortsCreator:
                 normalized.append(dict(segment))
         return normalized
     @staticmethod
-    def _build_clip_metadata(
-        transcript_data: list[dict],
-        *,
-        viral_metadata: Optional[dict] = None,
-        render_metadata: Optional[dict] = None,
-    ) -> dict:
-        return {
-            "transcript": transcript_data,
-            "viral_metadata": viral_metadata,
-            "render_metadata": render_metadata,
-        }
+    def _build_clip_metadata(transcript_data: list[dict], *, viral_metadata: Optional[dict] = None, render_metadata: Optional[dict] = None) -> dict:
+        return {"transcript": transcript_data, "viral_metadata": viral_metadata, "render_metadata": render_metadata}
 
     def _load_project_transcript(self) -> list[dict]:
         if self.project is None:
@@ -102,10 +93,37 @@ class GodTierShortsCreator:
         with open(self.project.transcript, "r", encoding="utf-8") as f:
             return json.load(f)
 
-    def _update_status(self, message: str, progress: int) -> None:
+    def _update_status(self, message: str, progress: int, extra: Optional[dict[str, Any]] = None) -> None:
         logger.info(f"[{progress}%] ⏳ {message}")
         if self.ui_callback:
-            self.ui_callback({"message": message, "progress": progress})
+            payload = {"message": message, "progress": progress}
+            if extra:
+                payload.update(extra)
+            self.ui_callback(payload)
+
+    @asynccontextmanager
+    async def acquire_gpu_stage(
+        self,
+        *,
+        wait_message: str | None = None,
+        active_message: str | None = None,
+        wait_progress: int | None = None,
+        active_progress: int | None = None,
+    ):
+        lock = self.gpu_stage_lock
+        if lock is None:
+            if active_message and active_progress is not None:
+                self._update_status(active_message, active_progress)
+            yield
+            return
+
+        if lock.locked() and wait_message and wait_progress is not None:
+            self._update_status(wait_message, wait_progress, extra={"gpu_stage": "waiting"})
+
+        async with lock:
+            if active_message and active_progress is not None:
+                self._update_status(active_message, active_progress, extra={"gpu_stage": "active"})
+            yield
 
     async def download_full_video_async(
         self,
@@ -125,13 +143,7 @@ class GodTierShortsCreator:
     def download_full_video(self, url: str, project_paths: Optional[ProjectPaths] = None, resolution: str = "best") -> tuple[str, str]:
         return self._run_in_new_loop(self.download_full_video_async(url, project_paths, resolution))
 
-    def _shift_timestamps(
-        self,
-        original_json: str,
-        start_time: float,
-        end_time: float,
-        output_json: str,
-    ) -> str:
+    def _shift_timestamps(self, original_json: str, start_time: float, end_time: float, output_json: str) -> str:
         return shift_timestamps(original_json, start_time, end_time, output_json)
 
     def _cut_and_burn_clip(

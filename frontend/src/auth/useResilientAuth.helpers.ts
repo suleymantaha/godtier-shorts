@@ -2,6 +2,7 @@ import { isClerkRuntimeError } from '@clerk/clerk-react/errors';
 import { useEffect, useState } from 'react';
 
 import { createAppError, type AppError, type AppErrorCode } from '../api/errors';
+import i18n, { formatTime, normalizeLocale, tSafe } from '../i18n';
 import {
   getCachedToken,
   hasOfflineShellAccess,
@@ -23,7 +24,7 @@ export function classifyTokenRefreshError(error: unknown, isOnline: boolean): Ap
   if (!isOnline) {
     return createAppError(
       'network_offline',
-      'Internet baglantisi yok. Onceki oturumla devam etmek icin onbellekte gecerli bir oturum bulunmali.',
+      tSafe('auth.errors.networkOffline'),
       { retryable: false, source: 'auth' },
     );
   }
@@ -31,12 +32,12 @@ export function classifyTokenRefreshError(error: unknown, isOnline: boolean): Ap
   return isClerkRuntimeError(error)
     ? createAppError(
         'auth_provider_unavailable',
-        'Kimlik dogrulama servisine su anda ulasilamiyor. Lutfen biraz sonra tekrar deneyin.',
+        tSafe('auth.errors.providerUnavailable'),
         { cause: error, retryable: false, source: 'auth' },
       )
     : createAppError(
         'auth_provider_unavailable',
-        'Oturum dogrulanamadi. Lutfen internet baglantinizi kontrol edip tekrar deneyin.',
+        tSafe('auth.errors.sessionUnavailable'),
         { cause: error, retryable: false, source: 'auth' },
       );
 }
@@ -90,13 +91,10 @@ export function useBootstrapTimeout(isLoaded: boolean, timeoutMs: number): boole
 
 function formatExpiryLabel(expiresAt: number | null): string {
   if (!expiresAt) {
-    return 'yakinda';
+    return tSafe('auth.time.soon');
   }
 
-  return new Date(expiresAt).toLocaleTimeString('tr-TR', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatTime(expiresAt, normalizeLocale(i18n.language));
 }
 
 function buildOfflineNotice(
@@ -107,18 +105,18 @@ function buildOfflineNotice(
   if (canUseBackend) {
     return {
       message: status === 'offline_authenticated'
-        ? `Onbellekteki oturum kullaniliyor. API erisimi token suresi dolana kadar devam eder: ${formatExpiryLabel(expiresAt)}`
-        : `Clerk dogrulamasi gecici olarak cevap vermiyor. Onbellekteki oturum ile devam ediliyor: ${formatExpiryLabel(expiresAt)}`,
-      title: status === 'offline_authenticated' ? 'Offline mod' : 'Auth fallback aktif',
+        ? tSafe('auth.notices.offlineAuthenticatedBackend', { time: formatExpiryLabel(expiresAt) })
+        : tSafe('auth.notices.degradedAuthenticatedBackend', { time: formatExpiryLabel(expiresAt) }),
+      title: status === 'offline_authenticated' ? tSafe('auth.notices.offlineMode') : tSafe('auth.notices.authFallbackActive'),
       tone: 'warning',
     };
   }
 
   return {
     message: status === 'offline_authenticated'
-      ? 'Kabuk acildi ancak yeni API/WebSocket istekleri icin internet baglantisi geri gelmeli.'
-      : 'Kabuk acildi ancak Clerk tekrar dogrulanana kadar korumali istekler bekletilmeli.',
-    title: status === 'offline_authenticated' ? 'Sinirli offline erisim' : 'Sinirli auth erisimi',
+      ? tSafe('auth.notices.offlineAuthenticatedShell')
+      : tSafe('auth.notices.degradedAuthenticatedShell'),
+    title: status === 'offline_authenticated' ? tSafe('auth.notices.limitedOfflineAccess') : tSafe('auth.notices.limitedAuthAccess'),
     tone: 'info',
   };
 }
@@ -135,41 +133,41 @@ function buildProtectedAccessNotice(
   if (pauseReason === 'network_offline') {
     return {
       message: canUseBackend
-        ? `Internet yok, yeni veriler duraklatildi. Mevcut token ${formatExpiryLabel(expiresAt)} zamanina kadar kullanilabilir.`
-        : 'Internet yok, yeni veriler duraklatildi.',
-      title: canUseBackend ? 'Offline mod' : 'Sinirli offline erisim',
+        ? tSafe('auth.notices.protectedOfflineWithToken', { time: formatExpiryLabel(expiresAt) })
+        : tSafe('auth.notices.protectedOffline'),
+      title: canUseBackend ? tSafe('auth.notices.offlineMode') : tSafe('auth.notices.limitedOfflineAccess'),
       tone: 'warning',
     };
   }
 
   if (pauseReason === 'auth_provider_unavailable') {
     return {
-      message: 'Oturum yenilenemiyor, baglanti gelince devam edecek.',
-      title: 'Auth fallback aktif',
+      message: tSafe('auth.notices.providerUnavailable'),
+      title: tSafe('auth.notices.authFallbackActive'),
       tone: 'warning',
     };
   }
 
   if (pauseReason === 'token_expired') {
     return {
-      message: 'Oturum yenilenemedi, korumali islemler beklemeye alindi.',
-      title: 'Oturum yenileme gerekli',
+      message: tSafe('auth.notices.tokenExpired'),
+      title: tSafe('auth.notices.refreshRequired'),
       tone: 'warning',
     };
   }
 
   if (pauseReason === 'unauthorized') {
     return {
-      message: 'Backend oturumu dogrulanamadi. Ayni Clerk hesabi ile giris yaptiginizi ve backend auth ayarlarini kontrol edin.',
-      title: 'Backend oturumu dogrulanamadi',
+      message: tSafe('auth.notices.unauthorized'),
+      title: tSafe('auth.notices.backendSessionUnavailable'),
       tone: 'danger',
     };
   }
 
   if (pauseReason === 'forbidden') {
     return {
-      message: 'Bu hesapla korumali medya ve proje kaynaklarina erisim izni bulunmuyor.',
-      title: 'Erisim izni gerekli',
+      message: tSafe('auth.notices.forbidden'),
+      title: tSafe('auth.notices.accessPermissionRequired'),
       tone: 'danger',
     };
   }
@@ -205,27 +203,37 @@ function resolveFallbackAuthState(
   bootstrapTimedOut: boolean,
   authError: AppError | null,
 ): ResilientAuthState | null {
-  if ((!isOnline || bootstrapTimedOut || authError) && canUseOfflineShell) {
-    const snapshot = readAuthSnapshot();
-    const status: ResilientAuthStatus = !isOnline ? 'offline_authenticated' : 'degraded_authenticated';
-    const notice = buildProtectedAccessNotice(
-      backendRuntime.pauseReason,
-      canUseBackend,
-      backendRuntime.tokenExpiresAt ?? snapshot?.tokenExpiresAt ?? null,
-    ) ?? buildOfflineNotice(status, canUseBackend, snapshot?.tokenExpiresAt ?? null);
-
-    return buildStaticAuthState(status, {
-      backendAuthStatus: backendRuntime.backendAuthStatus,
-      canAccessApp: true,
-      canUseBackend,
-      isOnline,
-      notice,
-      pauseReason: backendRuntime.pauseReason,
-      tokenExpiresAt: backendRuntime.tokenExpiresAt ?? snapshot?.tokenExpiresAt ?? null,
-    });
+  if (!shouldUseFallbackAuthState(isOnline, bootstrapTimedOut, authError, canUseOfflineShell)) {
+    return null;
   }
 
-  return null;
+  const snapshot = readAuthSnapshot();
+  const tokenExpiresAt = backendRuntime.tokenExpiresAt ?? snapshot?.tokenExpiresAt ?? null;
+  const status: ResilientAuthStatus = !isOnline ? 'offline_authenticated' : 'degraded_authenticated';
+  const notice = buildProtectedAccessNotice(
+    backendRuntime.pauseReason,
+    canUseBackend,
+    tokenExpiresAt,
+  ) ?? buildOfflineNotice(status, canUseBackend, tokenExpiresAt);
+
+  return buildStaticAuthState(status, {
+    backendAuthStatus: backendRuntime.backendAuthStatus,
+    canAccessApp: true,
+    canUseBackend,
+    isOnline,
+    notice,
+    pauseReason: backendRuntime.pauseReason,
+    tokenExpiresAt,
+  });
+}
+
+function shouldUseFallbackAuthState(
+  isOnline: boolean,
+  bootstrapTimedOut: boolean,
+  authError: AppError | null,
+  canUseOfflineShell: boolean,
+): boolean {
+  return canUseOfflineShell && (!isOnline || bootstrapTimedOut || authError !== null);
 }
 
 function resolveTerminalAuthState(

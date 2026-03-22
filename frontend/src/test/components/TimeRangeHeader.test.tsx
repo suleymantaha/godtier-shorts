@@ -8,7 +8,7 @@ describe('TimeRangeHeader', () => {
     render(<TimeRangeHeader endTime={150} startTime={30} title="Kesim Araligi" />);
 
     expect(screen.getByText(/30\.0s - 150\.0s/i)).toBeInTheDocument();
-    expect(screen.getByText(/\[Toplam: 120\.0s \| 2\.0 dk\]/i)).toBeInTheDocument();
+    expect(screen.getByText(/\[Total: 120\.0s \| 2\.0 min\]/i)).toBeInTheDocument();
   });
 
   it('renders extra labels for page-specific metadata', () => {

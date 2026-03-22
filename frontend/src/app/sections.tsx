@@ -12,6 +12,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { Suspense } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { ClipGallery } from '../components/ClipGallery';
 import { HoloTerminal } from '../components/HoloTerminal';
@@ -21,7 +22,9 @@ import { SubtitlePreview } from '../components/SubtitlePreview';
 import { AccountDeletionCard } from '../components/AccountDeletionCard';
 import { ConnectionChip } from '../components/ui/ConnectionChip';
 import { IconButton } from '../components/ui/IconButton';
+import { Select } from '../components/ui/Select';
 import type { SubtitleAnimationType } from '../config/subtitleStyles';
+import type { AppLocale } from '../i18n';
 import type { Clip, WsStatus } from '../types';
 import { AutoCutEditor, Editor, SubtitleEditor, ThreeCanvas } from './lazyComponents';
 import type { AppViewMode } from './helpers';
@@ -44,19 +47,9 @@ const SIGN_IN_APPEARANCE = {
   },
 };
 
-const NAV_ITEMS: Array<{
-  activeClass: string;
-  icon: LucideIcon;
-  label: string;
-  mode: AppViewMode;
-}> = [
-  { activeClass: 'bg-accent/20 text-foreground shadow-lg shadow-accent/10 border border-accent/30', icon: Settings, label: 'CONFIGURE', mode: 'config' },
-  { activeClass: 'bg-primary/20 text-foreground shadow-lg shadow-primary/10 border border-primary/30', icon: Scissors, label: 'AUTO CUT', mode: 'manual' },
-  { activeClass: 'bg-accent/20 text-foreground shadow-lg shadow-accent/10 border border-accent/30', icon: Subtitles, label: 'SUBTITLE EDIT', mode: 'subtitle' },
-];
-
 interface SignedInShellProps {
   backendAuthStatus: ResilientAuthState['backendAuthStatus'];
+  canUseBackend: boolean;
   authStatus: ResilientAuthStatus;
   closeEditor: () => void;
   currentAnimationType: SubtitleAnimationType;
@@ -70,7 +63,10 @@ interface SignedInShellProps {
   openManual: () => void;
   openSubtitle: () => void;
   pauseReason: ResilientAuthState['pauseReason'];
+  locale: AppLocale;
+  setLocale: (locale: AppLocale) => void;
   showUserMenu: boolean;
+  subtitleSessionNonce: number;
   subtitleTargetClip: Clip | null;
   subtitlesDisabled: boolean;
   theme: string;
@@ -98,6 +94,7 @@ export function SignedOutScreen() {
 
 export function SignedInShell({
   backendAuthStatus,
+  canUseBackend,
   authStatus,
   closeEditor,
   currentAnimationType,
@@ -111,7 +108,10 @@ export function SignedInShell({
   openManual,
   openSubtitle,
   pauseReason,
+  locale,
+  setLocale,
   showUserMenu,
+  subtitleSessionNonce,
   subtitleTargetClip,
   subtitlesDisabled,
   theme,
@@ -127,6 +127,8 @@ export function SignedInShell({
         openConfig={openConfig}
         openManual={openManual}
         openSubtitle={openSubtitle}
+        locale={locale}
+        setLocale={setLocale}
         showUserMenu={showUserMenu}
         theme={theme}
         toggleTheme={toggleTheme}
@@ -142,12 +144,14 @@ export function SignedInShell({
         handleStyleChange={handleStyleChange}
         openConfig={openConfig}
         openClipSubtitleEditor={openClipSubtitleEditor}
+        subtitleSessionNonce={subtitleSessionNonce}
         subtitleTargetClip={subtitleTargetClip}
         subtitlesDisabled={subtitlesDisabled}
         viewMode={viewMode}
       />
       <AppFooter
         backendAuthStatus={backendAuthStatus}
+        canUseBackend={canUseBackend}
         isOnline={isOnline}
         pauseReason={pauseReason}
         wsStatus={wsStatus}
@@ -158,18 +162,22 @@ export function SignedInShell({
 
 function AppHeader({
   authStatus,
+  locale,
   openConfig,
   openManual,
   openSubtitle,
+  setLocale,
   showUserMenu,
   theme,
   toggleTheme,
   viewMode,
 }: {
   authStatus: ResilientAuthStatus;
+  locale: AppLocale;
   openConfig: () => void;
   openManual: () => void;
   openSubtitle: () => void;
+  setLocale: (locale: AppLocale) => void;
   showUserMenu: boolean;
   theme: string;
   toggleTheme: () => void;
@@ -185,13 +193,22 @@ function AppHeader({
           openSubtitle={openSubtitle}
           viewMode={viewMode}
         />
-        <HeaderActions authStatus={authStatus} showUserMenu={showUserMenu} theme={theme} toggleTheme={toggleTheme} />
+        <HeaderActions
+          authStatus={authStatus}
+          locale={locale}
+          setLocale={setLocale}
+          showUserMenu={showUserMenu}
+          theme={theme}
+          toggleTheme={toggleTheme}
+        />
       </div>
     </header>
   );
 }
 
 function BrandPanel() {
+  const { t } = useTranslation();
+
   return (
     <div className="flex flex-col">
       <h1 className="text-2xl sm:text-4xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-primary via-secondary to-accent holo-text flex items-center gap-3">
@@ -201,9 +218,9 @@ function BrandPanel() {
         GOD-TIER SHORTS
       </h1>
       <div className="flex items-center gap-2 mt-2 px-1">
-        <span className="text-[11px] font-mono uppercase tracking-[0.3em] text-primary font-bold animate-pulse">Nebula AI Architect</span>
+        <span className="text-[11px] font-mono uppercase tracking-[0.3em] text-primary font-bold animate-pulse">{t('app.brand.subtitle')}</span>
         <div className="h-[1px] w-8 bg-secondary/50" />
-        <span className="text-[11px] font-mono text-muted-foreground holo-text">v1.0.SPACE</span>
+        <span className="text-[11px] font-mono text-muted-foreground holo-text">{t('app.brand.version')}</span>
       </div>
     </div>
   );
@@ -220,6 +237,17 @@ function ViewNavigation({
   openSubtitle: () => void;
   viewMode: AppViewMode;
 }) {
+  const { t } = useTranslation();
+  const navItems: Array<{
+    activeClass: string;
+    icon: LucideIcon;
+    label: string;
+    mode: AppViewMode;
+  }> = [
+    { activeClass: 'bg-accent/20 text-foreground shadow-lg shadow-accent/10 border border-accent/30', icon: Settings, label: t('app.nav.configure'), mode: 'config' },
+    { activeClass: 'bg-primary/20 text-foreground shadow-lg shadow-primary/10 border border-primary/30', icon: Scissors, label: t('app.nav.autoCut'), mode: 'manual' },
+    { activeClass: 'bg-accent/20 text-foreground shadow-lg shadow-accent/10 border border-accent/30', icon: Subtitles, label: t('app.nav.subtitleEdit'), mode: 'subtitle' },
+  ];
   const actions = {
     config: openConfig,
     manual: openManual,
@@ -227,8 +255,8 @@ function ViewNavigation({
   };
 
   return (
-    <nav className="flex p-1 glass-card rounded-xl border-accent/20" aria-label="Ana navigasyon">
-      {NAV_ITEMS.map(({ activeClass, icon: Icon, label, mode }) => {
+    <nav className="flex p-1 glass-card rounded-xl border-accent/20" aria-label={t('app.nav.ariaLabel')}>
+      {navItems.map(({ activeClass, icon: Icon, label, mode }) => {
         const isActive = viewMode === mode;
         return (
           <button
@@ -248,32 +276,49 @@ function ViewNavigation({
 
 function HeaderActions({
   authStatus,
+  locale,
+  setLocale,
   showUserMenu,
   theme,
   toggleTheme,
 }: {
   authStatus: ResilientAuthStatus;
+  locale: AppLocale;
+  setLocale: (locale: AppLocale) => void;
   showUserMenu: boolean;
   theme: string;
   toggleTheme: () => void;
 }) {
+  const { t } = useTranslation();
+  const localeOptions = [
+    { label: t('common.locale.en'), value: 'en' },
+    { label: t('common.locale.tr'), value: 'tr' },
+  ];
+
   return (
-    <div className="hidden sm:flex items-center gap-3 border-l border-border pl-4">
+    <div className="flex items-center gap-3 border-l border-border pl-4">
+      <Select
+        ariaLabel={t('common.labels.language')}
+        className="w-32"
+        onChange={(value) => setLocale(value === 'tr' ? 'tr' : 'en')}
+        options={localeOptions}
+        value={locale}
+      />
       <IconButton
-        label="Toggle Theme"
+        label={t('app.header.themeToggle')}
         icon={theme === 'dark' ? <Sun className="w-4 h-4 text-primary" /> : <Moon className="w-4 h-4 text-secondary" />}
         onClick={toggleTheme}
         variant="ghost"
       />
-      <IconButton label="GitHub" icon={<Github className="w-4 h-4" />} href="https://github.com" variant="ghost" />
-      <IconButton label="Twitter" icon={<Twitter className="w-4 h-4" />} href="https://twitter.com" variant="ghost" />
+      <IconButton label={t('app.header.github')} icon={<Github className="w-4 h-4" />} href="https://github.com" variant="ghost" />
+      <IconButton label={t('app.header.twitter')} icon={<Twitter className="w-4 h-4" />} href="https://twitter.com" variant="ghost" />
       {showUserMenu ? (
         <div className="pl-2 flex items-center justify-center">
           <UserButton appearance={{ elements: { userButtonAvatarBox: 'w-8 h-8 ring-2 ring-primary/50 hover:ring-primary transition-all duration-300' } }} />
         </div>
       ) : (
         <div className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-[10px] font-mono uppercase tracking-[0.22em] text-amber-100">
-          {authStatus === 'offline_authenticated' ? 'OFFLINE_SESSION' : 'AUTH_FALLBACK'}
+          {authStatus === 'offline_authenticated' ? t('app.header.offlineSession') : t('app.header.authFallback')}
         </div>
       )}
     </div>
@@ -290,6 +335,7 @@ function MainContent({
   handleStyleChange,
   openConfig,
   openClipSubtitleEditor,
+  subtitleSessionNonce,
   subtitleTargetClip,
   subtitlesDisabled,
   viewMode,
@@ -303,22 +349,29 @@ function MainContent({
   handleStyleChange: (styleName: string) => void;
   openConfig: () => void;
   openClipSubtitleEditor: (clip: Clip) => void;
+  subtitleSessionNonce: number;
   subtitleTargetClip: Clip | null;
   subtitlesDisabled: boolean;
   viewMode: AppViewMode;
 }) {
+  const { t } = useTranslation();
+
   if (editingClip) {
     return <EditorWorkspace closeEditor={closeEditor} editingClip={editingClip} />;
   }
 
   if (viewMode === 'manual') {
-    return <FullWidthWorkspace fallback="Auto Cut yukleniyor..."><AutoCutEditor onOpenLibrary={openConfig} /></FullWidthWorkspace>;
+    return <FullWidthWorkspace fallback={t('app.autoCut.loading')}><AutoCutEditor onOpenLibrary={openConfig} /></FullWidthWorkspace>;
   }
 
   if (viewMode === 'subtitle') {
     return (
-      <FullWidthWorkspace fallback="Subtitle Editor yukleniyor...">
-        <SubtitleEditor targetClip={subtitleTargetClip} lockedToClip={Boolean(subtitleTargetClip)} />
+      <FullWidthWorkspace fallback={t('app.subtitleEditor.loading')}>
+        <SubtitleEditor
+          key={subtitleTargetClip ? `${subtitleSessionNonce}:${subtitleTargetClip.project ?? 'legacy'}:${subtitleTargetClip.name}` : `subtitle:${subtitleSessionNonce}`}
+          targetClip={subtitleTargetClip}
+          lockedToClip={Boolean(subtitleTargetClip)}
+        />
       </FullWidthWorkspace>
     );
   }
@@ -343,21 +396,23 @@ function EditorWorkspace({
   closeEditor: () => void;
   editingClip: Clip;
 }) {
+  const { t } = useTranslation();
+
   return (
     <main className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
       <div className="lg:col-span-12 space-y-8 animate-in fade-in duration-700">
         <div className="flex items-center gap-4">
           <IconButton
-            label="Geri don"
+            label={t('common.actions.back')}
             icon={<ChevronLeft className="w-4 h-4 text-primary" />}
             onClick={closeEditor}
             className="glass-card border-border border rounded-lg"
           />
           <h2 className="text-xl font-bold font-mono text-primary flex items-center gap-3">
-            <span className="opacity-40 text-foreground">SYSTEM:EDITING</span> {editingClip.name}
+            <span className="opacity-40 text-foreground">{t('app.editor.systemEditing')}</span> {editingClip.name}
           </h2>
         </div>
-        <Suspense fallback={<LoadingCard label="Editor yukleniyor..." />}>
+        <Suspense fallback={<LoadingCard label={t('app.editor.loading')} />}>
           <Editor mode="clip" targetClip={editingClip} onClose={closeEditor} />
         </Suspense>
       </div>
@@ -400,11 +455,13 @@ function ConfigWorkspace({
   openClipSubtitleEditor: (clip: Clip) => void;
   subtitlesDisabled: boolean;
 }) {
+  const { t } = useTranslation();
+
   return (
     <main className="grid grid-cols-1 gap-8 items-start">
       <div className="grid grid-cols-1 gap-6 items-stretch lg:grid-cols-[minmax(0,0.96fr)_minmax(300px,0.82fr)]">
         <section className="glass-card h-full min-w-0 self-start p-5 sm:p-6 border-accent/20 shadow-lg shadow-accent/5 ring-1 ring-accent/10 lg:col-start-1 lg:row-start-1">
-          <h2 className="mb-4 text-xs font-mono uppercase tracking-[0.2em] text-accent">Deployment Hub</h2>
+          <h2 className="mb-4 text-xs font-mono uppercase tracking-[0.2em] text-accent">{t('app.nav.configure')}</h2>
           <JobForm
             onAnimationChange={handleAnimationChange}
             onStyleChange={handleStyleChange}
@@ -441,20 +498,25 @@ function ConfigWorkspace({
 
 function AppFooter({
   backendAuthStatus,
+  canUseBackend,
   isOnline,
   pauseReason,
   wsStatus,
 }: {
   backendAuthStatus: ResilientAuthState['backendAuthStatus'];
+  canUseBackend: boolean;
   isOnline: boolean;
   pauseReason: ResilientAuthState['pauseReason'];
   wsStatus: WsStatus;
 }) {
+  const { t } = useTranslation();
+
   return (
     <footer className="mt-20 pt-8 border-t border-border flex flex-col md:flex-row items-center justify-between gap-4 text-muted-foreground">
-      <p className="text-[11px] font-mono uppercase tracking-widest">&copy; 2026 GOD-TIER SHORTS. AI_ARCHITECT_ENABLED</p>
+      <p className="text-[11px] font-mono uppercase tracking-widest">{t('footer.signature')}</p>
       <ConnectionChip
         backendAuthStatus={backendAuthStatus}
+        canUseProtectedRequests={canUseBackend}
         isOnline={isOnline}
         pauseReason={pauseReason}
         status={wsStatus}

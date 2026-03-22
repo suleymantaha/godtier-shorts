@@ -404,3 +404,6 @@ GodTier Shorts’un çekirdek ürünü çalışıyor; bu denetimde “çalışma
 5. WhisperX/faster-whisper drift’inin kapatılması
 
 Detaylı backlog ve ham kanıtlar ek dokümanlarda yer alıyor.
+# Historical Snapshot
+
+Bu rapor tarihsel snapshot olarak korunur. Güncel kalite durumu için `report/TEKNIK_DENETIM_RAPORU_2026-03-20.md` ve `report/DURUM_RAPORU_2026-03-20.md` kullanılmalıdır.

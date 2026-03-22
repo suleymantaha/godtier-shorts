@@ -1,13 +1,14 @@
 import {
-  ANIMATION_SELECT_OPTIONS,
+  getAnimationSelectOptions,
+  getStyleLabel,
   isStyleName,
   isSubtitleAnimationType,
   type RequestedSubtitleLayout,
-  STYLE_LABELS,
   STYLE_OPTIONS,
   type StyleName,
   type SubtitleAnimationType,
 } from '../../config/subtitleStyles';
+import { tSafe } from '../../i18n';
 import type { StartJobPayload } from '../../types';
 import { readStored } from '../../utils/storage';
 
@@ -17,27 +18,41 @@ export const DEFAULT_AUTO_DURATION_RANGE = { max: 180, min: 120 } as const;
 export const CLIP_COUNT_LIMITS = { max: 20, min: 1 } as const;
 export const DURATION_LIMITS = { max: 300, min: 30 } as const;
 export const ENGINE_OPTIONS = new Set(['local', 'lmstudio', 'cloud']);
-export const ENGINE_SELECT_OPTIONS = [
-  { label: 'Local (Ollama)', value: 'local' },
-  { label: 'Local (LM Studio)', value: 'lmstudio' },
-  { label: 'Cloud (OpenAI API)', value: 'cloud' },
-];
-export const RESOLUTION_OPTIONS = [
-  { label: 'En Iyi', value: 'best' },
-  { label: '1080p', value: '1080p' },
-  { label: '720p', value: '720p' },
-  { label: '480p', value: '480p' },
-];
-export const LAYOUT_SELECT_OPTIONS = [
-  { label: 'Auto', value: 'auto' },
-  { label: 'Single', value: 'single' },
-  { label: 'Split', value: 'split' },
-];
-export const STYLE_SELECT_OPTIONS = STYLE_OPTIONS.map((style) => ({
-  label: STYLE_LABELS[style],
-  value: style,
-}));
-export const MOTION_SELECT_OPTIONS = ANIMATION_SELECT_OPTIONS;
+export function getEngineSelectOptions() {
+  return [
+    { label: tSafe('jobForm.options.engineLocal', { defaultValue: 'Local (Ollama)' }), value: 'local' },
+    { label: tSafe('jobForm.options.engineLmstudio', { defaultValue: 'Local (LM Studio)' }), value: 'lmstudio' },
+    { label: tSafe('jobForm.options.engineCloud', { defaultValue: 'Cloud (OpenAI API)' }), value: 'cloud' },
+  ];
+}
+
+export function getResolutionOptions() {
+  return [
+    { label: tSafe('jobForm.options.resolutionBest', { defaultValue: 'Best' }), value: 'best' },
+    { label: '1080p', value: '1080p' },
+    { label: '720p', value: '720p' },
+    { label: '480p', value: '480p' },
+  ];
+}
+
+export function getLayoutSelectOptions() {
+  return [
+    { label: tSafe('jobForm.options.layoutAuto', { defaultValue: 'Auto' }), value: 'auto' },
+    { label: tSafe('jobForm.options.layoutSingle', { defaultValue: 'Single' }), value: 'single' },
+    { label: tSafe('jobForm.options.layoutSplit', { defaultValue: 'Split' }), value: 'split' },
+  ];
+}
+
+export function getStyleSelectOptions() {
+  return STYLE_OPTIONS.map((style) => ({
+    label: getStyleLabel(style),
+    value: style,
+  }));
+}
+
+export function getMotionSelectOptions() {
+  return getAnimationSelectOptions();
+}
 
 interface JobFormPrefs {
   animationType?: SubtitleAnimationType;

@@ -17,12 +17,27 @@ def _owned_project_id(owner_token: str, suffix: str) -> str:
     return build_owner_scoped_project_id("proj", _static_subject(owner_token), suffix)
 
 
-def _create_clip(base_dir: Path, project_id: str, clip_name: str, *, owner_token: str = "token-a", title: str = "") -> None:
+def _create_clip(
+    base_dir: Path,
+    project_id: str,
+    clip_name: str,
+    *,
+    owner_token: str = "token-a",
+    title: str = "",
+    render_metadata: dict[str, object] | None = None,
+    transcript: list[dict] | None = None,
+) -> None:
     shorts_dir = config.get_project_path(project_id, "shorts")
     shorts_dir.mkdir(parents=True, exist_ok=True)
     (shorts_dir / clip_name).write_bytes(b"fake-mp4")
-    if title:
-        metadata = {"viral_metadata": {"ui_title": title}}
+    if title or transcript is not None:
+        metadata: dict[str, object] = {}
+        if title:
+            metadata["viral_metadata"] = {"ui_title": title}
+        if render_metadata is not None:
+            metadata["render_metadata"] = render_metadata
+        if transcript is not None:
+            metadata["transcript"] = transcript
         (shorts_dir / clip_name.replace(".mp4", ".json")).write_text(
             json.dumps(metadata),
             encoding="utf-8",
@@ -157,7 +172,7 @@ def test_clips_index_hides_internal_raw_and_reburn_assets(monkeypatch, tmp_path:
     assert [clip["name"] for clip in response["clips"]] == ["final.mp4"]
 
 
-def test_clips_index_hides_clips_without_ready_metadata(monkeypatch, tmp_path: Path):
+def test_clips_index_keeps_clips_visible_when_metadata_is_missing_or_invalid(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("SUBJECT_NAMESPACE_SECRET", "clips-cache-test-secret")
     monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path)
     monkeypatch.setattr(clips, "PROJECTS_DIR", tmp_path)
@@ -172,8 +187,92 @@ def test_clips_index_hides_clips_without_ready_metadata(monkeypatch, tmp_path: P
     clips.invalidate_clips_cache("test_setup")
     response = _list_clips(_static_subject("token-a"))
 
-    assert response["total"] == 1
-    assert [clip["name"] for clip in response["clips"]] == ["ready.mp4"]
+    assert response["total"] == 3
+    by_name = {clip["name"]: clip for clip in response["clips"]}
+    assert set(by_name) == {"ready.mp4", "missing-meta.mp4", "broken.mp4"}
+    assert by_name["ready.mp4"]["has_transcript"] is False
+    assert by_name["missing-meta.mp4"]["has_transcript"] is False
+    assert by_name["broken.mp4"]["has_transcript"] is False
+
+
+def test_clips_index_exposes_transcript_status_using_clip_transcript_state_machine(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("SUBJECT_NAMESPACE_SECRET", "clips-cache-test-secret")
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(clips, "PROJECTS_DIR", tmp_path)
+    project_id = _owned_project_id("token-a", "transcript")
+
+    _create_clip(
+        tmp_path,
+        project_id,
+        "ready.mp4",
+        title="Ready",
+        transcript=[{"start": 0, "end": 1, "text": "hello"}],
+    )
+    _create_clip(
+        tmp_path,
+        project_id,
+        "pending.mp4",
+        title="Pending",
+        transcript=[],
+    )
+    shorts_dir = config.get_project_path(project_id, "shorts")
+    (shorts_dir / "pending.json").write_text(json.dumps({
+        "transcript": [],
+        "render_metadata": {
+            "clip_name": "pending.mp4",
+            "end_time": 18.0,
+            "project_id": project_id,
+            "start_time": 10.0,
+        },
+        "viral_metadata": {"ui_title": "Pending"},
+    }), encoding="utf-8")
+    clips.manager.jobs["upload_1"] = {
+        "created_at": 1,
+        "job_id": "upload_1",
+        "last_message": "Transkripsiyon başladı...",
+        "progress": 20,
+        "project_id": project_id,
+        "status": "processing",
+        "style": "UPLOAD",
+        "url": "",
+    }
+    clips.invalidate_clips_cache("test_setup")
+
+    response = _list_clips(_static_subject("token-a"))
+
+    by_name = {clip["name"]: clip for clip in response["clips"]}
+    assert by_name["ready.mp4"]["has_transcript"] is True
+    assert by_name["ready.mp4"]["transcript_status"] == "ready"
+    assert by_name["ready.mp4"]["resolved_project_id"] == project_id
+    assert by_name["pending.mp4"]["has_transcript"] is False
+    assert by_name["pending.mp4"]["transcript_status"] == "project_pending"
+    assert by_name["pending.mp4"]["resolved_project_id"] == project_id
+    clips.manager.jobs.clear()
+
+
+def test_clips_index_exposes_clip_duration_from_render_metadata(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("SUBJECT_NAMESPACE_SECRET", "clips-cache-test-secret")
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(clips, "PROJECTS_DIR", tmp_path)
+    project_id = _owned_project_id("token-a", "duration")
+
+    _create_clip(
+        tmp_path,
+        project_id,
+        "duration.mp4",
+        title="Timed",
+        render_metadata={
+            "clip_name": "duration.mp4",
+            "project_id": project_id,
+            "start_time": 12.0,
+            "end_time": 87.0,
+        },
+    )
+    clips.invalidate_clips_cache("test_setup")
+
+    response = _list_clips(_static_subject("token-a"))
+
+    assert response["clips"][0]["duration"] == 75.0
 
 
 def test_clips_index_excludes_legacy_flat_project_folders(monkeypatch, tmp_path: Path):

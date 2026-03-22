@@ -33,6 +33,6 @@ Ana yapılandırma ve dağıtım merkezi. YouTube URL ile otomatik pipeline baş
 
 ## İlgili Dokümantasyon
 
-- [YouTube Pipeline](../operations/youtube-pipeline/README.md)
-- [Transcription](../logic/transcription/README.md)
-- [Viral Analyzer](../logic/viral-analyzer/README.md)
+- [YouTube Pipeline](../../operations/youtube-pipeline/README.md)
+- [Transcription](../../logic/transcription/README.md)
+- [Viral Analyzer](../../logic/viral-analyzer/README.md)

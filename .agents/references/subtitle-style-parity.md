@@ -43,3 +43,9 @@ Keep backend subtitle presets and frontend preview behavior aligned.
 - Avoid backend-only preset keys unless the style is intentionally hidden from the UI.
 - Keep color conversions consistent with ASS color semantics when changing preview logic.
 - In v2.1, overflow fallback should prefer re-chunking or conservative line breaks; do not silently swap styles.
+- Split layout now uses layout-specific typography and chunk planning in the shared renderer/parity path:
+  - split font sizing is more conservative than single
+  - split defaults to `max_words=2`
+  - split may force a line break before reporting overflow
+  - if a split chunk still overflows after rechunking, renderer and preview apply a final long-word font clamp instead of silently degrading
+  - frontend preview and overlay should use the same chunk-end and line-break rules as backend ASS generation

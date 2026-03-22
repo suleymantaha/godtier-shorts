@@ -1,0 +1,157 @@
+- generic [ref=e3]:
+  - banner [ref=e11]:
+    - generic [ref=e12]:
+      - heading "GOD-TIER SHORTS" [level=1] [ref=e13]:
+        - img [ref=e15]
+        - text: GOD-TIER SHORTS
+      - generic [ref=e19]:
+        - generic [ref=e20]: Nebula AI Architect
+        - generic [ref=e22]: v1.0.SPACE
+    - generic [ref=e23]:
+      - navigation "Ana navigasyon" [ref=e24]:
+        - button "CONFIGURE" [ref=e25]:
+          - img [ref=e26]
+          - text: CONFIGURE
+        - button "AUTO CUT" [ref=e29]:
+          - img [ref=e30]
+          - text: AUTO CUT
+        - button "SUBTITLE EDIT" [ref=e36]:
+          - img [ref=e37]
+          - text: SUBTITLE EDIT
+      - generic [ref=e40]:
+        - button "Toggle Theme" [ref=e41]:
+          - img [ref=e42]
+        - link "GitHub" [ref=e48] [cursor=pointer]:
+          - /url: https://github.com
+          - img [ref=e49]
+        - link "Twitter" [ref=e52] [cursor=pointer]:
+          - /url: https://twitter.com
+          - img [ref=e53]
+        - button "Open user menu" [ref=e57] [cursor=pointer]:
+          - img "Babek Babek's logo" [ref=e60]
+  - main [ref=e62]:
+    - generic [ref=e63]:
+      - generic [ref=e64]:
+        - heading "Deployment Hub" [level=2] [ref=e65]
+        - generic [ref=e66]:
+          - generic [ref=e67]:
+            - generic [ref=e68]:
+              - text: SOURCE FEED URL
+              - generic [ref=e69]:
+                - textbox "SOURCE FEED URL" [ref=e70]:
+                  - /placeholder: https://youtube.com/watch?v=...
+                - img
+            - generic [ref=e71]:
+              - text: RESOLUTION
+              - button "RESOLUTION" [ref=e74] [cursor=pointer]:
+                - generic [ref=e75]:
+                  - img [ref=e77]
+                  - generic [ref=e80]: En Iyi
+                - img [ref=e81]
+          - generic [ref=e83]:
+            - generic [ref=e85]:
+              - generic [ref=e86]:
+                - generic [ref=e87]: VISUAL STYLE
+                - switch "Altyazi islemeyi atla" [ref=e88]
+              - button "VISUAL STYLE" [ref=e92] [cursor=pointer]:
+                - generic [ref=e93]:
+                  - img [ref=e95]
+                  - generic [ref=e98]: TikTok
+                - img [ref=e99]
+            - generic [ref=e103]:
+              - generic [ref=e105]: MOTION STYLE
+              - button "MOTION STYLE" [ref=e109] [cursor=pointer]:
+                - generic [ref=e110]:
+                  - img [ref=e112]
+                  - generic [ref=e116]: Preset Default
+                - img [ref=e117]
+            - generic [ref=e121]:
+              - generic [ref=e123]: AI CORE ENGINE
+              - button "AI CORE ENGINE" [ref=e127] [cursor=pointer]:
+                - generic [ref=e128]:
+                  - img [ref=e130]
+                  - generic [ref=e133]: Local (Ollama)
+                - img [ref=e134]
+            - generic [ref=e138]:
+              - generic [ref=e140]: TARGET CLONE COUNT
+              - spinbutton "TARGET CLONE COUNT" [ref=e142]: "8"
+            - generic [ref=e145]:
+              - generic [ref=e147]: FRAME LAYOUT
+              - button "FRAME LAYOUT" [ref=e151] [cursor=pointer]:
+                - generic [ref=e152]:
+                  - img [ref=e154]
+                  - generic [ref=e156]: Auto
+                - img [ref=e157]
+          - generic [ref=e161]:
+            - generic [ref=e162]: AUTO PILOT (120-180s)
+            - switch "Otomatik mod" [checked] [ref=e163]
+          - button "INITIALIZE SEQUENCE" [disabled] [ref=e164]:
+            - img [ref=e165]
+            - text: INITIALIZE SEQUENCE
+      - generic "subtitle-preview-stage" [ref=e171]:
+        - generic [ref=e181]:
+          - generic [ref=e182]: Bu
+          - generic [ref=e183]: bir
+          - generic [ref=e184]: demo
+          - generic [ref=e185]: altyazi
+      - generic [ref=e187]:
+        - generic [ref=e188]:
+          - generic [ref=e189]:
+            - img [ref=e190]
+            - generic [ref=e192]: Core Logs
+          - generic [ref=e193]:
+            - generic [ref=e194]: WS:DISCONNECTED
+            - generic [ref=e195]: AUTH:PAUSED
+            - generic "AUTH PAUSED" [ref=e198]
+            - button "Expand Logs" [ref=e199]:
+              - img [ref=e200]
+              - text: Expand Logs
+        - generic [ref=e211]:
+          - img [ref=e212]
+          - paragraph [ref=e215]: Protected requests are paused. Reconnect auth to resume live logs.
+        - generic [ref=e216]:
+          - generic [ref=e217]:
+            - generic [ref=e218]: SYSTEM PROGRESS
+            - generic [ref=e219]: 0%
+          - progressbar "Sistem ilerlemesi" [ref=e220]
+    - generic [ref=e222]:
+      - generic [ref=e224]:
+        - generic [ref=e225]:
+          - generic [ref=e226]:
+            - heading "CLIP LIBRARY" [level=2] [ref=e227]:
+              - img [ref=e228]
+              - text: CLIP LIBRARY
+            - generic [ref=e231]: 0 Clips
+          - generic [ref=e233]: 0 Visible
+          - paragraph [ref=e234]: Account UNKNOWN
+          - paragraph [ref=e235]: Only owner-scoped new outputs are indexed
+        - generic [ref=e236]:
+          - generic [ref=e237]:
+            - text: Project
+            - button "Project Filter" [ref=e239] [cursor=pointer]:
+              - generic [ref=e240]:
+                - img [ref=e242]
+                - generic [ref=e244]: All Projects
+              - img [ref=e245]
+          - generic [ref=e247]:
+            - text: Sort
+            - button "Sort Clips" [ref=e249] [cursor=pointer]:
+              - generic [ref=e250]:
+                - img [ref=e252]
+                - generic [ref=e255]: Newest
+              - img [ref=e256]
+      - generic [ref=e259]: Indexing Clip Library...
+    - generic [ref=e262]:
+      - generic [ref=e263]:
+        - paragraph [ref=e264]: Danger Zone
+        - heading "Delete account data" [level=2] [ref=e265]
+        - paragraph [ref=e266]: Bu islem kendi proje, klip, job ve paylasim verilerinizi kalici olarak siler. Devam etmek icin kutuya DELETE yazin.
+      - generic [ref=e267]:
+        - text: Confirmation
+        - textbox "Delete account confirmation" [ref=e268]:
+          - /placeholder: Type DELETE
+      - button "Delete account" [disabled] [ref=e270]
+  - contentinfo [ref=e271]:
+    - paragraph [ref=e272]: © 2026 GOD-TIER SHORTS. AI_ARCHITECT_ENABLED
+    - 'status "Backend durumu: AUTH:PAUSED" [ref=e273]':
+      - generic [ref=e275]: AUTH:PAUSED

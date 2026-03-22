@@ -304,3 +304,6 @@ Aşağıdaki her bulgu için format: `Risk`, `Etki`, `Kanıt`, `Kök Neden`, `Ö
 ## 9. Sonuç
 
 Kod tabanı üretim hedefi açısından güçlü bir temel sunuyor; özellikle medya işleme yeteneği ve test stabilitesi olumlu. Ancak güvenlik sertleştirme, gözlemlenebilirlik doğruluğu ve mimari parçalanma taraflarında teknik borç birikimi mevcut. P0/P1 bulgular hızlıca kapatıldığında sistemin güvenilirlik ve işletilebilirlik seviyesi belirgin şekilde artacaktır.
+# Historical Snapshot
+
+Bu rapor tarihsel snapshot olarak korunur. Güncel kalite durumu için `report/TEKNIK_DENETIM_RAPORU_2026-03-20.md` ve `report/DURUM_RAPORU_2026-03-20.md` kullanılmalıdır.

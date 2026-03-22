@@ -46,6 +46,6 @@ Proje veya klip transkriptini düzenleme. SubtitleEditor bileşeni bu sayfayı o
 
 ## İlgili Dokümantasyon
 
-- [Transcript Save](../operations/transcript-save/README.md)
-- [Reburn](../operations/reburn/README.md)
-- [Subtitle Styles](../logic/subtitle-styles/README.md)
+- [Transcript Save](../../operations/transcript-save/README.md)
+- [Reburn](../../operations/reburn/README.md)
+- [Subtitle Styles](../../logic/subtitle-styles/README.md)

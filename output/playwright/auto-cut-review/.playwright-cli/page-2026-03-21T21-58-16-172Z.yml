@@ -1,0 +1,269 @@
+- generic [ref=e6]:
+  - banner [ref=e11]:
+    - generic [ref=e12]:
+      - heading "GOD-TIER SHORTS" [level=1] [ref=e13]:
+        - img [ref=e15]
+        - text: GOD-TIER SHORTS
+      - generic [ref=e19]:
+        - generic [ref=e20]: Nebula AI Architect
+        - generic [ref=e22]: v1.0.SPACE
+    - generic [ref=e23]:
+      - navigation "Ana navigasyon" [ref=e24]:
+        - button "CONFIGURE" [ref=e25]:
+          - img [ref=e26]
+          - text: CONFIGURE
+        - button "AUTO CUT" [ref=e29]:
+          - img [ref=e30]
+          - text: AUTO CUT
+        - button "SUBTITLE EDIT" [ref=e36]:
+          - img [ref=e37]
+          - text: SUBTITLE EDIT
+      - generic [ref=e40]:
+        - button "Toggle Theme" [ref=e41]:
+          - img [ref=e42]
+        - link "GitHub" [ref=e48] [cursor=pointer]:
+          - /url: https://github.com
+          - img [ref=e49]
+        - link "Twitter" [ref=e52] [cursor=pointer]:
+          - /url: https://twitter.com
+          - img [ref=e53]
+        - button "Open user menu" [ref=e57] [cursor=pointer]:
+          - img "Babek Babek's logo" [ref=e60]
+  - main [ref=e62]:
+    - generic [ref=e63]:
+      - generic [ref=e64]:
+        - heading "Deployment Hub" [level=2] [ref=e65]
+        - generic [ref=e66]:
+          - generic [ref=e67]:
+            - generic [ref=e68]:
+              - text: SOURCE FEED URL
+              - generic [ref=e69]:
+                - textbox "SOURCE FEED URL" [ref=e70]:
+                  - /placeholder: https://youtube.com/watch?v=...
+                - img
+            - generic [ref=e71]:
+              - text: RESOLUTION
+              - button "RESOLUTION" [ref=e74] [cursor=pointer]:
+                - generic [ref=e75]:
+                  - img [ref=e77]
+                  - generic [ref=e80]: En Iyi
+                - img [ref=e81]
+          - generic [ref=e83]:
+            - generic [ref=e85]:
+              - generic [ref=e86]:
+                - generic [ref=e87]: VISUAL STYLE
+                - switch "Altyazi islemeyi atla" [ref=e88]
+              - button "VISUAL STYLE" [ref=e92] [cursor=pointer]:
+                - generic [ref=e93]:
+                  - img [ref=e95]
+                  - generic [ref=e98]: TikTok
+                - img [ref=e99]
+            - generic [ref=e103]:
+              - generic [ref=e105]: MOTION STYLE
+              - button "MOTION STYLE" [ref=e109] [cursor=pointer]:
+                - generic [ref=e110]:
+                  - img [ref=e112]
+                  - generic [ref=e116]: Preset Default
+                - img [ref=e117]
+            - generic [ref=e121]:
+              - generic [ref=e123]: AI CORE ENGINE
+              - button "AI CORE ENGINE" [ref=e127] [cursor=pointer]:
+                - generic [ref=e128]:
+                  - img [ref=e130]
+                  - generic [ref=e133]: Local (Ollama)
+                - img [ref=e134]
+            - generic [ref=e138]:
+              - generic [ref=e140]: TARGET CLONE COUNT
+              - spinbutton "TARGET CLONE COUNT" [ref=e142]: "8"
+            - generic [ref=e145]:
+              - generic [ref=e147]: FRAME LAYOUT
+              - button "FRAME LAYOUT" [ref=e151] [cursor=pointer]:
+                - generic [ref=e152]:
+                  - img [ref=e154]
+                  - generic [ref=e156]: Auto
+                - img [ref=e157]
+          - generic [ref=e161]:
+            - generic [ref=e162]: AUTO PILOT (120-180s)
+            - switch "Otomatik mod" [checked] [ref=e163]
+          - button "INITIALIZE SEQUENCE" [disabled] [ref=e164]:
+            - img [ref=e165]
+            - text: INITIALIZE SEQUENCE
+      - generic "subtitle-preview-stage" [ref=e171]:
+        - generic [ref=e181]:
+          - generic [ref=e182]: Bu
+          - generic [ref=e183]: bir
+          - generic [ref=e184]: demo
+          - generic [ref=e185]: altyazi
+      - generic [ref=e187]:
+        - generic [ref=e188]:
+          - generic [ref=e189]:
+            - img [ref=e190]
+            - generic [ref=e192]: Core Logs
+          - generic [ref=e193]:
+            - generic [ref=e194]: WS:DISCONNECTED
+            - generic [ref=e195]: AUTH:PAUSED
+            - generic "AUTH PAUSED" [ref=e198]
+            - button "Expand Logs" [ref=e199]:
+              - img [ref=e200]
+              - text: Expand Logs
+        - generic [ref=e211]:
+          - img [ref=e212]
+          - paragraph [ref=e215]: Protected requests are paused. Reconnect auth to resume live logs.
+        - generic [ref=e216]:
+          - generic [ref=e217]:
+            - generic [ref=e218]: SYSTEM PROGRESS
+            - generic [ref=e219]: 0%
+          - progressbar "Sistem ilerlemesi" [ref=e220]
+    - generic [ref=e222]:
+      - generic [ref=e224]:
+        - generic [ref=e225]:
+          - generic [ref=e226]:
+            - heading "CLIP LIBRARY" [level=2] [ref=e227]:
+              - img [ref=e228]
+              - text: CLIP LIBRARY
+            - generic [ref=e231]: 5 Clips
+          - generic [ref=e232]:
+            - generic [ref=e233]: 5 Visible
+            - generic [ref=e234]: Workspace Indexed
+          - paragraph [ref=e235]: Account UNKNOWN
+          - paragraph [ref=e236]: Only owner-scoped new outputs are indexed
+        - generic [ref=e237]:
+          - generic [ref=e238]:
+            - text: Project
+            - button "Project Filter" [ref=e240] [cursor=pointer]:
+              - generic [ref=e241]:
+                - img [ref=e243]
+                - generic [ref=e245]: All Projects
+              - img [ref=e246]
+          - generic [ref=e248]:
+            - text: Sort
+            - button "Sort Clips" [ref=e250] [cursor=pointer]:
+              - generic [ref=e251]:
+                - img [ref=e253]
+                - generic [ref=e256]: Newest
+              - img [ref=e257]
+      - generic [ref=e259]:
+        - generic [ref=e261]:
+          - generic [ref=e265]:
+            - generic [ref=e266]:
+              - img [ref=e267]
+              - generic [ref=e269]: up_a4069ffa93794396e1a7bf578c6a7b8b_1f063fc510c6
+            - generic [ref=e270]: Transcript Ready
+          - generic [ref=e271]:
+            - generic [ref=e272]:
+              - generic [ref=e273]: cut_2_3837_3840
+              - generic [ref=e274]: cut_2_3837_3840.mp4
+              - generic [ref=e275]:
+                - img [ref=e276]
+                - generic [ref=e280]: Mar 22, 2026, 12:06 AM
+            - generic [ref=e281]:
+              - button "Subtitle Edit" [ref=e282]:
+                - img [ref=e283]
+              - button "Download" [ref=e285]:
+                - img [ref=e286]
+              - button "Share" [ref=e289]:
+                - img [ref=e290]
+              - button "Delete" [ref=e296]:
+                - img [ref=e297]
+        - generic [ref=e301]:
+          - generic [ref=e305]:
+            - generic [ref=e306]:
+              - img [ref=e307]
+              - generic [ref=e309]: up_a4069ffa93794396e1a7bf578c6a7b8b_1f063fc510c6
+            - generic [ref=e310]: Transcript Ready
+          - generic [ref=e311]:
+            - generic [ref=e312]:
+              - generic [ref=e313]: cut_1_3736_3837
+              - generic [ref=e314]: cut_1_3736_3837.mp4
+              - generic [ref=e315]:
+                - img [ref=e316]
+                - generic [ref=e320]: Mar 22, 2026, 12:05 AM
+            - generic [ref=e321]:
+              - button "Subtitle Edit" [ref=e322]:
+                - img [ref=e323]
+              - button "Download" [ref=e325]:
+                - img [ref=e326]
+              - button "Share" [ref=e329]:
+                - img [ref=e330]
+              - button "Delete" [ref=e336]:
+                - img [ref=e337]
+        - generic [ref=e341]:
+          - generic [ref=e344]:
+            - generic [ref=e345]:
+              - img [ref=e346]
+              - generic [ref=e348]: up_a4069ffa93794396e1a7bf578c6a7b8b_1f063fc510c6
+            - generic [ref=e349]: Transcript Ready
+          - generic [ref=e350]:
+            - generic [ref=e351]:
+              - generic [ref=e352]: cut_2_7264_7267
+              - generic [ref=e353]: cut_2_7264_7267.mp4
+              - generic [ref=e354]:
+                - img [ref=e355]
+                - generic [ref=e359]: Mar 22, 2026, 12:02 AM
+            - generic [ref=e360]:
+              - button "Subtitle Edit" [ref=e361]:
+                - img [ref=e362]
+              - button "Download" [ref=e364]:
+                - img [ref=e365]
+              - button "Share" [ref=e368]:
+                - img [ref=e369]
+              - button "Delete" [ref=e375]:
+                - img [ref=e376]
+        - generic [ref=e380]:
+          - generic [ref=e383]:
+            - generic [ref=e384]:
+              - img [ref=e385]
+              - generic [ref=e387]: up_a4069ffa93794396e1a7bf578c6a7b8b_1f063fc510c6
+            - generic [ref=e388]: Transcript Ready
+          - generic [ref=e389]:
+            - generic [ref=e390]:
+              - generic [ref=e391]: cut_1_7107_7264
+              - generic [ref=e392]: cut_1_7107_7264.mp4
+              - generic [ref=e393]:
+                - img [ref=e394]
+                - generic [ref=e398]: Mar 22, 2026, 12:01 AM
+            - generic [ref=e399]:
+              - button "Subtitle Edit" [ref=e400]:
+                - img [ref=e401]
+              - button "Download" [ref=e403]:
+                - img [ref=e404]
+              - button "Share" [ref=e407]:
+                - img [ref=e408]
+              - button "Delete" [ref=e414]:
+                - img [ref=e415]
+        - generic [ref=e419]:
+          - generic [ref=e422]:
+            - generic [ref=e423]:
+              - img [ref=e424]
+              - generic [ref=e426]: yt_a4069ffa93794396e1a7bf578c6a7b8b_mvYVI3wbY_g
+            - generic [ref=e427]: Transcript Ready
+          - generic [ref=e428]:
+            - generic [ref=e429]:
+              - generic [ref=e430]: Şeytanın Sınırı vs Bahçeli
+              - generic [ref=e431]: short_1_şeytanin_bi̇le_siniri_var_ama_.mp4
+              - generic [ref=e432]:
+                - img [ref=e433]
+                - generic [ref=e437]: Mar 21, 2026, 11:15 PM
+            - generic [ref=e438]:
+              - button "Subtitle Edit" [ref=e439]:
+                - img [ref=e440]
+              - button "Download" [ref=e442]:
+                - img [ref=e443]
+              - button "Share" [ref=e446]:
+                - img [ref=e447]
+              - button "Delete" [ref=e453]:
+                - img [ref=e454]
+    - generic [ref=e459]:
+      - generic [ref=e460]:
+        - paragraph [ref=e461]: Danger Zone
+        - heading "Delete account data" [level=2] [ref=e462]
+        - paragraph [ref=e463]: Bu islem kendi proje, klip, job ve paylasim verilerinizi kalici olarak siler. Devam etmek icin kutuya DELETE yazin.
+      - generic [ref=e464]:
+        - text: Confirmation
+        - textbox "Delete account confirmation" [ref=e465]:
+          - /placeholder: Type DELETE
+      - button "Delete account" [disabled] [ref=e467]
+  - contentinfo [ref=e468]:
+    - paragraph [ref=e469]: © 2026 GOD-TIER SHORTS. AI_ARCHITECT_ENABLED
+    - 'status "Backend durumu: AUTH:PAUSED" [ref=e470]':
+      - generic [ref=e472]: AUTH:PAUSED

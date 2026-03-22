@@ -13,17 +13,124 @@ TAIL_STARTUP_LOGS="${TAIL_STARTUP_LOGS:-0}"
 
 echo "🚀 God-Tier Shorts başlatılıyor..."
 
-# 1. Conda ortamını aktif et
-# Eğer conda shell hook yüklü değilse init gerekebilir
-source $(conda info --base)/etc/profile.d/conda.sh
-conda activate godtier-shorts
+is_truthy() {
+    [[ "$1" =~ ^(1|true|TRUE|yes|YES|on|ON)$ ]]
+}
+
+activate_virtualenv() {
+    local activate_script="$1"
+    if [[ ! -f "$activate_script" ]]; then
+        return 1
+    fi
+
+    # shellcheck disable=SC1090
+    source "$activate_script"
+    return 0
+}
+
+activate_conda_env() {
+    local env_name="$1"
+    local conda_base=""
+
+    if ! command -v conda >/dev/null 2>&1; then
+        return 1
+    fi
+
+    conda_base="$(conda info --base 2>/dev/null || true)"
+    if [[ -z "$conda_base" || ! -f "$conda_base/etc/profile.d/conda.sh" ]]; then
+        return 1
+    fi
+
+    # shellcheck disable=SC1091
+    source "$conda_base/etc/profile.d/conda.sh"
+    conda activate "$env_name" >/dev/null 2>&1
+}
+
+activate_runtime_env() {
+    local env_name="${APP_ENV_NAME:-godtier-shorts}"
+
+    if is_truthy "${SKIP_ENV_ACTIVATION:-0}"; then
+        echo "ℹ️ Ortam aktivasyonu atlandı (`SKIP_ENV_ACTIVATION=1`)."
+        return
+    fi
+
+    if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+        echo "🐍 Mevcut virtualenv aktif: ${VIRTUAL_ENV}"
+        return
+    fi
+
+    if [[ -n "${CONDA_DEFAULT_ENV:-}" && "${CONDA_DEFAULT_ENV}" != "base" ]]; then
+        echo "🐍 Mevcut conda ortamı aktif: ${CONDA_DEFAULT_ENV}"
+        return
+    fi
+
+    if activate_conda_env "$env_name"; then
+        echo "🐍 Conda ortamı aktif edildi: ${env_name}"
+        return
+    fi
+
+    if activate_virtualenv "$PROJECT_ROOT/.venv/bin/activate"; then
+        echo "🐍 Local virtualenv aktif edildi: .venv"
+        return
+    fi
+
+    if activate_virtualenv "$PROJECT_ROOT/venv/bin/activate"; then
+        echo "🐍 Local virtualenv aktif edildi: venv"
+        return
+    fi
+
+    echo "ℹ️ Conda veya local virtualenv bulunamadı; mevcut shell ortamı ile devam ediliyor."
+}
+
+require_command() {
+    local command_name="$1"
+    if ! command -v "$command_name" >/dev/null 2>&1; then
+        echo "❌ Gerekli komut bulunamadı: ${command_name}"
+        exit 1
+    fi
+}
+
+activate_runtime_env
+require_command python
+require_command npm
 export PYTORCH_NVML_BASED_CUDA_CHECK="${PYTORCH_NVML_BASED_CUDA_CHECK:-1}"
 export CUDA_DEVICE_ORDER="${CUDA_DEVICE_ORDER:-PCI_BUS_ID}"
 export LOG_ACCELERATOR_STATUS_ON_STARTUP="${LOG_ACCELERATOR_STATUS_ON_STARTUP:-1}"
 
+check_social_security_preflight() {
+    PROJECT_ROOT="$PROJECT_ROOT" python - <<'PY'
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+project_root = Path(os.environ["PROJECT_ROOT"])
+load_dotenv(project_root / ".env")
+
+from backend.services.social.crypto import (
+    sanitize_managed_postiz_env_fallback,
+    validate_social_security_configuration,
+)
+
+
+def _notify(message: str) -> None:
+    print(f"ℹ️ {message}")
+
+
+sanitize_managed_postiz_env_fallback(_notify)
+
+validate_social_security_configuration()
+PY
+}
+
 if [[ "${REQUIRE_CUDA_FOR_APP:-0}" == "1" || "${REQUIRE_NVENC_FOR_APP:-0}" == "1" ]]; then
     echo "🧪 GPU/NVENC önkontrolü çalıştırılıyor..."
     python scripts/check_system_deps.py $( [[ "${REQUIRE_NVENC_FOR_APP:-0}" == "1" ]] && printf '%s' '--require-nvenc' || printf '%s' '--require-gpu' )
+fi
+
+if ! check_social_security_preflight; then
+    echo "❌ Sosyal medya env yapılandırması geçersiz. Yukarıdaki mesajı uygulayıp tekrar deneyin."
+    exit 1
 fi
 
 # 2. Trap kur: Script kapatıldığında alt süreçleri de öldür

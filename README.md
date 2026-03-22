@@ -45,6 +45,10 @@ Yeni makinede sorunsuz kurulum icin:
 - `LMSTUDIO_HOST` – Local LLM (opsiyonel)
 - `HF_TOKEN` – HuggingFace (faster-whisper modelleri, opsiyonel)
 - `VITE_CLERK_PUBLISHABLE_KEY`, `CLERK_ISSUER_URL`, `CLERK_AUDIENCE` ve `VITE_CLERK_JWT_TEMPLATE` – Clerk auth için gerekli
+- `POSTIZ_API_BASE_URL` – paylasimli kurulumlarda gerekli Postiz Public API taban adresi
+- `SOCIAL_CONNECTION_MODE` – `managed` (onerilen paylasimli/global mod) veya `manual_api_key` (tek kullanicili/dev fallback)
+- `POSTIZ_OAUTH_CLIENT_ID`, `POSTIZ_OAUTH_CLIENT_SECRET`, `SOCIAL_OAUTH_CALLBACK_URL`, `SOCIAL_OAUTH_RETURN_URL` – managed OAuth2 callback/token exchange akisi icin zorunlu
+- `POSTIZ_API_KEY` ve `ALLOW_ENV_POSTIZ_API_KEY_FALLBACK=1` – yalniz tek kullanicili lokal dev env fallback akisi icin; paylasimli/global kullanimda tanimlamayin
 - `API_BEARER_TOKENS` – Opsiyonel statik token fallback (`token:role1,role2`)
 - `PYRE_PYTHON_INTERPRETER` – Opsiyonel, Pyre için interpreter override
 - `PYRE_SITE_PACKAGES` – Opsiyonel, Pyre için ek site-packages/search path
@@ -53,12 +57,18 @@ Runtime config hardening:
 - `API_PORT`, `UPLOAD_MAX_FILE_SIZE`, `REQUEST_BODY_HARD_LIMIT_BYTES`, `SOCIAL_SCHEDULER_*` alanlari pozitif tam sayi olmalidir.
 - `REQUEST_BODY_HARD_LIMIT_BYTES`, `UPLOAD_MAX_FILE_SIZE` degerinden kucuk olamaz.
 - `FRONTEND_URL`, `CORS_ORIGINS`, `PUBLIC_APP_URL`, `POSTIZ_API_BASE_URL` alanlari mutlak `http(s)` URL olmalidir; query/fragment icermemelidir.
-- `REQUIRE_CUDA_FOR_APP`, `REQUIRE_NVENC_FOR_APP`, `LOG_ACCELERATOR_STATUS_ON_STARTUP` boolean alanlardir.
+- `SOCIAL_OAUTH_CALLBACK_URL` ve `SOCIAL_OAUTH_RETURN_URL` alanlari mutlak `http(s)` URL olmalidir; query/fragment icermemelidir.
+- `ALLOW_ENV_POSTIZ_API_KEY_FALLBACK`, `REQUIRE_CUDA_FOR_APP`, `REQUIRE_NVENC_FOR_APP`, `LOG_ACCELERATOR_STATUS_ON_STARTUP` boolean alanlardir.
+- `SOCIAL_CONNECTION_MODE` degeri varsa `managed` veya `manual_api_key` olmalidir.
+- `SOCIAL_OAUTH_STATE_TTL_SECONDS` degeri varsa pozitif tam sayi olmalidir.
 - `REQUIRE_CUDA_FOR_APP=1` ise backend startup ve YOLO model yukleme sirasinda CUDA zorunlu olur.
 - `REQUIRE_NVENC_FOR_APP=1` ise startup onkontrolu NVENC yolunu zorunlu kilir. Subtitle burn tarafinda ayrica `REQUIRE_NVENC_FOR_BURN=1` kullanilabilir.
 
 Detayli son kullanici kurulumu ve "bu key'i nereden alacagim?" rehberi:
 [`docs/api-key-setup.md`](docs/api-key-setup.md)
+
+Postiz icin paylasimli/global operasyon modeli:
+[`docs/operations/postiz-global-oauth-standard.md`](docs/operations/postiz-global-oauth-standard.md)
 
 ### Çalıştırma
 
@@ -72,6 +82,8 @@ cd frontend && npm run dev      # Frontend: http://localhost:5173
 ```
 
 `run.sh` varsayılan olarak `PYTORCH_NVML_BASED_CUDA_CHECK=1`, `CUDA_DEVICE_ORDER=PCI_BUS_ID` ve `LOG_ACCELERATOR_STATUS_ON_STARTUP=1` export eder. GPU zorunlu deploylarda `REQUIRE_CUDA_FOR_APP=1` veya `REQUIRE_NVENC_FOR_APP=1` ile fail-fast açılabilir.
+
+`run.sh` artık Conda zorunlu saymaz. Sırasıyla mevcut aktif env'yi, `APP_ENV_NAME` ile verilen Conda env'ini, proje kökündeki `.venv`/`venv` dizinlerini dener; hiçbiri yoksa sistem `python`/`npm` ile devam eder. Ortam aktivasyonunu tamamen kapatmak için `SKIP_ENV_ACTIVATION=1 ./run.sh` kullanabilirsiniz.
 
 Linux geliştirme ortamlarında Vite watcher kotası düşükse `./run.sh` frontend'i önce native watch ile dener, `ENOSPC` alırsa otomatik olarak polling fallback moduna (`CHOKIDAR_USEPOLLING=1`) geçer.
 
@@ -196,11 +208,12 @@ flowchart TB
 ## Transkripsiyon Notu
 
 - **Mevcut durum**: Üretimde aktif transkripsiyon motoru `faster-whisper` (large-v3).
-- **Hedef durum**: İleride ihtiyaç olursa `WhisperX` tabanlı bir akışa geri dönüş değerlendirilebilir.
-- **Geçiş adımları (WhisperX'e dönüş planı)**:
-  1. `backend/services/transcription.py` içinde WhisperX pipeline'ını yeniden etkinleştir ve kelime zaman damgası çıktısını mevcut `transcript.json` şemasıyla uyumlu tut.
-  2. Orchestrator ve durum mesajlarında `faster-whisper`/`WhisperX` adlandırmalarını tekilleştir (`backend/core/orchestrator.py`, API progress mesajları).
-  3. `docs/` ve test fixture'larında terminolojiyi eşleştir, transkripsiyon entegrasyon testlerini WhisperX senaryosu için tekrar çalıştır.
+- **Terminoloji kuralı**: Operasyonel dokümanlar, UI mesajları ve backend durum metinleri tek isim olarak `faster-whisper` kullanır.
+- **Gelecek değişiklik kuralı**: İleride farklı bir transkripsiyon backend'i denenecekse, geçiş tamamlanana kadar kullanıcıya dönük metinlerde eski ve yeni motor isimleri karıştırılmamalıdır.
+- **Geçiş checklist'i**:
+  1. `backend/services/transcription.py` içinde yeni backend çıktısını mevcut `transcript.json` şemasıyla uyumlu tut.
+  2. Orchestrator, API progress mesajları ve frontend durum kopyalarını aynı terminolojiyle güncelle.
+  3. `docs/` ve test fixture'larında kullanılan motor adını aynı turda eşitle ve entegrasyon testlerini yeniden çalıştır.
 
 ## API Özeti
 
@@ -265,7 +278,7 @@ cd frontend && npm run verify
 python scripts/benchmark_render_stability.py --project ID --clip NAME --runs 3 --samples 5
 ```
 
-`bash scripts/verify.sh` kanonik tam dogrulama komutudur; toolchain check + runtime config check + frontend `lint + test + build` ile backend `pytest backend/tests -q` adimlarini fail-fast kosar. `python scripts/check_system_deps.py` ise yeni makine hazirligi ve medya pipeline bagimliliklari icin ayrica kosulmalidir. `--require-gpu` CUDA gorunurlugunu, `--require-nvenc` ise `ffmpeg h264_nvenc` encoder yolunu ayrica zorlar.
+`bash scripts/verify.sh` kanonik tam dogrulama komutudur; toolchain check + runtime config check + frontend `lint + test + build` ile backend `pytest backend/tests -q` adimlarini fail-fast kosar. Coverage governance icin ayrica `bash scripts/check_coverage.sh` komutu backend `pytest-cov` ve frontend Vitest coverage threshold'larini kosar; GitHub Actions `verify` workflow'u bu coverage kapisini da artifact uretimiyle birlikte calistirir. `python scripts/check_system_deps.py` ise yeni makine hazirligi ve medya pipeline bagimliliklari icin ayrica kosulmalidir. `--require-gpu` CUDA gorunurlugunu, `--require-nvenc` ise `ffmpeg h264_nvenc` encoder yolunu ayrica zorlar.
 
 Pyre statik analiz (opsiyonel):
 

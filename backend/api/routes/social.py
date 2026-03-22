@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+import os
 from typing import Any, Literal
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from loguru import logger
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -16,9 +18,12 @@ from backend.api.security import AuthContext, ensure_project_access, require_pol
 from backend.config import get_project_path, sanitize_clip_name, sanitize_project_name
 from backend.core.exceptions import InvalidInputError
 from backend.services.social.constants import SOCIAL_PROVIDER_POSTIZ, SUPPORTED_SOCIAL_PLATFORMS
-from backend.services.social.crypto import SocialCrypto
+from backend.services.social.crypto import SocialCrypto, get_social_connection_mode
+from backend.services.social.postiz import build_postiz_oauth_authorize_url, exchange_postiz_oauth_code
 from backend.services.social.scheduler import get_social_scheduler
 from backend.services.social.service import (
+    build_signed_social_oauth_state,
+    build_signed_social_oauth_subject_token,
     build_clip_prefill,
     create_scheduled_post_now,
     delete_scheduled_post_from_postiz,
@@ -27,7 +32,11 @@ from backend.services.social.service import (
     has_postiz_credential_configured,
     _is_future_scheduled_job,
     normalize_postiz_accounts,
+    normalize_social_oauth_integration,
+    resolve_signed_social_oauth_state,
+    resolve_signed_social_oauth_subject_token,
     resolve_signed_social_export_token,
+    validate_publish_targets_for_subject,
     validate_postiz_credential,
 )
 from backend.services.social.store import get_social_store
@@ -145,6 +154,51 @@ def _serialize_accounts(accounts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return compact
 
 
+def _read_social_oauth_config() -> dict[str, str]:
+    client_id = os.getenv("POSTIZ_OAUTH_CLIENT_ID", "").strip()
+    client_secret = os.getenv("POSTIZ_OAUTH_CLIENT_SECRET", "").strip()
+    callback_url = os.getenv("SOCIAL_OAUTH_CALLBACK_URL", "").strip()
+    return_url = os.getenv("SOCIAL_OAUTH_RETURN_URL", "").strip()
+
+    if not return_url:
+        return_url = os.getenv("FRONTEND_URL", "").strip()
+
+    if not client_id or not client_secret or not callback_url or not return_url:
+        raise ValueError(
+            "POSTIZ_OAUTH_CLIENT_ID, POSTIZ_OAUTH_CLIENT_SECRET, "
+            "SOCIAL_OAUTH_CALLBACK_URL ve SOCIAL_OAUTH_RETURN_URL zorunlu"
+        )
+
+    return {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "callback_url": callback_url,
+        "return_url": return_url,
+    }
+
+
+def _append_return_query(url: str, **params: str) -> str:
+    parsed = urlparse(url)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    for key, value in params.items():
+        query[key] = value
+    return urlunparse(parsed._replace(query=urlencode(query)))
+
+
+def _build_social_oauth_return_url(status: Literal["success", "error"]) -> str:
+    config = _read_social_oauth_config()
+    return _append_return_query(config["return_url"], social_oauth=status)
+
+
+def _resolve_postiz_connect_url(subject: str) -> str | None:
+    try:
+        _read_social_oauth_config()
+        token = build_signed_social_oauth_subject_token(subject=subject, integration="youtube")
+    except Exception:
+        return None
+    return f"/api/social/oauth/start?integration=youtube&subject_token={token}"
+
+
 # --- Endpoints ---------------------------------------------------------------
 
 
@@ -153,6 +207,12 @@ async def save_social_credentials(
     payload: SocialCredentialRequest,
     auth: AuthContext = Depends(require_policy("social_connect")),
 ) -> dict:
+    if get_social_connection_mode() != "manual_api_key":
+        raise HTTPException(
+            status_code=403,
+            detail="Bu ortamda manuel Postiz API key baglantisi kapali",
+        )
+
     try:
         accounts = await asyncio.to_thread(
             validate_postiz_credential,
@@ -190,14 +250,102 @@ async def delete_social_credentials(
     }
 
 
+@router.get("/oauth/start")
+async def start_social_oauth(
+    integration: str = Query(default="youtube"),
+    subject_token: str = Query(..., min_length=24),
+) -> RedirectResponse:
+    try:
+        config = _read_social_oauth_config()
+        normalized_integration = normalize_social_oauth_integration(integration)
+        subject_payload = resolve_signed_social_oauth_subject_token(subject_token)
+        if subject_payload["integration"] != normalized_integration:
+            raise ValueError("OAuth integration uyuşmazlığı")
+        state = build_signed_social_oauth_state(
+            subject=subject_payload["subject"],
+            integration=normalized_integration,
+        )
+        authorize_url = build_postiz_oauth_authorize_url(
+            client_id=config["client_id"],
+            redirect_uri=config["callback_url"],
+            integration=normalized_integration,
+            state=state,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"OAuth başlatılamadı: {exc}") from exc
+
+    return RedirectResponse(url=authorize_url, status_code=307)
+
+
+@router.get("/oauth/callback")
+async def social_oauth_callback(
+    state: str = Query(..., min_length=24),
+    code: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    error_description: str | None = Query(default=None),
+) -> RedirectResponse:
+    try:
+        config = _read_social_oauth_config()
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    error_redirect = _build_social_oauth_return_url("error")
+
+    try:
+        state_payload = resolve_signed_social_oauth_state(state)
+    except ValueError:
+        return RedirectResponse(url=error_redirect, status_code=307)
+
+    if error or not code:
+        logger.warning(
+            "social_oauth_callback_failed integration={} error={} description={}",
+            state_payload["integration"],
+            error,
+            error_description,
+        )
+        return RedirectResponse(url=error_redirect, status_code=307)
+
+    try:
+        token_payload = await asyncio.to_thread(
+            exchange_postiz_oauth_code,
+            client_id=config["client_id"],
+            client_secret=config["client_secret"],
+            code=code,
+            redirect_uri=config["callback_url"],
+        )
+        access_token = str(token_payload.get("access_token") or "").strip()
+        if not access_token:
+            raise ValueError("Postiz access_token boş döndü")
+        crypto = SocialCrypto()
+        store = get_social_store()
+        store.save_credential(
+            state_payload["subject"],
+            SOCIAL_PROVIDER_POSTIZ,
+            crypto.encrypt(access_token),
+            None,
+        )
+    except Exception as exc:
+        logger.warning("social_oauth_callback_exchange_failed reason={}", str(exc))
+        return RedirectResponse(url=error_redirect, status_code=307)
+
+    success_redirect = _build_social_oauth_return_url("success")
+    return RedirectResponse(url=success_redirect, status_code=307)
+
+
 @router.get("/accounts")
 async def list_connected_accounts(
     auth: AuthContext = Depends(require_policy("social_view_jobs")),
 ) -> dict:
+    connection_mode = get_social_connection_mode()
+    connect_url = _resolve_postiz_connect_url(auth.subject) if connection_mode == "managed" else None
     store = get_social_store()
     if not has_postiz_credential_configured(auth.subject, store=store):
         return {
             "connected": False,
+            "connection_mode": connection_mode,
+            "connect_url": connect_url,
             "provider": SOCIAL_PROVIDER_POSTIZ,
             "accounts": [],
         }
@@ -211,6 +359,8 @@ async def list_connected_accounts(
 
     return {
         "connected": True,
+        "connection_mode": connection_mode,
+        "connect_url": connect_url,
         "provider": SOCIAL_PROVIDER_POSTIZ,
         "accounts": _serialize_accounts(accounts),
     }
@@ -292,7 +442,16 @@ async def create_publish_jobs(
     if payload.mode == "scheduled" and scheduled_utc is None:
         raise InvalidInputError("scheduled_at zorunlu")
 
-    targets = [target.model_dump() for target in payload.targets]
+    try:
+        targets = await asyncio.to_thread(
+            validate_publish_targets_for_subject,
+            subject=auth.subject,
+            targets=[target.model_dump() for target in payload.targets],
+            store=store,
+            resolve_client_for_subject=get_postiz_client_for_subject,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     created = store.create_publish_jobs(
         subject=auth.subject,
         provider=SOCIAL_PROVIDER_POSTIZ,
@@ -371,6 +530,7 @@ async def dry_run_publish(
             content_by_platform=payload.content_by_platform,
             probe_media_upload=payload.probe_media_upload,
             store=store,
+            resolve_client_for_subject=get_postiz_client_for_subject,
         )
     except (ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -1,0 +1,8 @@
+[     738ms] [WARNING] THREE.THREE.Clock: This module has been deprecated. Please use THREE.Timer instead. @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-3HQHLTJQ.js?v=221fd7bd:745
+[     854ms] [WARNING] [.WebGL-0x1ec4000a6c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels @ http://127.0.0.1:5173/:0
+[     957ms] [WARNING] [.WebGL-0x1ec4000a6c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels @ http://127.0.0.1:5173/:0
+[     975ms] [WARNING] [.WebGL-0x1ec4000a6c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels @ http://127.0.0.1:5173/:0
+[     994ms] [WARNING] [.WebGL-0x1ec4000a6c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat) @ http://127.0.0.1:5173/:0
+[    1295ms] [WARNING] Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview @ https://helping-jawfish-35.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:18
+[   11107ms] [WARNING] Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview @ https://helping-jawfish-35.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:18
+[   11265ms] [WARNING] THREE.THREE.Clock: This module has been deprecated. Please use THREE.Timer instead. @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-3HQHLTJQ.js?v=221fd7bd:745

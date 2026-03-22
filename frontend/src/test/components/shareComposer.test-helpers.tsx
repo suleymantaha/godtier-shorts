@@ -75,6 +75,8 @@ export function resetShareComposerMocks() {
   mockGetAccounts.mockResolvedValue({
     accounts: [{ id: 'acc_1', name: 'Main YT', platform: 'youtube_shorts', provider: 'youtube' }],
     connected: true,
+    connection_mode: 'manual_api_key',
+    connect_url: null,
     provider: 'postiz',
   });
   mockGetPrefill.mockResolvedValue(createPrefillResponse());

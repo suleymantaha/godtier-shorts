@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from backend.api.clip_events import build_api_clip_event_port
 from backend.api.websocket import manager
 from backend.core.workflow_helpers import publish_clip_ready_event
 
@@ -40,6 +41,7 @@ def test_publish_clip_ready_event_prefers_explicit_job_id(monkeypatch) -> None:
         message="Klip hazir.",
         progress=95,
         ui_title="Hook",
+        clip_event_port=build_api_clip_event_port(),
     )
 
     assert published is True
@@ -55,4 +57,3 @@ def test_publish_clip_ready_event_prefers_explicit_job_id(monkeypatch) -> None:
     }
 
     manager.jobs.clear()
-

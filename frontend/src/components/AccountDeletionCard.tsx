@@ -1,9 +1,11 @@
 import { useUser } from '@clerk/clerk-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { accountApi } from '../api/client';
 import { isAppError } from '../api/errors';
 import { clearClientAccountState, hardReloadPage } from '../auth/accountCleanup';
+import { tSafe } from '../i18n';
 
 function resolveErrorMessage(error: unknown): string {
   if (isAppError(error)) {
@@ -12,10 +14,11 @@ function resolveErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
     return error.message;
   }
-  return 'Hesap silme islemi tamamlanamadi.';
+  return tSafe('accountDeletion.genericError');
 }
 
 export function AccountDeletionCard() {
+  const { t } = useTranslation();
   const { user } = useUser();
   const [confirmation, setConfirmation] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
@@ -48,7 +51,7 @@ export function AccountDeletionCard() {
       hardReloadPage();
     } catch {
       clearClientAccountState();
-      setMessage('App verileri silindi, hesap silme tamamlanamadi.');
+      setMessage(t('accountDeletion.partialError'));
       setMessageTone('warning');
       setIsDeleting(false);
     }
@@ -58,20 +61,19 @@ export function AccountDeletionCard() {
     <section className="glass-card rounded-2xl border border-rose-500/20 bg-rose-500/5 p-5 sm:p-6">
       <div className="flex flex-col gap-4">
         <div>
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-rose-200">Danger Zone</p>
-          <h2 className="mt-2 text-lg font-semibold text-foreground">Delete account data</h2>
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-rose-200">{t('accountDeletion.danger')}</p>
+          <h2 className="mt-2 text-lg font-semibold text-foreground">{t('accountDeletion.title')}</h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Bu islem kendi proje, klip, job ve paylasim verilerinizi kalici olarak siler. Devam etmek icin
-            kutuya <span className="font-mono text-foreground">DELETE</span> yazin.
+            {t('accountDeletion.description')}
           </p>
         </div>
         <label className="flex flex-col gap-2 text-xs font-mono uppercase tracking-[0.18em] text-muted-foreground">
-          Confirmation
+          {t('accountDeletion.confirmation')}
           <input
-            aria-label="Delete account confirmation"
+            aria-label={t('accountDeletion.inputAria')}
             className="rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm tracking-[0.08em] text-foreground outline-none transition focus:border-rose-400/60"
             onChange={(event) => setConfirmation(event.target.value)}
-            placeholder="Type DELETE"
+            placeholder={t('accountDeletion.placeholder')}
             type="text"
             value={confirmation}
           />
@@ -83,7 +85,7 @@ export function AccountDeletionCard() {
             onClick={handleDeleteAccount}
             type="button"
           >
-            {isDeleting ? 'Deleting...' : 'Delete account'}
+            {isDeleting ? t('accountDeletion.deleting') : t('accountDeletion.action')}
           </button>
           {message ? (
             <p

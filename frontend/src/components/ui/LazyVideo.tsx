@@ -34,7 +34,7 @@ export const LazyVideo: FC<LazyVideoProps> = ({ src, poster, className, muted = 
   }, []);
 
   return (
-    <div ref={wrapperRef} className={className}>
+    <div ref={wrapperRef} className={className} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
       {visible ? (
         <div className="relative h-full w-full">
           <video
@@ -44,8 +44,6 @@ export const LazyVideo: FC<LazyVideoProps> = ({ src, poster, className, muted = 
             poster={poster}
             className="w-full h-full object-cover"
             preload="metadata"
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
             muted={muted}
             loop={loop}
           />

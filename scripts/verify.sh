@@ -16,6 +16,7 @@ cd "$PROJECT_ROOT"
 
 run_step "toolchain" python scripts/check_toolchain.py
 run_step "runtime config" python scripts/check_runtime_config.py
+run_step "markdown links" python scripts/check_markdown_links.py docs README.md
 run_step "frontend lint" bash -lc "cd frontend && npm run lint"
 run_step "frontend test" bash -lc "cd frontend && npm run test -- --reporter=dot"
 run_step "backend pytest" pytest backend/tests -q

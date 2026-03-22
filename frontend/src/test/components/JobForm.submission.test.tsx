@@ -5,13 +5,14 @@ import { describe, expect, it } from 'vitest';
 import {
   mockCacheStatus,
   mockFetchJobs,
+  mockMergeJobTimelineEvent,
   mockRegisterQueuedJob,
   mockRequestClipsRefresh,
   mockStart,
   renderJobForm,
 } from './jobForm.test-helpers';
 
-describe('JobForm submission flow', () => {
+describe('JobForm submission flow - submit states', () => {
   it('shows error message on failed submit', async () => {
     const user = userEvent.setup();
     await renderJobForm();
@@ -23,7 +24,7 @@ describe('JobForm submission flow', () => {
   });
 
   it('disables style select and sends skip_subtitles when subtitles are skipped', async () => {
-    mockStart.mockResolvedValueOnce({ status: 'queued', job_id: 'test', message: 'queued', gpu_locked: false });
+    mockStart.mockResolvedValueOnce({ status: 'queued', job_id: 'test', message: 'queued', processing_locked: true, gpu_locked: false });
     const user = userEvent.setup();
     await renderJobForm();
 
@@ -39,7 +40,13 @@ describe('JobForm submission flow', () => {
   });
 
   it('refreshes jobs and clears the url after successful submit', async () => {
-    mockStart.mockResolvedValueOnce({ status: 'queued', job_id: 'test', message: 'queued now', gpu_locked: false });
+    mockStart.mockResolvedValueOnce({
+      status: 'queued',
+      job_id: 'test',
+      message: 'İşlem başlatılıyor. Hazırlık aşamaları yürütülüyor...',
+      processing_locked: false,
+      gpu_locked: false,
+    });
     const user = userEvent.setup();
     await renderJobForm();
 
@@ -49,11 +56,37 @@ describe('JobForm submission flow', () => {
     await waitFor(() => expect(mockFetchJobs).toHaveBeenCalledTimes(1));
     expect(mockRegisterQueuedJob).toHaveBeenCalledWith({
       job_id: 'test',
-      message: 'queued now',
+      message: 'İşlem başlatılıyor. Hazırlık aşamaları yürütülüyor...',
       style: 'TIKTOK',
       url: 'https://youtube.com/watch?v=test123',
     });
+    expect(mockMergeJobTimelineEvent).toHaveBeenCalledWith(expect.objectContaining({
+      job_id: 'test',
+      status: 'processing',
+      progress: 1,
+    }));
     expect(screen.getByLabelText(/source feed url/i)).toHaveValue('');
+  });
+
+  it('reuses an existing job without creating a duplicate optimistic queue entry', async () => {
+    mockStart.mockResolvedValueOnce({
+      status: 'queued',
+      job_id: 'existing-job',
+      message: 'Bu ayarlarla zaten aktif bir islem var. Mevcut is takip ediliyor.',
+      existing_job: true,
+      processing_locked: true,
+      gpu_locked: false,
+    });
+    const user = userEvent.setup();
+    await renderJobForm();
+
+    await user.type(screen.getByLabelText(/source feed url/i), 'https://youtube.com/watch?v=test123');
+    await user.click(screen.getByRole('button', { name: /initialize sequence/i }));
+
+    await waitFor(() => expect(mockFetchJobs).toHaveBeenCalledTimes(1));
+    expect(mockRegisterQueuedJob).not.toHaveBeenCalled();
+    expect(mockMergeJobTimelineEvent).not.toHaveBeenCalled();
+    expect(screen.getByText(/zaten aktif bir islem var/i)).toBeInTheDocument();
   });
 
   it('does not register a queued job when the backend returns cached', async () => {
@@ -77,7 +110,9 @@ describe('JobForm submission flow', () => {
     expect(mockFetchJobs).not.toHaveBeenCalled();
     expect(screen.getByText(/hazir videolar bulundu/i)).toBeInTheDocument();
   });
+});
 
+describe('JobForm submission flow - cache and duration controls', () => {
   it('shows cache controls only after a processed video is detected', async () => {
     mockCacheStatus.mockResolvedValueOnce({
       project_id: 'yt_subject_video',
@@ -111,7 +146,13 @@ describe('JobForm submission flow', () => {
       clip_count: 2,
       message: 'Bu video icin ayni ayarlarla hazir videolar bulundu.',
     });
-    mockStart.mockResolvedValueOnce({ status: 'queued', job_id: 'test', message: 'queued now', gpu_locked: false });
+    mockStart.mockResolvedValueOnce({
+      status: 'queued',
+      job_id: 'test',
+      message: 'İşlem başlatılıyor. Hazırlık aşamaları yürütülüyor...',
+      processing_locked: false,
+      gpu_locked: false,
+    });
     const user = userEvent.setup();
     await renderJobForm();
 
@@ -130,7 +171,7 @@ describe('JobForm submission flow', () => {
   });
 
   it('submits custom manual durations when auto mode is disabled', async () => {
-    mockStart.mockResolvedValueOnce({ status: 'queued', job_id: 'test', message: 'queued', gpu_locked: false });
+    mockStart.mockResolvedValueOnce({ status: 'queued', job_id: 'test', message: 'queued', processing_locked: true, gpu_locked: false });
     const user = userEvent.setup();
     await renderJobForm();
 

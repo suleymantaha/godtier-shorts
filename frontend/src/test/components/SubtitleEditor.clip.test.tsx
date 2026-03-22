@@ -1,6 +1,8 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { SUBTITLE_SESSION_STORAGE_KEY } from '../../app/helpers';
 
 const authRuntimeState = {
   canUseProtectedRequests: true,
@@ -26,24 +28,24 @@ import {
 
 async function switchToClipModeAndSelectClip() {
   const user = userEvent.setup();
-  await user.click(screen.getByRole('button', { name: /^klip$/i }));
-  await user.click(screen.getByRole('button', { name: /klip seçin/i }));
+  await user.click(screen.getByRole('button', { name: /^clip$/i }));
+  await user.click(screen.getByRole('button', { name: /select clip/i }));
   await user.click(screen.getByRole('option', { name: /clip_1\.mp4/i }));
   await waitFor(() => expect(mockGetClipTranscript).toHaveBeenCalledWith('clip_1.mp4', 'proj_1'));
   return user;
 }
 
-describe('SubtitleEditor clip mode', () => {
-  beforeEach(() => {
-    authRuntimeState.canUseProtectedRequests = true;
-    resetSubtitleEditorMocks();
-  });
+beforeEach(() => {
+  authRuntimeState.canUseProtectedRequests = true;
+  resetSubtitleEditorMocks();
+});
 
+describe('SubtitleEditor clip mode - core clip sessions', () => {
   it('starts a reburn job for the selected clip', async () => {
     await renderSubtitleEditor();
     const user = await switchToClipModeAndSelectClip();
 
-    await user.click(screen.getByRole('button', { name: /kaydet \+ reburn/i }));
+    await user.click(screen.getByRole('button', { name: /save \+ reburn/i }));
 
     await waitFor(() => {
       expect(mockReburn).toHaveBeenCalledWith({
@@ -56,12 +58,214 @@ describe('SubtitleEditor clip mode', () => {
     });
   });
 
+  it('persists and resumes the active clip job after a refresh', async () => {
+    const view = await renderSubtitleEditor();
+    const user = await switchToClipModeAndSelectClip();
+    const { SubtitleEditor } = await import('../../components/SubtitleEditor');
+
+    await user.click(screen.getByRole('button', { name: /save \+ reburn/i }));
+
+    await waitFor(() => {
+      expect(JSON.parse(window.localStorage.getItem(SUBTITLE_SESSION_STORAGE_KEY) ?? '{}')).toEqual(
+        expect.objectContaining({
+          clipName: 'clip_1.mp4',
+          currentJobId: 'reburn_1',
+          jobKind: 'reburn',
+          mode: 'clip',
+          projectId: 'proj_1',
+          selectionKey: 'clip:proj_1:clip_1.mp4',
+        }),
+      );
+    });
+
+    storeMock.jobs = [{
+      created_at: 1,
+      job_id: 'reburn_1',
+      last_message: 'Altyazı yeniden basım başladı...',
+      progress: 42,
+      project_id: 'proj_1',
+      status: 'processing',
+      style: 'HORMOZI',
+      timeline: [
+        {
+          at: '2026-03-22T10:00:00.000Z',
+          id: 'reburn_1:queued',
+          job_id: 'reburn_1',
+          message: 'Altyazı yeniden basım kuyruğa alındı...',
+          progress: 0,
+          source: 'api',
+          status: 'queued',
+        },
+        {
+          at: '2026-03-22T10:00:02.000Z',
+          id: 'reburn_1:processing',
+          job_id: 'reburn_1',
+          message: 'Altyazı yeniden basım başladı...',
+          progress: 42,
+          source: 'worker',
+          status: 'processing',
+        },
+      ],
+      url: 'clip_1.mp4',
+    }];
+
+    view.rerender(<SubtitleEditor lockedToClip targetClip={subtitleClip} />);
+
+    const statusCard = await screen.findByTestId('subtitle-processing-status');
+    expect(statusCard).toBeInTheDocument();
+    expect(within(statusCard).getByText(/^reburn$/i)).toBeInTheDocument();
+    expect(within(statusCard).getAllByText(/altyazı yeniden basım başladı/i).length).toBeGreaterThan(0);
+    expect(within(statusCard).getAllByText(/42%/i).length).toBeGreaterThan(0);
+  });
+
+  it('sends edited transcript words with the reburn payload', async () => {
+    mockGetClipTranscript.mockResolvedValue({
+      active_job_id: null,
+      capabilities: {
+        can_recover_from_project: true,
+        can_transcribe_source: true,
+        has_clip_metadata: true,
+        has_clip_transcript: true,
+        has_raw_backup: true,
+        project_has_transcript: true,
+        resolved_project_id: 'proj_1',
+      },
+      last_error: null,
+      recommended_strategy: null,
+      transcript: [
+        {
+          end: 4,
+          start: 0,
+          text: 'First line',
+          words: [
+            { word: 'First', start: 0, end: 1.5, score: 0.8 },
+            { word: 'line', start: 1.5, end: 4, score: 0.9 },
+          ],
+        },
+      ],
+      transcript_status: 'ready',
+    });
+
+    await renderSubtitleEditor();
+    const user = await switchToClipModeAndSelectClip();
+    const textarea = await screen.findByDisplayValue('First line');
+    await user.clear(textarea);
+    await user.type(textarea, 'Fresh copy');
+    await user.click(screen.getByRole('button', { name: /save \+ reburn/i }));
+
+    await waitFor(() => {
+      expect(mockReburn).toHaveBeenCalledWith({
+        animation_type: 'default',
+        clip_name: 'clip_1.mp4',
+        project_id: 'proj_1',
+        style_name: 'HORMOZI',
+        transcript: [
+          {
+            end: 4,
+            start: 0,
+            text: 'Fresh copy',
+            words: [
+              { word: 'Fresh', start: 0, end: 2, score: 1 },
+              { word: 'copy', start: 2, end: 4, score: 1 },
+            ],
+          },
+        ],
+      });
+    });
+  });
+
+  it('keeps clip transcript controls visible while a completed reburn triggers background reload', async () => {
+    const view = await renderSubtitleEditor();
+    const user = await switchToClipModeAndSelectClip();
+    const { SubtitleEditor } = await import('../../components/SubtitleEditor');
+
+    await user.click(screen.getByRole('button', { name: /save \+ reburn/i }));
+
+    mockGetClipTranscript.mockImplementationOnce(() => new Promise(() => {}));
+    storeMock.jobs = [{
+      created_at: 1,
+      job_id: 'reburn_1',
+      last_message: 'Altyazı yeniden basım tamamlandı.',
+      progress: 100,
+      project_id: 'proj_1',
+      status: 'completed',
+      style: 'HORMOZI',
+      url: 'clip_1.mp4',
+    }];
+
+    view.rerender(<SubtitleEditor />);
+
+    expect(await screen.findByText(/subtitle \(2 \/ 2 segment\)/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /save \+ reburn/i })).toBeInTheDocument();
+    expect(screen.queryByText(/^loading\.\.\.$/i)).not.toBeInTheDocument();
+  });
+
   it('opens as a locked single-clip session from the gallery', async () => {
     await renderSubtitleEditor({ lockedToClip: true, targetClip: subtitleClip });
 
     await waitFor(() => expect(mockGetClipTranscript).toHaveBeenCalledWith('clip_1.mp4', 'proj_1'));
-    expect(screen.queryByRole('button', { name: /^klip$/i })).not.toBeInTheDocument();
-    expect(screen.getByText(/odak klip: clip_1\.mp4/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^clip$/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/focused clip: clip_1\.mp4/i)).toBeInTheDocument();
+  });
+
+  it('prefers resolved project id from the gallery clip payload when loading transcript', async () => {
+    await renderSubtitleEditor({
+      lockedToClip: true,
+      targetClip: {
+        ...subtitleClip,
+        project: 'legacy',
+        resolved_project_id: 'proj_1',
+        transcript_status: 'ready',
+      },
+    });
+
+    await waitFor(() => expect(mockGetClipTranscript).toHaveBeenCalledWith('clip_1.mp4', 'proj_1'));
+  });
+
+  it('reconciles a stale locked clip payload against the live clip list before loading transcript', async () => {
+    await renderSubtitleEditor({
+      lockedToClip: true,
+      targetClip: {
+        ...subtitleClip,
+        project: 'legacy',
+      },
+    });
+
+    await waitFor(() => expect(mockGetClipTranscript).toHaveBeenCalledWith('clip_1.mp4', 'proj_1'));
+  });
+
+  it('retries a trusted ready clip before surfacing any missing transcript state', async () => {
+    mockGetClipTranscript
+      .mockRejectedValueOnce(new Error('Temporary backend drift'))
+      .mockResolvedValueOnce({
+        active_job_id: null,
+        capabilities: {
+          can_recover_from_project: true,
+          can_transcribe_source: true,
+          has_clip_metadata: true,
+          has_clip_transcript: true,
+          has_raw_backup: true,
+          project_has_transcript: true,
+          resolved_project_id: 'proj_1',
+        },
+        last_error: null,
+        recommended_strategy: null,
+        transcript: subtitleTranscript,
+        transcript_status: 'ready',
+      });
+
+    await renderSubtitleEditor({
+      lockedToClip: true,
+      targetClip: {
+        ...subtitleClip,
+        transcript_status: 'ready',
+      },
+    });
+
+    await waitFor(() => expect(mockGetClipTranscript).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(/subtitle \(2 \/ 2 segment\)/i)).toBeInTheDocument();
+    expect(screen.queryByText(/clip transcript not found/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/transcript could not be verified/i)).not.toBeInTheDocument();
   });
 
   it('shows a render quality summary for clip-focused sessions', async () => {
@@ -93,10 +297,39 @@ describe('SubtitleEditor clip mode', () => {
 
     expect(await screen.findByTestId('render-quality-summary')).toBeInTheDocument();
     expect(screen.getByText(/score 88 \/ 100/i)).toBeInTheDocument();
-    expect(screen.getByText(/kalite özeti/i)).toBeInTheDocument();
+    expect(screen.getByText(/quality summary/i)).toBeInTheDocument();
     expect(screen.getByText(/tracking/i)).toBeInTheDocument();
   });
 
+  it('shows the full clip transcript instead of silently filtering to the first 60 seconds', async () => {
+    mockGetClipTranscript.mockResolvedValue({
+      active_job_id: null,
+      capabilities: {
+        can_recover_from_project: true,
+        can_transcribe_source: true,
+        has_clip_metadata: true,
+        has_clip_transcript: true,
+        has_raw_backup: true,
+        project_has_transcript: true,
+        resolved_project_id: 'proj_1',
+      },
+      last_error: null,
+      recommended_strategy: null,
+      transcript: [
+        { end: 10, start: 0, text: 'Intro', words: [] },
+        { end: 75, start: 65, text: 'Late segment', words: [] },
+      ],
+      transcript_status: 'ready',
+    });
+
+    await renderSubtitleEditor({ lockedToClip: true, targetClip: subtitleClip });
+
+    expect(await screen.findByText(/subtitle \(2 \/ 2 segment\)/i)).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Late segment')).toBeInTheDocument();
+  });
+});
+
+describe('SubtitleEditor clip mode - render metadata warnings', () => {
   it('limits render quality warnings to the top three clip issues', async () => {
     mockGetClipTranscript.mockResolvedValue({
       active_job_id: null,
@@ -125,13 +358,15 @@ describe('SubtitleEditor clip mode', () => {
 
     await renderSubtitleEditor({ lockedToClip: true, targetClip: subtitleClip });
 
-    expect(await screen.findByText(/tracking fallback aktifti/i)).toBeInTheDocument();
-    expect(screen.getByText(/transcript kalitesi tam değil/i)).toBeInTheDocument();
-    expect(screen.getByText(/subtitle overflow tespit edildi/i)).toBeInTheDocument();
-    expect(screen.queryByText(/a\/v drift yükseldi/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/audio muted veya geçersiz/i)).not.toBeInTheDocument();
+    expect(await screen.findByText(/tracking fallback was active/i)).toBeInTheDocument();
+    expect(screen.getByText(/transcript quality is not complete/i)).toBeInTheDocument();
+    expect(screen.getByText(/subtitle overflow detected/i)).toBeInTheDocument();
+    expect(screen.queryByText(/a\/v drift increased/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/audio is muted or invalid/i)).not.toBeInTheDocument();
   });
+});
 
+describe('SubtitleEditor clip mode - additional render warnings', () => {
   it('surfaces duration, overlap and opening-layout warnings from clip metadata', async () => {
     mockGetClipTranscript.mockResolvedValue({
       active_job_id: null,
@@ -164,10 +399,10 @@ describe('SubtitleEditor clip mode', () => {
 
     await renderSubtitleEditor({ lockedToClip: true, targetClip: subtitleClip });
 
-    expect(await screen.findByText(/subtitle event overlap tespit edildi/i)).toBeInTheDocument();
-    expect(screen.getByText(/render süresi istenen aralığın dışında/i)).toBeInTheDocument();
-    expect(screen.getByText(/konuşmacı kadraja geç girdi/i)).toBeInTheDocument();
-    expect(screen.queryByText(/lower-third grafik algılandı/i)).not.toBeInTheDocument();
+    expect(await screen.findByText(/subtitle event overlap detected/i)).toBeInTheDocument();
+    expect(screen.getByText(/render duration is outside the requested range/i)).toBeInTheDocument();
+    expect(screen.getByText(/speaker entered the frame late/i)).toBeInTheDocument();
+    expect(screen.queryByText(/lower-third graphics were detected/i)).not.toBeInTheDocument();
   });
 
   it('surfaces split jitter warnings from clip metadata', async () => {
@@ -201,11 +436,13 @@ describe('SubtitleEditor clip mode', () => {
 
     await renderSubtitleEditor({ lockedToClip: true, targetClip: subtitleClip });
 
-    expect(await screen.findByText(/split panel jitter yüksek/i)).toBeInTheDocument();
-    expect(screen.getByText(/açılış kadrajı geç stabilize oldu/i)).toBeInTheDocument();
-    expect(screen.getByText(/tracker fallback nedeniyle stabil mod kullanıldı/i)).toBeInTheDocument();
+    expect(await screen.findByText(/split panel jitter is high/i)).toBeInTheDocument();
+    expect(screen.getByText(/opening frame stabilized late/i)).toBeInTheDocument();
+    expect(screen.getByText(/stable mode was used because of tracker fallback/i)).toBeInTheDocument();
   });
+});
 
+describe('SubtitleEditor clip mode - recovery triggers', () => {
   it('auto-starts smart transcript recovery when the selected clip transcript is missing', async () => {
     mockGetClipTranscript.mockResolvedValue({
       active_job_id: null,
@@ -264,11 +501,13 @@ describe('SubtitleEditor clip mode', () => {
 
     await renderSubtitleEditor({ lockedToClip: true, targetClip: subtitleClip });
 
-    expect(await screen.findByText(/proje transcripti bekleniyor/i)).toBeInTheDocument();
+    expect(await screen.findByText(/waiting for project transcript/i)).toBeInTheDocument();
     expect(screen.getByText(/transkripsiyon başladı/i)).toBeInTheDocument();
     expect(mockRecoverClipTranscript).not.toHaveBeenCalled();
   });
+});
 
+describe('SubtitleEditor clip mode - recovery follow-up', () => {
   it('keeps manual recovery actions visible after a failed attempt', async () => {
     mockGetClipTranscript.mockResolvedValue({
       active_job_id: null,
@@ -329,8 +568,8 @@ describe('SubtitleEditor clip mode', () => {
     view.rerender(<SubtitleEditor lockedToClip targetClip={subtitleClip} />);
 
     expect(await screen.findByText(/onceki deneme basarisiz oldu/i)).toBeInTheDocument();
-    expect(screen.getByText(/klip transkripti bulunamadi/i)).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /ham videodan transkript cikar/i }));
+    expect(screen.getByText(/clip transcript not found/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /transcribe from raw video/i }));
 
     await waitFor(() => {
       expect(mockRecoverClipTranscript).toHaveBeenLastCalledWith({
@@ -341,6 +580,78 @@ describe('SubtitleEditor clip mode', () => {
     });
   });
 
+  it('shows a mismatch card instead of recovery when a trusted ready clip cannot be verified', async () => {
+    mockGetClipTranscript
+      .mockResolvedValueOnce({
+        active_job_id: null,
+        capabilities: {
+          can_recover_from_project: true,
+          can_transcribe_source: true,
+          has_clip_metadata: true,
+          has_clip_transcript: false,
+          has_raw_backup: true,
+          project_has_transcript: true,
+          resolved_project_id: 'proj_1',
+        },
+        last_error: 'metadata drift',
+        recommended_strategy: 'project_slice',
+        transcript: [],
+        transcript_status: 'failed',
+      })
+      .mockResolvedValueOnce({
+        active_job_id: null,
+        capabilities: {
+          can_recover_from_project: true,
+          can_transcribe_source: true,
+          has_clip_metadata: true,
+          has_clip_transcript: false,
+          has_raw_backup: true,
+          project_has_transcript: true,
+          resolved_project_id: 'proj_1',
+        },
+        last_error: 'metadata drift',
+        recommended_strategy: 'project_slice',
+        transcript: [],
+        transcript_status: 'failed',
+      })
+      .mockResolvedValueOnce({
+        active_job_id: null,
+        capabilities: {
+          can_recover_from_project: true,
+          can_transcribe_source: true,
+          has_clip_metadata: true,
+          has_clip_transcript: true,
+          has_raw_backup: true,
+          project_has_transcript: true,
+          resolved_project_id: 'proj_1',
+        },
+        last_error: null,
+        recommended_strategy: null,
+        transcript: subtitleTranscript,
+        transcript_status: 'ready',
+      });
+
+    await renderSubtitleEditor({
+      lockedToClip: true,
+      targetClip: {
+        ...subtitleClip,
+        transcript_status: 'ready',
+      },
+    });
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(mockGetClipTranscript).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(/transcript could not be verified/i)).toBeInTheDocument();
+    expect(screen.queryByText(/clip transcript not found/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /verify transcript again/i }));
+
+    await waitFor(() => expect(mockGetClipTranscript).toHaveBeenCalledTimes(3));
+    expect(await screen.findByText(/subtitle \(2 \/ 2 segment\)/i)).toBeInTheDocument();
+  });
+});
+
+describe('SubtitleEditor clip mode - recovery completion', () => {
   it('refetches the clip transcript after a recovery job completes', async () => {
     mockGetClipTranscript.mockResolvedValue({
       active_job_id: null,
@@ -394,9 +705,11 @@ describe('SubtitleEditor clip mode', () => {
     view.rerender(<SubtitleEditor lockedToClip targetClip={subtitleClip} />);
 
     await waitFor(() => expect(mockGetClipTranscript).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText(/klip transkripti yüklendi/i)).toBeInTheDocument();
+    expect(await screen.findByText(/clip transcript loaded/i)).toBeInTheDocument();
   });
+});
 
+describe('SubtitleEditor clip mode - reburn safeguards', () => {
   it('warns before reburn when no raw backup exists', async () => {
     const confirmMock = vi.spyOn(window, 'confirm');
     mockGetClipTranscript.mockResolvedValue({
@@ -419,13 +732,13 @@ describe('SubtitleEditor clip mode', () => {
     await renderSubtitleEditor({ lockedToClip: true, targetClip: subtitleClip });
     const user = userEvent.setup();
 
-    expect(await screen.findByText(/reburn uyarisi/i)).toBeInTheDocument();
+    expect(await screen.findByText(/reburn warning/i)).toBeInTheDocument();
     confirmMock.mockReturnValueOnce(false);
-    await user.click(screen.getByRole('button', { name: /kaydet \+ reburn/i }));
+    await user.click(screen.getByRole('button', { name: /save \+ reburn/i }));
     expect(mockReburn).not.toHaveBeenCalled();
 
     confirmMock.mockReturnValueOnce(true);
-    await user.click(screen.getByRole('button', { name: /kaydet \+ reburn/i }));
+    await user.click(screen.getByRole('button', { name: /save \+ reburn/i }));
     await waitFor(() => expect(mockReburn).toHaveBeenCalledTimes(1));
     confirmMock.mockRestore();
   });

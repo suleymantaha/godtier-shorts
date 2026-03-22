@@ -4,16 +4,19 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import threading
+import time
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from loguru import logger
 
 from backend.config import MASTER_AUDIO, MASTER_VIDEO, ProjectPaths
 from backend.core.command_runner import CommandRunner
 from backend.core.subtitle_timing import (
+    canonicalize_transcript_segments,
     collect_valid_words,
     compute_word_coverage_ratio,
     count_normalized_tokens,
@@ -23,6 +26,144 @@ from backend.services.subtitle_renderer import SubtitleRenderer
 from backend.services.video_processor import VideoProcessor
 
 StatusUpdater = Callable[[str, int], None]
+YTDLP_PROGRESS_PREFIX = "GTS_DL|"
+DOWNLOAD_TOTAL_TIMEOUT_SECONDS = 6 * 60 * 60
+DOWNLOAD_ACTIVITY_TIMEOUT_SECONDS = 30 * 60
+DOWNLOAD_PROGRESS_MIN_EMIT_INTERVAL_MS = 2000
+DOWNLOAD_PROGRESS_RE = re.compile(r"(?P<value>\d+(?:\.\d+)?)")
+
+
+def _read_positive_int_env(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def _format_bytes_human(num_bytes: int | None) -> str:
+    if num_bytes is None or num_bytes < 0:
+        return "?"
+    value = float(num_bytes)
+    units = ["B", "KiB", "MiB", "GiB", "TiB"]
+    unit_index = 0
+    while value >= 1024 and unit_index < len(units) - 1:
+        value /= 1024
+        unit_index += 1
+    precision = 0 if unit_index == 0 else 1
+    return f"{value:.{precision}f} {units[unit_index]}"
+
+
+def _parse_int_token(raw: str) -> int | None:
+    stripped = raw.strip()
+    if not stripped or stripped == "NA":
+        return None
+    try:
+        return int(stripped)
+    except ValueError:
+        return None
+
+
+def _parse_percent_token(raw: str) -> float | None:
+    match = DOWNLOAD_PROGRESS_RE.search(raw)
+    if not match:
+        return None
+    try:
+        return float(match.group("value"))
+    except ValueError:
+        return None
+
+
+def parse_ytdlp_progress_line(line: str) -> tuple[str, int, dict[str, Any]] | None:
+    if not line.startswith(YTDLP_PROGRESS_PREFIX):
+        return None
+
+    parts = line.split("|")
+    if len(parts) < 8:
+        return None
+
+    downloaded_bytes = _parse_int_token(parts[1])
+    total_bytes = _parse_int_token(parts[2])
+    total_estimate = _parse_int_token(parts[3])
+    speed = parts[5].strip()
+    eta = parts[6].strip()
+    status = parts[7].strip().lower()
+    resolved_total = total_bytes or total_estimate
+
+    percent = None
+    if downloaded_bytes is not None and resolved_total not in (None, 0):
+        percent = max(0.0, min(100.0, downloaded_bytes * 100.0 / resolved_total))
+    if percent is None:
+        percent = _parse_percent_token(parts[4])
+    if percent is None:
+        return None
+
+    rounded_percent = round(percent, 1)
+    stage_progress = 10 + min(9, max(0, int(percent // 10)))
+    detail = f"{_format_bytes_human(downloaded_bytes)} / {_format_bytes_human(resolved_total)}"
+    suffix: list[str] = [f"{percent:.1f}%"]
+    if speed and speed != "NA":
+        suffix.append(speed)
+    if eta and eta != "NA":
+        suffix.append(f"ETA {eta}")
+    if status and status not in {"NA", "finished"}:
+        suffix.append(status)
+
+    return (
+        f"YouTube indiriliyor: {detail} ({', '.join(suffix)})",
+        stage_progress,
+        {
+            "phase": "download",
+            "downloaded_bytes": downloaded_bytes,
+            "total_bytes": total_bytes,
+            "total_bytes_estimate": total_estimate,
+            "percent": rounded_percent,
+            "speed_text": speed if speed and speed != "NA" else None,
+            "eta_text": eta if eta and eta != "NA" else None,
+            "status": status if status and status != "NA" else None,
+        },
+    )
+
+
+def build_ytdlp_progress_callback(update_status: StatusUpdater) -> Callable[[str, str], None]:
+    last_emitted_percent = -1
+    last_emitted_at = 0.0
+    min_emit_interval_seconds = _read_positive_int_env(
+        "YTDLP_PROGRESS_MIN_EMIT_INTERVAL_MS",
+        DOWNLOAD_PROGRESS_MIN_EMIT_INTERVAL_MS,
+    ) / 1000.0
+
+    def _handle_output(stream_name: str, line: str) -> None:
+        nonlocal last_emitted_at, last_emitted_percent
+        if stream_name != "stderr":
+            return
+
+        parsed = parse_ytdlp_progress_line(line)
+        if parsed is None:
+            return
+
+        message, stage_progress, download_progress = parsed
+        byte_progress = int(download_progress.get("percent") or 0)
+        now = time.monotonic()
+        should_emit = (
+            byte_progress >= 100
+            or byte_progress != last_emitted_percent
+            or now - last_emitted_at >= min_emit_interval_seconds
+        )
+        if not should_emit:
+            return
+
+        last_emitted_percent = byte_progress
+        last_emitted_at = now
+        update_status(message, stage_progress, {
+            "download_progress": download_progress,
+            "status": "processing",
+        })
+
+    return _handle_output
 
 
 async def download_full_video_async(
@@ -47,10 +188,29 @@ async def download_full_video_async(
     else:
         format_str = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4"
 
+    progress_callback = build_ytdlp_progress_callback(update_status)
     rc, _stdout, stderr = await command_runner.run_async(
-        ["yt-dlp", "-f", format_str, "-o", video_file, url],
-        timeout=1800,
-        error_message="Video indirme işlemi timeout oldu (30 dakika)",
+        [
+            "yt-dlp",
+            "--newline",
+            "--progress-template",
+            "download:GTS_DL|%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.total_bytes_estimate)s|%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress.status)s",
+            "-f",
+            format_str,
+            "-o",
+            video_file,
+            url,
+        ],
+        timeout=_read_positive_int_env(
+            "YTDLP_DOWNLOAD_TOTAL_TIMEOUT_SECONDS",
+            DOWNLOAD_TOTAL_TIMEOUT_SECONDS,
+        ),
+        activity_timeout=_read_positive_int_env(
+            "YTDLP_DOWNLOAD_IDLE_TIMEOUT_SECONDS",
+            DOWNLOAD_ACTIVITY_TIMEOUT_SECONDS,
+        ),
+        error_message="Video indirme işlemi uzun süre ilerleme vermediği için durduruldu.",
+        on_output=progress_callback,
     )
     if rc != 0 or not os.path.exists(video_file):
         raise RuntimeError(f"Video indirilemedi: {url}\n{stderr}")
@@ -156,7 +316,7 @@ def build_shifted_transcript_segments_with_report(
     clamped_words_count = 0
     reconstructed_segments_count = 0
     text_word_mismatches = 0
-    for seg in data:
+    for seg in canonicalize_transcript_segments(data):
         if seg["end"] > start_time and seg["start"] < end_time:
             new_start = max(0, seg["start"] - start_time)
             new_end = min(seg["end"] - start_time, duration)

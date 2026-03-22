@@ -43,6 +43,6 @@ yt-dlp indirme → Ses ayrıştırma → faster-whisper transkripsiyon → LLM v
 ## İlgili
 
 - [Orchestrator](../../backend/core/orchestrator.py) – `run_pipeline()`
-- [Transcription](../logic/transcription/README.md)
-- [Viral Analyzer](../logic/viral-analyzer/README.md)
-- [Video Processor](../logic/video-processor/README.md)
+- [Transcription](../../logic/transcription/README.md)
+- [Viral Analyzer](../../logic/viral-analyzer/README.md)
+- [Video Processor](../../logic/video-processor/README.md)

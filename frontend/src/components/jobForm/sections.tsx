@@ -1,15 +1,16 @@
 import { AlertCircle, Cpu, Play, Settings, Sparkles, Subtitles, Waves, Zap } from 'lucide-react';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { isStyleName, isSubtitleAnimationType, type StyleName, type SubtitleAnimationType } from '../../config/subtitleStyles';
 import {
-  ENGINE_SELECT_OPTIONS,
-  LAYOUT_SELECT_OPTIONS,
-  MOTION_SELECT_OPTIONS,
-  RESOLUTION_OPTIONS,
-  STYLE_SELECT_OPTIONS,
   clampClipCount,
   clampDurationSeconds,
+  getEngineSelectOptions,
+  getLayoutSelectOptions,
+  getMotionSelectOptions,
+  getResolutionOptions,
+  getStyleSelectOptions,
 } from './helpers';
 import { Select } from '../ui/Select';
 
@@ -77,11 +78,13 @@ export function JobFormSourceSection({
   url,
   urlId,
 }: SourceSectionProps) {
+  const { t } = useTranslation();
+
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
       <div className="space-y-2 md:col-span-3">
         <label htmlFor={urlId} className="text-sm font-medium text-primary uppercase tracking-widest ml-1 holo-text">
-          SOURCE FEED URL
+          {t('jobForm.sourceFeedUrl')}
         </label>
         <div className="relative group">
           <input
@@ -99,13 +102,13 @@ export function JobFormSourceSection({
       </div>
       <div className="space-y-2 md:col-span-1">
         <label htmlFor={resolutionId} className="text-sm font-medium text-primary uppercase tracking-widest ml-1 holo-text">
-          RESOLUTION
+          {t('jobForm.resolution')}
         </label>
         <Select
           id={resolutionId}
           value={resolution}
           onChange={onResolutionChange}
-          options={RESOLUTION_OPTIONS}
+          options={getResolutionOptions()}
           disabled={isSubmitting}
           icon={<Settings className="w-4 h-4 text-accent/50" />}
         />
@@ -135,124 +138,256 @@ export function JobFormControlGridSection({
   styleId,
 }: ControlGridSectionProps) {
   return (
-    <div
-      data-testid="job-form-control-grid"
-      className="grid grid-cols-1 gap-3 lg:grid-cols-2"
+    <div data-testid="job-form-control-grid" className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+      <StyleControlCard
+        isSubmitting={isSubmitting}
+        onSkipSubtitlesChange={onSkipSubtitlesChange}
+        onStyleChange={onStyleChange}
+        skipSubtitles={skipSubtitles}
+        style={style}
+        styleId={styleId}
+      />
+      <MotionControlCard
+        animationId={animationId}
+        animationType={animationType}
+        isSubmitting={isSubmitting}
+        onAnimationChange={onAnimationChange}
+        skipSubtitles={skipSubtitles}
+      />
+      <EngineControlCard engine={engine} engineId={engineId} isSubmitting={isSubmitting} onEngineChange={onEngineChange} />
+      <ClipCountControlCard isSubmitting={isSubmitting} numClips={numClips} numClipsId={numClipsId} onNumClipsChange={onNumClipsChange} />
+      <LayoutControlCard isSubmitting={isSubmitting} layout={layout} layoutId={layoutId} onLayoutChange={onLayoutChange} />
+    </div>
+  );
+}
+
+function StyleControlCard({
+  isSubmitting,
+  onSkipSubtitlesChange,
+  onStyleChange,
+  skipSubtitles,
+  style,
+  styleId,
+}: Pick<ControlGridSectionProps, 'isSubmitting' | 'onSkipSubtitlesChange' | 'onStyleChange' | 'skipSubtitles' | 'style' | 'styleId'>) {
+  const { t } = useTranslation();
+
+  return (
+    <JobFormControlCard
+      accentClassName="border-secondary/20"
+      header={(
+        <>
+          <label htmlFor={styleId} className="ml-1 block text-sm font-medium leading-tight text-secondary uppercase tracking-widest holo-text">
+            {t('jobForm.visualStyle')}
+          </label>
+          <JobFormToggle
+            ariaChecked={skipSubtitles}
+            ariaLabel={t('jobForm.skipSubtitles')}
+            offTone="bg-primary/20 border-primary/40"
+            onToggle={() => onSkipSubtitlesChange((previous) => !previous)}
+            onTone="bg-red-500/30 border-red-500/50"
+            thumbOffTone="translate-x-0.5 bg-primary"
+            thumbOnTone="translate-x-5 bg-red-400"
+          />
+        </>
+      )}
+      control={(
+        <Select
+          id={styleId}
+          value={style}
+          onChange={(value) => onStyleChange(isStyleName(value) ? value : 'TIKTOK')}
+          options={getStyleSelectOptions()}
+          disabled={isSubmitting || skipSubtitles}
+          icon={<Sparkles className="w-4 h-4 text-secondary/50" />}
+          className={skipSubtitles ? 'opacity-40' : ''}
+        />
+      )}
+      footer={<SkipSubtitlesHint skipSubtitles={skipSubtitles} />}
+    />
+  );
+}
+
+function MotionControlCard({
+  animationId,
+  animationType,
+  isSubmitting,
+  onAnimationChange,
+  skipSubtitles,
+}: Pick<ControlGridSectionProps, 'animationId' | 'animationType' | 'isSubmitting' | 'onAnimationChange' | 'skipSubtitles'>) {
+  const { t } = useTranslation();
+
+  return (
+    <JobFormSelectCard
+      accentClassName="border-secondary/20"
+      className={skipSubtitles ? 'opacity-40' : ''}
+      disabled={isSubmitting || skipSubtitles}
+      icon={<Waves className="w-4 h-4 text-secondary/50" />}
+      id={animationId}
+      label={t('jobForm.motionStyle')}
+      onChange={(value) => onAnimationChange(isSubtitleAnimationType(value) ? value : 'default')}
+      options={getMotionSelectOptions()}
+      value={animationType}
+    />
+  );
+}
+
+function EngineControlCard({
+  engine,
+  engineId,
+  isSubmitting,
+  onEngineChange,
+}: Pick<ControlGridSectionProps, 'engine' | 'engineId' | 'isSubmitting' | 'onEngineChange'>) {
+  const { t } = useTranslation();
+
+  return (
+    <JobFormSelectCard
+      accentClassName="border-accent/20"
+      disabled={isSubmitting}
+      icon={<Cpu className="w-4 h-4 text-accent/50" />}
+      id={engineId}
+      label={t('jobForm.aiCoreEngine')}
+      labelClassName="ml-1 block max-w-full text-sm font-medium leading-tight text-accent uppercase tracking-[0.18em] holo-text"
+      onChange={onEngineChange}
+      options={getEngineSelectOptions()}
+      value={engine}
+    />
+  );
+}
+
+function ClipCountControlCard({
+  isSubmitting,
+  numClips,
+  numClipsId,
+  onNumClipsChange,
+}: Pick<ControlGridSectionProps, 'isSubmitting' | 'numClips' | 'numClipsId' | 'onNumClipsChange'>) {
+  const { t } = useTranslation();
+
+  return (
+    <JobFormControlCard
+      accentClassName="border-accent/20"
+      header={<label htmlFor={numClipsId} className="ml-1 block max-w-full text-sm font-medium leading-tight text-accent uppercase tracking-[0.16em]">{t('jobForm.targetCloneCount')}</label>}
+      control={(
+        <input
+          id={numClipsId}
+          type="number"
+          min={1}
+          max={20}
+          value={numClips}
+          onChange={(event) => onNumClipsChange(clampClipCount(Number(event.target.value) || 1))}
+          className="input-field w-full"
+          disabled={isSubmitting}
+        />
+      )}
+    />
+  );
+}
+
+function LayoutControlCard({
+  isSubmitting,
+  layout,
+  layoutId,
+  onLayoutChange,
+}: Pick<ControlGridSectionProps, 'isSubmitting' | 'layout' | 'layoutId' | 'onLayoutChange'>) {
+  const { t } = useTranslation();
+
+  return (
+    <JobFormSelectCard
+      accentClassName="border-accent/20"
+      disabled={isSubmitting}
+      icon={<Zap className="w-4 h-4 text-accent/50" />}
+      id={layoutId}
+      label={t('jobForm.frameLayout')}
+      labelClassName="ml-1 block max-w-full text-sm font-medium leading-tight text-accent uppercase tracking-[0.16em]"
+      onChange={(value) => onLayoutChange(value === 'split' ? 'split' : value === 'single' ? 'single' : 'auto')}
+      options={getLayoutSelectOptions()}
+      value={layout}
+    />
+  );
+}
+
+function JobFormSelectCard({
+  accentClassName,
+  className,
+  disabled,
+  icon,
+  id,
+  label,
+  labelClassName = 'ml-1 block text-sm font-medium leading-tight text-secondary uppercase tracking-widest holo-text',
+  onChange,
+  options,
+  value,
+}: {
+  accentClassName: string;
+  className?: string;
+  disabled: boolean;
+  icon: ReactNode;
+  id: string;
+  label: string;
+  labelClassName?: string;
+  onChange: (value: string) => void;
+  options: Array<{ label: string; value: string }>;
+  value: string;
+}) {
+  return (
+    <JobFormControlCard
+      accentClassName={accentClassName}
+      header={<label htmlFor={id} className={labelClassName}>{label}</label>}
+      control={(
+        <Select
+          id={id}
+          value={value}
+          onChange={onChange}
+          options={options}
+          disabled={disabled}
+          icon={icon}
+          className={className}
+        />
+      )}
+    />
+  );
+}
+
+function JobFormToggle({
+  ariaChecked,
+  ariaLabel,
+  offTone,
+  onToggle,
+  onTone,
+  thumbOffTone,
+  thumbOnTone,
+}: {
+  ariaChecked: boolean;
+  ariaLabel: string;
+  offTone: string;
+  onToggle: () => void;
+  onTone: string;
+  thumbOffTone: string;
+  thumbOnTone: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={ariaChecked}
+      aria-label={ariaLabel}
+      onClick={onToggle}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${ariaChecked ? onTone : offTone}`}
     >
-      <JobFormControlCard
-        accentClassName="border-secondary/20"
-        header={(
-          <>
-            <label htmlFor={styleId} className="ml-1 block text-sm font-medium leading-tight text-secondary uppercase tracking-widest holo-text">
-              VISUAL STYLE
-            </label>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={skipSubtitles}
-              aria-label="Altyazi islemeyi atla"
-              onClick={() => onSkipSubtitlesChange((previous) => !previous)}
-              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${skipSubtitles ? 'bg-red-500/30 border-red-500/50' : 'bg-primary/20 border-primary/40'}`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-4 w-4 rounded-full shadow-sm transition-transform ${skipSubtitles ? 'translate-x-5 bg-red-400' : 'translate-x-0.5 bg-primary'}`}
-              />
-            </button>
-          </>
-        )}
-        control={(
-          <Select
-            id={styleId}
-            value={style}
-            onChange={(value) => onStyleChange(isStyleName(value) ? value : 'TIKTOK')}
-            options={STYLE_SELECT_OPTIONS}
-            disabled={isSubmitting || skipSubtitles}
-            icon={<Sparkles className="w-4 h-4 text-secondary/50" />}
-            className={skipSubtitles ? 'opacity-40' : ''}
-          />
-        )}
-        footer={skipSubtitles ? (
-          <div className="flex items-center gap-1.5 text-[11px] font-mono text-red-400/80">
-            <Subtitles className="w-3 h-3" aria-hidden="true" />
-            Altyazi devre disi
-          </div>
-        ) : null}
-      />
-      <JobFormControlCard
-        accentClassName="border-secondary/20"
-        header={(
-          <label htmlFor={animationId} className="ml-1 block text-sm font-medium leading-tight text-secondary uppercase tracking-widest holo-text">
-            MOTION STYLE
-          </label>
-        )}
-        control={(
-          <Select
-            id={animationId}
-            value={animationType}
-            onChange={(value) => onAnimationChange(isSubtitleAnimationType(value) ? value : 'default')}
-            options={MOTION_SELECT_OPTIONS}
-            disabled={isSubmitting || skipSubtitles}
-            icon={<Waves className="w-4 h-4 text-secondary/50" />}
-            className={skipSubtitles ? 'opacity-40' : ''}
-          />
-        )}
-      />
-      <JobFormControlCard
-        accentClassName="border-accent/20"
-        header={(
-          <label htmlFor={engineId} className="ml-1 block max-w-full text-sm font-medium leading-tight text-accent uppercase tracking-[0.18em] holo-text">
-            AI CORE ENGINE
-          </label>
-        )}
-        control={(
-          <Select
-            id={engineId}
-            value={engine}
-            onChange={onEngineChange}
-            options={ENGINE_SELECT_OPTIONS}
-            disabled={isSubmitting}
-            icon={<Cpu className="w-4 h-4 text-accent/50" />}
-          />
-        )}
-      />
-      <JobFormControlCard
-        accentClassName="border-accent/20"
-        header={(
-          <label htmlFor={numClipsId} className="ml-1 block max-w-full text-sm font-medium leading-tight text-accent uppercase tracking-[0.16em]">
-            TARGET CLONE COUNT
-          </label>
-        )}
-        control={(
-          <input
-            id={numClipsId}
-            type="number"
-            min={1}
-            max={20}
-            value={numClips}
-            onChange={(event) => onNumClipsChange(clampClipCount(Number(event.target.value) || 1))}
-            className="input-field w-full"
-            disabled={isSubmitting}
-          />
-        )}
-      />
-      <JobFormControlCard
-        accentClassName="border-accent/20"
-        header={(
-          <label htmlFor={layoutId} className="ml-1 block max-w-full text-sm font-medium leading-tight text-accent uppercase tracking-[0.16em]">
-            FRAME LAYOUT
-          </label>
-        )}
-        control={(
-          <Select
-            id={layoutId}
-            value={layout}
-            onChange={(value) => onLayoutChange(value === 'split' ? 'split' : value === 'single' ? 'single' : 'auto')}
-            options={LAYOUT_SELECT_OPTIONS}
-            disabled={isSubmitting}
-            icon={<Zap className="w-4 h-4 text-accent/50" />}
-          />
-        )}
-      />
+      <span className={`pointer-events-none inline-block h-4 w-4 rounded-full shadow-sm transition-transform ${ariaChecked ? thumbOnTone : thumbOffTone}`} />
+    </button>
+  );
+}
+
+function SkipSubtitlesHint({ skipSubtitles }: { skipSubtitles: boolean }) {
+  const { t } = useTranslation();
+
+  if (!skipSubtitles) {
+    return null;
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 text-[11px] font-mono text-red-400/80">
+      <Subtitles className="w-3 h-3" aria-hidden="true" />
+      {t('jobForm.skipSubtitles')}
     </div>
   );
 }
@@ -290,17 +425,19 @@ export function JobFormAutoPilotSection({
   onDurationMaxChange,
   onDurationMinChange,
 }: AutoPilotSectionProps) {
+  const { t } = useTranslation();
+
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
         <label className="text-sm font-medium text-accent/80 uppercase tracking-widest ml-1">
-          AUTO PILOT (120-180s)
+          {t('jobForm.autopilot')} (120-180s)
         </label>
         <button
           type="button"
           role="switch"
           aria-checked={autoMode}
-          aria-label="Otomatik mod"
+          aria-label={t('jobForm.autoModeAria')}
           onClick={() => onAutoModeChange((previous) => !previous)}
           className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${autoMode ? 'bg-primary/20 border-primary/40' : 'bg-foreground/10 border-border'}`}
         >
@@ -314,7 +451,7 @@ export function JobFormAutoPilotSection({
           <DurationField
             disabled={isSubmitting}
             id={durationMinId}
-            label="Min sure (sn)"
+            label={t('jobForm.minDuration')}
             max={300}
             min={30}
             onChange={onDurationMinChange}
@@ -323,7 +460,7 @@ export function JobFormAutoPilotSection({
           <DurationField
             disabled={isSubmitting}
             id={durationMaxId}
-            label="Max sure (sn)"
+            label={t('jobForm.maxDuration')}
             max={300}
             min={30}
             onChange={onDurationMaxChange}
@@ -346,6 +483,8 @@ export function JobFormCacheStatusSection({
   renderCached,
   statusMessage,
 }: CacheStatusSectionProps) {
+  const { t } = useTranslation();
+
   if (!projectCached) {
     return null;
   }
@@ -355,7 +494,7 @@ export function JobFormCacheStatusSection({
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
           <div className="text-sm font-medium uppercase tracking-widest text-primary holo-text">
-            BU VIDEO DAHA ONCE ISLENDI
+            {t('jobForm.cache.title')}
           </div>
           <p className="text-sm text-primary/85">
             Ayni video icin daha once olusturulmus sonuclar bulundu. Istersen mevcut sonuclari kullanabilir, istersen analizi veya videolari yenileyebilirsin.
@@ -365,14 +504,14 @@ export function JobFormCacheStatusSection({
           </p>
         </div>
         <div className="text-[11px] font-mono text-primary/60">
-          {isCheckingCache ? 'Kontrol ediliyor...' : renderCached ? 'Hazir videolar bulundu' : analysisCached ? 'Hazir analiz bulundu' : 'Kayitli proje bulundu'}
+          {isCheckingCache ? t('jobForm.cache.checking') : renderCached ? 'Hazır videolar bulundu' : analysisCached ? 'Hazır analiz bulundu' : 'Kayıtlı proje bulundu'}
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <label className="flex items-center justify-between gap-3 rounded-xl border border-primary/15 bg-foreground/5 px-3 py-2">
           <span className="min-w-0">
-            <span className="block text-sm font-medium text-foreground">Viral klip secimini yenile</span>
+            <span className="block text-sm font-medium text-foreground">{t('jobForm.refreshViralSelection')}</span>
             <span className="block text-[11px] font-mono text-muted-foreground">
               Segmentleri yeniden secer ve videolari da yeniden olusturur.
             </span>
@@ -381,7 +520,7 @@ export function JobFormCacheStatusSection({
             type="button"
             role="switch"
             aria-checked={forceReanalyze}
-            aria-label="Viral klip secimini yenile"
+            aria-label={t('jobForm.refreshViralSelection')}
             onClick={() => onForceReanalyzeChange((previous) => !previous)}
             className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${forceReanalyze ? 'bg-primary/25 border-primary/50' : 'bg-foreground/10 border-border'}`}
           >
@@ -393,7 +532,7 @@ export function JobFormCacheStatusSection({
 
         <label className="flex items-center justify-between gap-3 rounded-xl border border-primary/15 bg-foreground/5 px-3 py-2">
           <span className="min-w-0">
-            <span className="block text-sm font-medium text-foreground">Videolari yeniden olustur</span>
+            <span className="block text-sm font-medium text-foreground">{t('jobForm.rerenderVideos')}</span>
             <span className="block text-[11px] font-mono text-muted-foreground">
               Mevcut sonuclar varsa bile klipleri bastan render eder.
             </span>
@@ -402,7 +541,7 @@ export function JobFormCacheStatusSection({
             type="button"
             role="switch"
             aria-checked={forceRerender}
-            aria-label="Videolari yeniden olustur"
+            aria-label={t('jobForm.rerenderVideos')}
             onClick={() => onForceRerenderChange((previous) => !previous)}
             disabled={forceReanalyze}
             className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${forceRerender ? 'bg-primary/25 border-primary/50' : 'bg-foreground/10 border-border'} ${forceReanalyze ? 'cursor-not-allowed opacity-60' : ''}`}
@@ -450,6 +589,8 @@ export function JobFormSubmitButton({
   disabled: boolean;
   isSubmitting: boolean;
 }) {
+  const { t } = useTranslation();
+
   return (
     <button
       type="submit"
@@ -459,12 +600,12 @@ export function JobFormSubmitButton({
       {isSubmitting ? (
         <>
           <div className="w-5 h-5 border-2 border-background/30 border-t-background animate-spin rounded-full" />
-          INITIATING...
+          {t('jobForm.submit.loading')}
         </>
       ) : (
         <>
           <Zap className="w-5 h-5 animate-pulse" aria-hidden="true" />
-          INITIALIZE SEQUENCE
+          {t('jobForm.submit.label')}
         </>
       )}
     </button>

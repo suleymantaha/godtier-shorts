@@ -1,0 +1,128 @@
+- generic [ref=e6]:
+  - banner [ref=e11]:
+    - generic [ref=e12]:
+      - heading "GOD-TIER SHORTS" [level=1] [ref=e13]:
+        - img [ref=e15]
+        - text: GOD-TIER SHORTS
+      - generic [ref=e19]:
+        - generic [ref=e20]: Nebula AI Architect
+        - generic [ref=e22]: v1.0.SPACE
+    - generic [ref=e23]:
+      - navigation "Ana navigasyon" [ref=e24]:
+        - button "CONFIGURE" [ref=e25]:
+          - img [ref=e26]
+          - text: CONFIGURE
+        - button "AUTO CUT" [ref=e29]:
+          - img [ref=e30]
+          - text: AUTO CUT
+        - button "SUBTITLE EDIT" [ref=e36]:
+          - img [ref=e37]
+          - text: SUBTITLE EDIT
+      - generic [ref=e40]:
+        - button "Toggle Theme" [ref=e41]:
+          - img [ref=e42]
+        - link "GitHub" [ref=e48] [cursor=pointer]:
+          - /url: https://github.com
+          - img [ref=e49]
+        - link "Twitter" [ref=e52] [cursor=pointer]:
+          - /url: https://twitter.com
+          - img [ref=e53]
+        - button "Open user menu" [ref=e57] [cursor=pointer]:
+          - img "Babek Babek's logo" [ref=e60]
+  - main [ref=e473]:
+    - generic [ref=e475]:
+      - generic [ref=e476]:
+        - generic [ref=e477]:
+          - generic [ref=e478]:
+            - generic [ref=e479]:
+              - img [ref=e480]
+              - heading "Otomatik Manual Cut" [level=3] [ref=e482]
+            - paragraph [ref=e483]: Video sec, zaman araligini belirle, short pipeline geri kalanini otomatik tamamlasin.
+          - button "VIDEOYU DEGISTIR" [ref=e516]
+        - generic [ref=e486]: master.mp4
+      - generic [ref=e487]:
+        - button "Pause" [active] [ref=e623]:
+          - img [ref=e624]
+        - generic [ref=e499]:
+          - generic [ref=e500]:
+            - img [ref=e501]
+            - generic [ref=e504]: Kesim Araligi
+            - generic [ref=e505]:
+              - text: 0.0s - 60.0s
+              - generic [ref=e506]: (0:00.0 - 1:00.0)
+              - generic [ref=e507]: "[Toplam: 60.0s | 1.0 dk]"
+          - group "Time range selector" [ref=e522]:
+            - generic [ref=e525]: Start time
+            - slider "Start time": "0"
+            - generic [ref=e526]: End time
+            - slider "End time": "60"
+          - generic [ref=e527]:
+            - button "Basi izle" [ref=e528]
+            - button "Sonu izle" [ref=e529]
+            - button "Kes" [ref=e530]:
+              - img [ref=e531]
+              - text: Kes
+      - generic [ref=e532]:
+        - generic [ref=e533]:
+          - img [ref=e534]
+          - text: Altyazi Stili & Uretim
+        - generic [ref=e537]:
+          - generic [ref=e538]:
+            - generic [ref=e539]:
+              - generic "Yatay videolari dikey 9:16 formata donusturur. Kapaliyken orijinal boyut korunur." [ref=e540]: Short olarak kes (9:16)
+              - switch "Short olarak kes" [checked] [ref=e541]
+            - generic [ref=e542]:
+              - generic [ref=e543]: Stil
+              - switch "Altyazi atla" [ref=e544]
+            - button "TIKTOK" [ref=e547] [cursor=pointer]:
+              - generic [ref=e549]: TIKTOK
+              - img [ref=e550]
+            - generic [ref=e552]:
+              - generic [ref=e553]: Layout
+              - button "Auto" [ref=e556] [cursor=pointer]:
+                - generic [ref=e557]:
+                  - img [ref=e559]
+                  - generic [ref=e562]: Auto
+                - img [ref=e563]
+            - generic [ref=e565]:
+              - generic [ref=e566]: Motion
+              - button "Preset Default" [ref=e569] [cursor=pointer]:
+                - generic [ref=e570]:
+                  - img [ref=e572]
+                  - generic [ref=e576]: Preset Default
+                - img [ref=e577]
+          - generic [ref=e579]:
+            - generic [ref=e580]: Klip sayisi (AI)
+            - spinbutton [ref=e581]: "3"
+            - paragraph [ref=e582]: AI tum videodan 3 viral klip uretir
+          - generic [ref=e584]:
+            - generic [ref=e585]:
+              - generic [ref=e586]:
+                - img [ref=e587]
+                - heading "Altyazi Onizleme" [level=3] [ref=e590]
+              - generic [ref=e591]:
+                - generic [ref=e592]:
+                  - img [ref=e593]
+                  - text: Short
+                - generic [ref=e595]: TikTok
+                - generic [ref=e596]: Preset Default · Slide Up
+            - generic "subtitle-preview-stage" [ref=e600]:
+              - generic [ref=e611]:
+                - generic [ref=e612]: Bu
+                - generic [ref=e613]: bir
+                - generic [ref=e614]: demo
+                - generic [ref=e615]: altyazi
+            - generic [ref=e616]:
+              - generic [ref=e619]: primary
+              - generic [ref=e622]: highlight
+      - generic [ref=e509]:
+        - generic [ref=e510]:
+          - heading "AI ile Toplu Render" [level=3] [ref=e511]
+          - paragraph [ref=e512]: AI tum videodan 3 viral klip secer ve uretir.
+        - button "AI ILE 3 KLIP URET" [ref=e513]:
+          - img [ref=e514]
+          - text: AI ILE 3 KLIP URET
+  - contentinfo [ref=e468]:
+    - paragraph [ref=e469]: © 2026 GOD-TIER SHORTS. AI_ARCHITECT_ENABLED
+    - 'status "Backend durumu: AUTH:PAUSED" [ref=e470]':
+      - generic [ref=e472]: AUTH:PAUSED

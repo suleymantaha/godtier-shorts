@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { tSafe } from '../i18n';
 
 export type SubtitleLayout = 'single' | 'split';
 export type RequestedSubtitleLayout = 'auto' | SubtitleLayout;
@@ -413,16 +414,32 @@ export const ANIMATION_REGISTRY = {
 const EXPLICIT_ANIMATION_OPTIONS = Object.keys(ANIMATION_REGISTRY) as PreviewAnimationType[];
 export const ANIMATION_OPTIONS = ['default', ...EXPLICIT_ANIMATION_OPTIONS] as const satisfies readonly SubtitleAnimationType[];
 
-export const STYLE_LABELS: Record<StyleName, string> = Object.fromEntries(
-  STYLE_OPTIONS.map((styleName) => [styleName, STYLE_REGISTRY[styleName].label]),
+const STYLE_TRANSLATION_KEYS: Record<StyleName, string> = Object.fromEntries(
+  STYLE_OPTIONS.map((styleName) => [styleName, `subtitleStyles.styles.${styleName}`]),
 ) as Record<StyleName, string>;
 
-export const ANIMATION_LABELS: Record<SubtitleAnimationType, string> = {
-  default: 'Preset Default',
+const ANIMATION_TRANSLATION_KEYS: Record<SubtitleAnimationType, string> = {
+  default: 'subtitleStyles.animations.default',
   ...Object.fromEntries(
-    EXPLICIT_ANIMATION_OPTIONS.map((animationType) => [animationType, ANIMATION_REGISTRY[animationType].label]),
+    EXPLICIT_ANIMATION_OPTIONS.map((animationType) => [animationType, `subtitleStyles.animations.${animationType}`]),
   ),
 } as Record<SubtitleAnimationType, string>;
+
+export function getStyleLabel(styleName: StyleName): string {
+  return tSafe(STYLE_TRANSLATION_KEYS[styleName], {
+    defaultValue: STYLE_REGISTRY[styleName].label,
+  });
+}
+
+export function getAnimationLabel(animationType: SubtitleAnimationType): string {
+  const fallback = animationType === 'default'
+    ? 'Preset Default'
+    : ANIMATION_REGISTRY[animationType].label;
+
+  return tSafe(ANIMATION_TRANSLATION_KEYS[animationType], {
+    defaultValue: fallback,
+  });
+}
 
 export const SUBTITLE_STYLES: Record<StyleName, string> = Object.fromEntries(
   STYLE_OPTIONS.map((styleName) => [styleName, STYLE_REGISTRY[styleName].overlayClassName]),
@@ -432,10 +449,12 @@ export const SUBTITLE_INLINE_STYLES: Record<StyleName, SubtitleInlineStyle> = Ob
   STYLE_OPTIONS.map((styleName) => [styleName, STYLE_REGISTRY[styleName].inline]),
 ) as Record<StyleName, SubtitleInlineStyle>;
 
-export const ANIMATION_SELECT_OPTIONS = ANIMATION_OPTIONS.map((animationType) => ({
-  label: ANIMATION_LABELS[animationType],
-  value: animationType,
-}));
+export function getAnimationSelectOptions() {
+  return ANIMATION_OPTIONS.map((animationType) => ({
+    label: getAnimationLabel(animationType),
+    value: animationType,
+  }));
+}
 
 export function isStyleName(value: unknown): value is StyleName {
   return typeof value === 'string' && STYLE_OPTIONS.includes(value as StyleName);
@@ -485,7 +504,7 @@ export function resolveSubtitleStyle(
   const resolvedMotion = resolveSubtitleMotion(resolvedStyle, animationType);
   return {
     inline: SUBTITLE_INLINE_STYLES[resolvedStyle],
-    label: STYLE_LABELS[resolvedStyle],
+    label: getStyleLabel(resolvedStyle),
     overlayClassName: SUBTITLE_STYLES[resolvedStyle],
     preview: {
       bandVariant: STYLE_REGISTRY[resolvedStyle].preview.bandVariant,
@@ -498,45 +517,66 @@ export function resolveSubtitleStyle(
   };
 }
 
+function resolveSubtitleBoxSurfaceMetrics(surface: SubtitleSurface) {
+  return {
+    horizontalInset: surface === 'preview' ? '9%' : '8%',
+    horizontalPadding: surface === 'preview' ? '0.35rem' : '1rem',
+    minHeight: surface === 'preview' ? '11%' : '14%',
+    splitHorizontalPadding: surface === 'preview' ? '0.5rem' : '1.25rem',
+  };
+}
+
+function buildSplitSubtitleBoxStyle(
+  horizontalInset: string,
+  splitHorizontalPadding: string,
+  surface: SubtitleSurface,
+): CSSProperties {
+  return {
+    left: horizontalInset,
+    right: horizontalInset,
+    top: '45%',
+    minHeight: surface === 'preview' ? '9.5%' : '10.5%',
+    paddingLeft: splitHorizontalPadding,
+    paddingRight: splitHorizontalPadding,
+  };
+}
+
+function buildSingleSubtitleBoxStyle(
+  horizontalInset: string,
+  horizontalPadding: string,
+  minHeight: string,
+  safeAreaProfile: SubtitleSafeAreaProfile,
+  surface: SubtitleSurface,
+): CSSProperties {
+  return {
+    left: horizontalInset,
+    right: horizontalInset,
+    bottom: safeAreaProfile === 'lower_third_safe'
+      ? (surface === 'preview' ? '10.5%' : '22%')
+      : (surface === 'preview' ? '6.5%' : '14%'),
+    minHeight,
+    paddingLeft: horizontalPadding,
+    paddingRight: horizontalPadding,
+  };
+}
+
 export function getSubtitleBoxStyle(
   layout: SubtitleLayout = 'single',
   surface: SubtitleSurface = 'overlay',
   safeAreaProfile: SubtitleSafeAreaProfile = 'default',
 ): CSSProperties {
-  const horizontalInset = surface === 'preview' ? '9%' : '8%';
-  const horizontalPadding = surface === 'preview' ? '0.35rem' : '1rem';
-  const splitHorizontalPadding = surface === 'preview' ? '0.5rem' : '1.25rem';
+  const {
+    horizontalInset,
+    horizontalPadding,
+    minHeight,
+    splitHorizontalPadding,
+  } = resolveSubtitleBoxSurfaceMetrics(surface);
 
   if (layout === 'split') {
-    return {
-      left: horizontalInset,
-      right: horizontalInset,
-      top: surface === 'preview' ? '45%' : '45%',
-      minHeight: surface === 'preview' ? '9.5%' : '10.5%',
-      paddingLeft: splitHorizontalPadding,
-      paddingRight: splitHorizontalPadding,
-    };
+    return buildSplitSubtitleBoxStyle(horizontalInset, splitHorizontalPadding, surface);
   }
 
-  if (safeAreaProfile === 'lower_third_safe') {
-    return {
-      left: horizontalInset,
-      right: horizontalInset,
-      bottom: surface === 'preview' ? '10.5%' : '22%',
-      minHeight: surface === 'preview' ? '11%' : '14%',
-      paddingLeft: horizontalPadding,
-      paddingRight: horizontalPadding,
-    };
-  }
-
-  return {
-    left: horizontalInset,
-    right: horizontalInset,
-    bottom: surface === 'preview' ? '6.5%' : '14%',
-    minHeight: surface === 'preview' ? '11%' : '14%',
-    paddingLeft: horizontalPadding,
-    paddingRight: horizontalPadding,
-  };
+  return buildSingleSubtitleBoxStyle(horizontalInset, horizontalPadding, minHeight, safeAreaProfile, surface);
 }
 
 export function resolvePreviewLayout(layout?: RequestedSubtitleLayout | string | null): SubtitleLayout {

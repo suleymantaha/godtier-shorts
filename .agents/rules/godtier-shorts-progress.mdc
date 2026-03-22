@@ -1,0 +1,43 @@
+---
+alwaysApply: true
+---
+
+# GodTier Shorts Progress Memory Rule
+
+Use `PROJECT_MEMORY.md` at the repository root as the canonical handoff memory for ongoing work.
+
+## Required Workflow
+
+- Read `PROJECT_MEMORY.md` before planning, editing files, or running broad verification.
+- If `PROJECT_MEMORY.md` does not exist, create it using the required sections from this rule before continuing.
+- After every meaningful milestone, update `PROJECT_MEMORY.md` so the next AI agent can resume without rebuilding context from scratch.
+- Before ending a work session, make sure `PROJECT_MEMORY.md` reflects the latest state, remaining work, blockers, and validation status.
+
+## What Must Be Recorded
+
+- `Current Objective`: the task currently being worked on and why it matters.
+- `Current State`: confirmed repo facts, constraints, and any relevant in-progress changes.
+- `Decisions In Force`: non-obvious implementation or process decisions future work must preserve.
+- `Open Work / Next Steps`: ordered follow-ups, remaining tasks, blockers, and assumptions.
+- `Validation Status`: commands run, what passed, what failed, and what was not run.
+- `Key References`: exact file paths for the docs, reports, tests, or scripts that justify the current state.
+- `Session Log`: brief dated entries for meaningful progress, newest entry first.
+
+## Writing Rules
+
+- Keep entries concise, factual, and easy to scan.
+- Prefer exact file paths, commands, and concrete outcomes over vague summaries.
+- Record blockers and unverified assumptions explicitly.
+- Do not delete unresolved context just to keep the file short; compress older detail instead.
+- When the active objective changes, rewrite `Current Objective`, refresh `Open Work / Next Steps`, and add a `Session Log` entry.
+- When work completes, note the final status and the most natural next starting point for the next session.
+
+## Scope Notes
+
+- Treat `.agents/rules/*` as canonical AI rules for this repo.
+- Treat `.cursor/rules/*` as compatibility mirrors of `.agents/rules/*`, not independent sources of truth.
+- This rule complements `.agents/rules/godtier-shorts.mdc`; both should remain in effect.
+
+---
+
+## alwaysApply: true

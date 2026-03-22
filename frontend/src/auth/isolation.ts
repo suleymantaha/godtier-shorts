@@ -2,6 +2,7 @@ import { APP_STATE_STORAGE_KEY } from '../app/helpers';
 import { AUTH_SNAPSHOT_STORAGE_KEY } from './session';
 
 export const AUTH_IDENTITY_STORAGE_KEY = 'godtier-auth-identity';
+export const JOB_HISTORY_STORAGE_KEY = 'godtier-job-history';
 
 const USER_SCOPED_PREFIXES = [
   'godtier-editor-clip-session:',
@@ -11,6 +12,7 @@ const USER_SCOPED_PREFIXES = [
 const USER_SCOPED_KEYS = [
   APP_STATE_STORAGE_KEY,
   AUTH_SNAPSHOT_STORAGE_KEY,
+  JOB_HISTORY_STORAGE_KEY,
   'godtier-auto-cut-session',
   'godtier-editor-master-session',
 ];

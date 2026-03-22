@@ -1,0 +1,49 @@
+---
+alwaysApply: true
+---
+
+# GodTier Shorts Documentation Rule
+
+Treat documentation updates as mandatory when a change affects behavior, usage, contracts, or operator expectations.
+
+## Required Behavior
+
+- If code, config, scripts, workflows, or UI behavior changes in a way that affects developers, operators, or users, update the relevant documentation in the same work session.
+- Do not leave behavior changes documented only in code unless the user explicitly asks not to update docs.
+- If no documentation update is needed, make that a conscious decision and state why in `PROJECT_MEMORY.md`.
+
+## When Docs Must Be Updated
+
+- API routes, payloads, auth behavior, or WebSocket message shapes change.
+- Workflow behavior changes for upload, transcript, manual cut, batch, reburn, or YouTube pipeline flows.
+- Environment variables, setup steps, runtime prerequisites, or scripts change.
+- Frontend pages, labels, editor flows, or visible product behavior change.
+- Testing or verification expectations change.
+- New rules are added that future AI agents or contributors are expected to follow.
+
+## Where To Update
+
+- Root overview and setup: `README.md`
+- Docs index and navigation: `docs/README.md`
+- Architecture behavior: `docs/architecture/*`
+- Flow behavior: `docs/flows/*`
+- Page behavior: `docs/pages/*`
+- Operational runbooks: `docs/operations/*`
+- Reports or status snapshots when the change is audit/report oriented: `report/*`
+- AI workflow memory for active work context: `PROJECT_MEMORY.md`
+
+## Writing Rules
+
+- Update the smallest set of docs that keeps the repo truthful.
+- Prefer editing the canonical doc instead of duplicating the same explanation in multiple places.
+- Keep commands, paths, env vars, and endpoint names exact.
+- If a doc is stale but out of scope to fully rewrite, fix the impacted section and note the remaining drift in `PROJECT_MEMORY.md`.
+
+## Recording Rules
+
+- Record which docs were updated in `PROJECT_MEMORY.md`.
+- If docs were intentionally not updated, record the reason explicitly.
+
+---
+
+## alwaysApply: true

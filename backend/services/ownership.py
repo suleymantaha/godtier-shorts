@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import os
+import shutil
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,6 +18,7 @@ import backend.config as config
 PROJECT_MANIFEST_SCHEMA_VERSION = 1
 PROJECT_MANIFEST_FILENAME = "project_manifest.json"
 DEFAULT_SUPPORT_GRANT_TTL_SECONDS = 24 * 60 * 60
+INTERNAL_CLIP_SUFFIXES = ("_raw.mp4",)
 
 
 @dataclass(slots=True)
@@ -75,6 +77,67 @@ def build_owner_scoped_project_id(prefix: str, subject: str, suffix: str) -> str
     safe_prefix = config.sanitize_project_name(prefix)
     safe_suffix = config.sanitize_project_name(suffix)
     return f"{safe_prefix}_{build_subject_hash(subject)}_{safe_suffix}"
+
+
+def _is_internal_clip_asset(path: Path) -> bool:
+    return any(path.name.endswith(suffix) for suffix in INTERNAL_CLIP_SUFFIXES)
+
+
+def _iter_public_clip_files(project_id: str):
+    outputs_dir = config.get_project_path(project_id, "shorts")
+    if not outputs_dir.exists():
+        return
+    for clip_path in sorted(outputs_dir.iterdir(), key=lambda path: path.name):
+        if clip_path.suffix != ".mp4":
+            continue
+        if _is_internal_clip_asset(clip_path):
+            continue
+        yield clip_path
+
+
+def _count_public_clips(project_id: str) -> int:
+    return sum(1 for _ in _iter_public_clip_files(project_id))
+
+
+def _resolve_latest_public_clip(project_id: str) -> Path | None:
+    latest: Path | None = None
+    for clip_path in _iter_public_clip_files(project_id):
+        if latest is None or clip_path.stat().st_ctime > latest.stat().st_ctime:
+            latest = clip_path
+    return latest
+
+
+def _build_reassigned_project_id(project_id: str, new_owner_subject: str) -> str:
+    safe_project_id = config.sanitize_project_name(project_id)
+    old_hash = config.extract_subject_hash_from_project_id(safe_project_id)
+    new_hash = build_subject_hash(new_owner_subject)
+    if old_hash == new_hash:
+        return safe_project_id
+    return safe_project_id.replace(old_hash, new_hash, 1)
+
+
+def _rewrite_clip_metadata_project_ids(shorts_dir: Path, new_project_id: str) -> int:
+    updated_files = 0
+    for metadata_path in sorted(shorts_dir.glob("*.json")):
+        with open(metadata_path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+
+        if not isinstance(payload, dict):
+            continue
+
+        render_metadata = payload.get("render_metadata")
+        if not isinstance(render_metadata, dict):
+            continue
+
+        if render_metadata.get("project_id") == new_project_id:
+            continue
+
+        render_metadata["project_id"] = new_project_id
+        with open(metadata_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=4)
+        updated_files += 1
+
+    return updated_files
 
 
 def is_support_subject_allowed(subject: str) -> bool:
@@ -189,6 +252,52 @@ def ensure_project_manifest(
     return write_project_manifest(project_id, manifest)
 
 
+def reassign_project_owner(project_id: str, *, new_owner_subject: str) -> dict[str, object]:
+    safe_old_project_id = config.sanitize_project_name(project_id)
+    old_root = config.get_project_path(safe_old_project_id)
+    if not old_root.exists() or not old_root.is_dir():
+        raise FileNotFoundError(f"Project not found: {safe_old_project_id}")
+
+    manifest = read_project_manifest(safe_old_project_id)
+    if manifest is None:
+        raise FileNotFoundError(f"Project manifest not found: {safe_old_project_id}")
+
+    new_project_id = _build_reassigned_project_id(safe_old_project_id, new_owner_subject)
+    if new_project_id == safe_old_project_id:
+        raise ValueError("Project already belongs to the requested subject")
+
+    new_root = config.get_project_path(new_project_id)
+    if new_root.exists():
+        raise FileExistsError(f"Destination project already exists: {new_project_id}")
+
+    clip_count = _count_public_clips(safe_old_project_id)
+    latest_clip = _resolve_latest_public_clip(safe_old_project_id)
+
+    new_root.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(old_root), str(new_root))
+
+    migrated_manifest = read_project_manifest(new_project_id)
+    if migrated_manifest is None:
+        raise FileNotFoundError(f"Manifest missing after move: {new_project_id}")
+    migrated_manifest.project_id = new_project_id
+    migrated_manifest.owner_subject_hash = build_subject_hash(new_owner_subject)
+    write_project_manifest(new_project_id, migrated_manifest)
+
+    metadata_updated = _rewrite_clip_metadata_project_ids(new_root / "shorts", new_project_id)
+
+    return {
+        "clip_count": clip_count,
+        "created_at": migrated_manifest.created_at,
+        "latest_clip_name": latest_clip.name if latest_clip is not None else None,
+        "metadata_files_updated": metadata_updated,
+        "new_owner_subject_hash": migrated_manifest.owner_subject_hash,
+        "new_project_id": new_project_id,
+        "old_owner_subject_hash": manifest.owner_subject_hash,
+        "old_project_id": safe_old_project_id,
+        "source": migrated_manifest.source,
+    }
+
+
 def quarantine_project(project_id: str, *, source: str = "legacy_quarantine") -> ProjectOwnershipManifest:
     manifest = ProjectOwnershipManifest(
         schema_version=PROJECT_MANIFEST_SCHEMA_VERSION,
@@ -220,6 +329,55 @@ def resolve_project_access(project_id: str, subject: str, *, now: datetime | Non
             return True, "support_grant", manifest
 
     return False, "owner_mismatch", manifest
+
+
+def build_subject_ownership_diagnostics(subject: str) -> dict[str, object]:
+    current_subject_hash = build_subject_hash(subject)
+    visible_project_count = 0
+    reclaimable_projects: list[dict[str, object]] = []
+
+    for project_dir in config.iter_project_dirs():
+        project_id = project_dir.name
+        manifest = read_project_manifest(project_id)
+        if manifest is None or manifest.status != "active":
+            continue
+
+        allowed, reason, _resolved = resolve_project_access(project_id, subject)
+        if allowed:
+            visible_project_count += 1
+            continue
+        if reason != "owner_mismatch":
+            continue
+
+        clip_count = _count_public_clips(project_id)
+        if clip_count <= 0:
+            continue
+        latest_clip = _resolve_latest_public_clip(project_id)
+        reclaimable_projects.append(
+            {
+                "clip_count": clip_count,
+                "created_at": manifest.created_at,
+                "latest_clip_name": latest_clip.name if latest_clip is not None else None,
+                "owner_subject_hash": manifest.owner_subject_hash,
+                "project_id": project_id,
+                "source": manifest.source,
+                "status": manifest.status,
+            }
+        )
+
+    reclaimable_projects.sort(
+        key=lambda item: (
+            str(item.get("created_at") or ""),
+            str(item.get("project_id") or ""),
+        ),
+        reverse=True,
+    )
+
+    return {
+        "current_subject_hash": current_subject_hash,
+        "reclaimable_projects": reclaimable_projects,
+        "visible_project_count": visible_project_count,
+    }
 
 
 def grant_support_access(

@@ -12,23 +12,50 @@ export interface StoredAutoCutSession {
   style?: StyleName;
 }
 
+function resolveInitialLayout(layout: StoredAutoCutSession['layout']): RequestedSubtitleLayout {
+  return layout === 'single' || layout === 'split' ? layout : 'auto';
+}
+
+function resolveInitialTimingState(initialSession: StoredAutoCutSession | null) {
+  return {
+    currentJobId: initialSession?.currentJobId ?? null,
+    endTime: initialSession?.endTime ?? 60,
+    projectId: initialSession?.projectId,
+    startTime: initialSession?.startTime ?? 0,
+  };
+}
+
+function resolveInitialSubtitleState(initialSession: StoredAutoCutSession | null) {
+  return {
+    animationType: initialSession?.animationType ?? 'default',
+    layout: resolveInitialLayout(initialSession?.layout),
+    style: initialSession?.style ?? 'TIKTOK',
+  };
+}
+
+function resolveInitialSessionState(initialSession: StoredAutoCutSession | null) {
+  return {
+    ...resolveInitialTimingState(initialSession),
+    ...resolveInitialSubtitleState(initialSession),
+  };
+}
+
 export function useAutoCutEditorState(initialSession: StoredAutoCutSession | null) {
+  const initialState = resolveInitialSessionState(initialSession);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [localSrc, setLocalSrc] = useState<string | null>(null);
-  const [projectId, setProjectId] = useState<string | undefined>(initialSession?.projectId);
-  const [currentJobId, setCurrentJobId] = useState<string | null>(initialSession?.currentJobId ?? null);
+  const [projectId, setProjectId] = useState<string | undefined>(initialState.projectId);
+  const [currentJobId, setCurrentJobId] = useState<string | null>(initialState.currentJobId);
   const [pendingOutputUrl, setPendingOutputUrl] = useState<string | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [startTime, setStartTime] = useState(initialSession?.startTime ?? 0);
-  const [endTime, setEndTime] = useState(initialSession?.endTime ?? 60);
+  const [startTime, setStartTime] = useState(initialState.startTime);
+  const [endTime, setEndTime] = useState(initialState.endTime);
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [style, setStyle] = useState<StyleName>(initialSession?.style ?? 'TIKTOK');
-  const [animationType, setAnimationType] = useState<SubtitleAnimationType>(initialSession?.animationType ?? 'default');
-  const [layout, setLayout] = useState<RequestedSubtitleLayout>(
-    initialSession?.layout === 'single' || initialSession?.layout === 'split' ? initialSession.layout : 'auto',
-  );
+  const [style, setStyle] = useState<StyleName>(initialState.style);
+  const [animationType, setAnimationType] = useState<SubtitleAnimationType>(initialState.animationType);
+  const [layout, setLayout] = useState<RequestedSubtitleLayout>(initialState.layout);
   const [skipSubtitles, setSkipSubtitles] = useState(false);
   const [cutAsShort, setCutAsShort] = useState(true);
   const [numClips, setNumClips] = useState(3);

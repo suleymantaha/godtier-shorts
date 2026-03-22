@@ -58,6 +58,8 @@ POLICY_ROLES: dict[str, set[str]] = {
     "social_approve": {"admin", "producer"},
     "social_view_jobs": {"admin", "producer", "editor", "viewer"},
     "manage_support_grants": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
+    "inspect_project_ownership": {"admin", "producer", "editor", "viewer"},
+    "claim_project_ownership": {"admin", "producer", "editor", "viewer"},
     "delete_account_data": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
 }
 
@@ -167,7 +169,16 @@ def _get_jwks_client(issuer: str, cache_ttl_seconds: int, timeout_seconds: int) 
     )
 
 
-def _decode_jwt(token: str, issuer: str, audience: str) -> AuthContext:
+def _parse_clerk_audience(raw: str) -> str | list[str]:
+    values = [value.strip() for value in raw.split(",") if value.strip()]
+    if not values:
+        return raw
+    if len(values) == 1:
+        return values[0]
+    return values
+
+
+def _decode_jwt(token: str, issuer: str, audience: str | list[str]) -> AuthContext:
     cache_ttl_seconds = _read_positive_int_env("CLERK_JWKS_CACHE_TTL_SECONDS", 3600)
     timeout_seconds = _read_positive_int_env("CLERK_JWKS_TIMEOUT_SECONDS", 5)
     jwks_client = _get_jwks_client(issuer, cache_ttl_seconds, timeout_seconds)
@@ -236,7 +247,7 @@ def _authenticate_token(token: str, *, interactive_browser: bool = False) -> Aut
                 "CLERK_AUDIENCE tanımlı olmalıdır",
             )
         try:
-            return _decode_jwt(token, clerk_issuer, clerk_audience)
+            return _decode_jwt(token, clerk_issuer, _parse_clerk_audience(clerk_audience))
         except ClerkTokenExpiredError as exc:
             raise _auth_exception(
                 status.HTTP_401_UNAUTHORIZED,

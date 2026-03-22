@@ -1,0 +1,46 @@
+- generic [ref=e13]:
+  - generic [ref=e14]:
+    - generic [ref=e16]:
+      - heading "Sign in to My Application" [level=1] [ref=e17]
+      - paragraph [ref=e18]: Welcome back! Please sign in to continue
+    - generic [ref=e19]:
+      - generic [ref=e21]:
+        - button "Sign in with Facebook" [ref=e22] [cursor=pointer]:
+          - img "Sign in with Facebook" [ref=e23]
+        - button "Sign in with GitHub" [ref=e24] [cursor=pointer]:
+          - img "Sign in with GitHub" [ref=e25]
+        - button "Sign in with Google" [ref=e26] [cursor=pointer]:
+          - img "Sign in with Google" [ref=e27]
+      - paragraph [ref=e30]: or
+      - generic [ref=e32]:
+        - generic [ref=e33]:
+          - generic [ref=e36]:
+            - generic [ref=e38]: Email address
+            - textbox "Email address" [ref=e39]:
+              - /placeholder: Enter your email address
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - generic: Password
+                - generic:
+                  - textbox "Password":
+                    - /placeholder: Enter your password
+                  - button "Show password":
+                    - img
+        - button "Continue" [ref=e42] [cursor=pointer]:
+          - generic [ref=e43]:
+            - text: Continue
+            - img [ref=e44]
+  - generic [ref=e46]:
+    - generic [ref=e47]:
+      - generic [ref=e48]: Don’t have an account?
+      - link "Sign up" [ref=e49] [cursor=pointer]:
+        - /url: https://helping-jawfish-35.accounts.dev/sign-up?__clerk_db_jwt=dvb_3BGw9ae6lgaOO6hDGmKy44Cq9TW
+    - generic [ref=e51]:
+      - generic [ref=e53]:
+        - paragraph [ref=e54]: Secured by
+        - link "Clerk logo" [ref=e55] [cursor=pointer]:
+          - /url: https://go.clerk.com/components
+          - img [ref=e56]
+      - paragraph [ref=e61]: Development mode

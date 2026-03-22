@@ -55,6 +55,18 @@ describe('api client auth flow', () => {
       }),
     );
   });
+});
+
+describe('api client auth flow - refresh coordination', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+    Object.defineProperty(window.navigator, 'onLine', {
+      configurable: true,
+      value: true,
+    });
+    delete (window as Window & { Clerk?: unknown }).Clerk;
+  });
 
   it('shares a single refresh promise across concurrent protected requests', async () => {
     let resolveToken: ((token: string) => void) | null = null;
@@ -70,7 +82,7 @@ describe('api client auth flow', () => {
     const client = await loadClientModule();
 
     const pending = Promise.all([client.jobsApi.list(), client.jobsApi.list()]);
-    await Promise.resolve();
+    await new Promise((resolve) => window.setTimeout(resolve, 80));
 
     expect(getToken).toHaveBeenCalledTimes(1);
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -79,6 +91,37 @@ describe('api client auth flow', () => {
     await pending;
 
     expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('waits briefly for Clerk session hydration before failing protected requests', async () => {
+    const freshToken = createToken(300);
+    const getToken = vi.fn().mockResolvedValue(freshToken);
+    (window as Window & { Clerk?: unknown }).Clerk = {};
+    window.setTimeout(() => {
+      (window as Window & { Clerk?: unknown }).Clerk = {
+        session: { getToken },
+      };
+    }, 10);
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(createJsonResponse({ jobs: [] }));
+
+    const client = await loadClientModule();
+
+    await expect(client.jobsApi.list()).resolves.toEqual({ jobs: [] });
+
+    expect(getToken).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('api client auth flow - retry handling', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+    Object.defineProperty(window.navigator, 'onLine', {
+      configurable: true,
+      value: true,
+    });
+    delete (window as Window & { Clerk?: unknown }).Clerk;
   });
 
   it('retries a token_expired response once with a forced token refresh', async () => {
@@ -142,6 +185,19 @@ describe('api client auth flow', () => {
     expect(getToken).toHaveBeenCalledTimes(2);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
+});
+
+describe('api client auth flow - error and account mapping', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+    vi.doUnmock('../../auth/runtime');
+    Object.defineProperty(window.navigator, 'onLine', {
+      configurable: true,
+      value: true,
+    });
+    delete (window as Window & { Clerk?: unknown }).Clerk;
+  });
 
   it('maps ownership-style 404 responses to a generic unavailable resource message', async () => {
     const token = createToken(300);
@@ -185,6 +241,42 @@ describe('api client auth flow', () => {
     });
   });
 
+  it('does not pause global protected requests when ownership diagnostics returns unauthorized', async () => {
+    const token = createToken(300);
+    const getToken = vi.fn().mockResolvedValue(token);
+    const pauseProtectedRequests = vi.fn();
+    const setProtectedRequestsFresh = vi.fn();
+    const setProtectedRequestsRefreshing = vi.fn();
+
+    vi.doMock('../../auth/runtime', () => ({
+      useAuthRuntimeStore: {
+        getState: () => ({
+          pauseProtectedRequests,
+          setProtectedRequestsFresh,
+          setProtectedRequestsRefreshing,
+        }),
+      },
+    }));
+
+    (window as Window & { Clerk?: unknown }).Clerk = {
+      session: { getToken },
+    };
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      createJsonResponse({
+        detail: { error: { code: 'unauthorized', message: 'expired' } },
+      }, 401),
+    );
+
+    const client = await loadClientModule();
+
+    await expect(client.authApi.ownershipDiagnostics()).rejects.toMatchObject({
+      code: 'unauthorized',
+      status: 401,
+    });
+    expect(setProtectedRequestsFresh).toHaveBeenCalled();
+    expect(pauseProtectedRequests).not.toHaveBeenCalled();
+  });
+
   it('sends the account deletion confirmation payload with DELETE', async () => {
     const token = createToken(300);
     const getToken = vi.fn().mockResolvedValue(token);
@@ -218,5 +310,75 @@ describe('api client auth flow', () => {
         }),
       }),
     );
+  });
+});
+
+describe('api client projects fallback model', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+    Object.defineProperty(window.navigator, 'onLine', {
+      configurable: true,
+      value: true,
+    });
+    delete (window as Window & { Clerk?: unknown }).Clerk;
+  });
+
+  it('returns good status and caches projects on success', async () => {
+    const token = createToken(300);
+    const getToken = vi.fn().mockResolvedValue(token);
+    (window as Window & { Clerk?: unknown }).Clerk = {
+      session: { getToken },
+    };
+    vi.spyOn(global, 'fetch').mockResolvedValue(createJsonResponse({
+      projects: [{ id: 'proj_1', has_master: true, has_transcript: true }],
+    }));
+
+    const client = await loadClientModule();
+
+    await expect(client.editorApi.getProjects()).resolves.toEqual({
+      error: null,
+      projects: [{ id: 'proj_1', has_master: true, has_transcript: true }],
+      status: 'good',
+    });
+    expect(localStorage.getItem('gts:projects-cache:v1')).toContain('proj_1');
+  });
+
+  it('returns degraded status with cached projects when refresh fails', async () => {
+    const token = createToken(300);
+    const getToken = vi.fn().mockResolvedValue(token);
+    (window as Window & { Clerk?: unknown }).Clerk = {
+      session: { getToken },
+    };
+    localStorage.setItem(
+      'gts:projects-cache:v1',
+      JSON.stringify([{ id: 'proj_cached', has_master: true, has_transcript: true }]),
+    );
+    vi.spyOn(global, 'fetch').mockRejectedValue(new Error('boom'));
+
+    const client = await loadClientModule();
+
+    await expect(client.editorApi.getProjects()).resolves.toEqual({
+      error: 'Sunucuya baglanirken hata olustu. Lutfen biraz sonra tekrar deneyin.',
+      projects: [{ id: 'proj_cached', has_master: true, has_transcript: true }],
+      status: 'degraded',
+    });
+  });
+
+  it('returns unknown status when refresh fails without cached projects', async () => {
+    const token = createToken(300);
+    const getToken = vi.fn().mockResolvedValue(token);
+    (window as Window & { Clerk?: unknown }).Clerk = {
+      session: { getToken },
+    };
+    vi.spyOn(global, 'fetch').mockRejectedValue(new Error('boom'));
+
+    const client = await loadClientModule();
+
+    await expect(client.editorApi.getProjects()).resolves.toEqual({
+      error: 'Sunucuya baglanirken hata olustu. Lutfen biraz sonra tekrar deneyin.',
+      projects: [],
+      status: 'unknown',
+    });
   });
 });

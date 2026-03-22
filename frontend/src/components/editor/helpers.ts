@@ -1,4 +1,5 @@
 import { API_BASE } from '../../config';
+import { tSafe } from '../../i18n';
 import type { Clip, Segment } from '../../types';
 import { getClipUrl } from '../../utils/url';
 import { isStyleName, isSubtitleAnimationType, type StyleName, type SubtitleAnimationType } from '../../config/subtitleStyles';
@@ -83,25 +84,10 @@ export function resolveStoredEditorState(
   stored: StoredEditorSession | null,
 ): ResolvedEditorSessionState {
   if (mode !== 'clip' || !targetClip) {
-    return {
-      ...DEFAULT_EDITOR_STATE,
-      clearPersistedSession: true,
-      projectId: undefined,
-    };
+    return buildDefaultEditorSessionState();
   }
 
-  return {
-    centerX: resolveStoredNumber(stored?.centerX, DEFAULT_EDITOR_STATE.centerX),
-    animationType: resolveStoredAnimationType(stored?.animationType),
-    clearPersistedSession: false,
-    currentJobId: resolveStoredJobId(stored?.currentJobId),
-    endTime: resolveStoredNumber(stored?.endTime, DEFAULT_EDITOR_STATE.endTime),
-    numClips: resolveStoredNumber(stored?.numClips, DEFAULT_EDITOR_STATE.numClips),
-    projectId: stored?.projectId ?? clipProjectId,
-    startTime: resolveStoredNumber(stored?.startTime, DEFAULT_EDITOR_STATE.startTime),
-    style: resolveStoredStyle(stored?.style),
-    transcript: resolveStoredTranscript(stored?.transcript),
-  };
+  return buildClipEditorSessionState(stored, clipProjectId);
 }
 
 export function buildStoredEditorSession(state: Omit<ResolvedEditorSessionState, 'clearPersistedSession'>): StoredEditorSession {
@@ -141,7 +127,7 @@ export function findTranscriptIndexAtTime(transcript: Segment[], time: number): 
 }
 
 export function getTimeRangeError(startTime: number, endTime: number): string | null {
-  return endTime <= startTime ? 'Bitiş zamanı başlangıçtan büyük olmalı.' : null;
+  return endTime <= startTime ? tSafe('editorWorkspace.errors.invalidRange') : null;
 }
 
 export function resolveEditorVideoSrc(
@@ -155,7 +141,7 @@ export function resolveEditorVideoSrc(
   }
 
   if (mode === 'clip' && targetClip) {
-    return getClipUrl(targetClip);
+    return getClipUrl(targetClip, { cacheBust: targetClip.created_at });
   }
 
   return projectId ? `${API_BASE}/api/projects/${projectId}/master` : undefined;
@@ -179,4 +165,30 @@ function resolveStoredAnimationType(value: unknown): SubtitleAnimationType {
 
 function resolveStoredTranscript(value: Segment[] | undefined): Segment[] {
   return Array.isArray(value) ? value : DEFAULT_EDITOR_STATE.transcript;
+}
+
+function buildDefaultEditorSessionState(): ResolvedEditorSessionState {
+  return {
+    ...DEFAULT_EDITOR_STATE,
+    clearPersistedSession: true,
+    projectId: undefined,
+  };
+}
+
+function buildClipEditorSessionState(
+  stored: StoredEditorSession | null,
+  clipProjectId: string | undefined,
+): ResolvedEditorSessionState {
+  return {
+    centerX: resolveStoredNumber(stored?.centerX, DEFAULT_EDITOR_STATE.centerX),
+    animationType: resolveStoredAnimationType(stored?.animationType),
+    clearPersistedSession: false,
+    currentJobId: resolveStoredJobId(stored?.currentJobId),
+    endTime: resolveStoredNumber(stored?.endTime, DEFAULT_EDITOR_STATE.endTime),
+    numClips: resolveStoredNumber(stored?.numClips, DEFAULT_EDITOR_STATE.numClips),
+    projectId: stored?.projectId ?? clipProjectId,
+    startTime: resolveStoredNumber(stored?.startTime, DEFAULT_EDITOR_STATE.startTime),
+    style: resolveStoredStyle(stored?.style),
+    transcript: resolveStoredTranscript(stored?.transcript),
+  };
 }

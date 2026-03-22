@@ -2,6 +2,7 @@ import { render } from '@testing-library/react';
 import { beforeEach, vi } from 'vitest';
 
 export const mockFetchJobs = vi.fn();
+export const mockMergeJobTimelineEvent = vi.fn();
 export const mockRegisterQueuedJob = vi.fn();
 export const mockRequestClipsRefresh = vi.fn();
 export const mockCacheStatus = vi.fn().mockResolvedValue({
@@ -18,6 +19,7 @@ export const mockStart = vi.fn().mockRejectedValue(new Error('Network error'));
 vi.mock('../../store/useJobStore', () => ({
   useJobStore: () => ({
     fetchJobs: mockFetchJobs,
+    mergeJobTimelineEvent: mockMergeJobTimelineEvent,
     registerQueuedJob: mockRegisterQueuedJob,
     requestClipsRefresh: mockRequestClipsRefresh,
   }),

@@ -1,4 +1,5 @@
 import type { ChangeEvent, FC } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface RangeSliderProps {
     min: number;
@@ -21,8 +22,11 @@ export const RangeSlider: FC<RangeSliderProps> = ({
     endLabel = 'End time',
     onChange,
 }) => {
+    const { t } = useTranslation();
     const minPos = ((start - min) / (max - min)) * 100;
     const maxPos = ((end - min) / (max - min)) * 100;
+    const resolvedStartLabel = startLabel === 'Start time' ? t('rangeSlider.startTime') : startLabel;
+    const resolvedEndLabel = endLabel === 'End time' ? t('rangeSlider.endTime') : endLabel;
 
     const handleStartChange = (e: ChangeEvent<HTMLInputElement>) => {
         const value = Math.min(Number(e.target.value), end - 0.5);
@@ -35,7 +39,7 @@ export const RangeSlider: FC<RangeSliderProps> = ({
     };
 
     return (
-        <div className="relative w-full h-12 flex items-center group" role="group" aria-label="Time range selector">
+        <div className="relative w-full h-12 flex items-center group" role="group" aria-label={t('rangeSlider.group')}>
             <div className="absolute w-full h-3 bg-white/10 rounded-full overflow-hidden">
                 <div
                     className="absolute h-full bg-primary/40"
@@ -43,7 +47,7 @@ export const RangeSlider: FC<RangeSliderProps> = ({
                 />
             </div>
 
-            <label className="sr-only" htmlFor="range-start">{startLabel}</label>
+            <label className="sr-only" htmlFor="range-start">{resolvedStartLabel}</label>
             <input
                 id="range-start"
                 type="range"
@@ -58,7 +62,7 @@ export const RangeSlider: FC<RangeSliderProps> = ({
                 className="absolute w-full pointer-events-none appearance-none bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-7 [&::-webkit-slider-thumb]:h-7 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-[0_0_10px_rgba(0,242,255,0.45)] z-10"
             />
 
-            <label className="sr-only" htmlFor="range-end">{endLabel}</label>
+            <label className="sr-only" htmlFor="range-end">{resolvedEndLabel}</label>
             <input
                 id="range-end"
                 type="range"

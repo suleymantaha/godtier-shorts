@@ -8,6 +8,7 @@ import {
   type MouseEvent,
   type TouchEvent,
 } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import type { Segment } from '../types';
 import {
@@ -197,6 +198,7 @@ function LiveSubtitle({
     backgroundColor: inline.backgroundColor ?? undefined,
   };
   const chunkLines = getSubtitleChunkLines(currentSubtitleState.chunk);
+  const activeWordIndex = currentSubtitleState.activeWordIndex;
 
   return (
     <div className="pointer-events-none absolute flex items-center justify-center" style={wrapperStyle}>
@@ -205,31 +207,55 @@ function LiveSubtitle({
         style={textStyle}
       >
         {chunkLines.map((line, lineIndex) => (
-          <div
+          <SubtitleLine
+            activeWordIndex={activeWordIndex ?? -1}
+            highlightColor={inline.highlightColor}
             key={`line-${lineIndex}`}
-            data-testid={`live-subtitle-line-${lineIndex}`}
-          >
-            {line.map((word, index) => {
-              const globalIndex = chunkLines
-                .slice(0, lineIndex)
-                .reduce((sum, candidate) => sum + candidate.length, 0) + index;
-              return (
-                <span
-                  key={`${word.start}-${word.word}`}
-                  style={globalIndex === currentSubtitleState.activeWordIndex ? {
-                    color: inline.highlightColor,
-                  } : undefined}
-                >
-                  {index > 0 ? ' ' : null}
-                  {word.word}
-                </span>
-              );
-            })}
-          </div>
+            line={line}
+            lineIndex={lineIndex}
+            lines={chunkLines}
+          />
         ))}
       </div>
     </div>
   );
+}
+
+function SubtitleLine({
+  activeWordIndex,
+  highlightColor,
+  line,
+  lineIndex,
+  lines,
+}: {
+  activeWordIndex: number;
+  highlightColor: string;
+  line: ReturnType<typeof getSubtitleChunkLines>[number];
+  lineIndex: number;
+  lines: ReturnType<typeof getSubtitleChunkLines>;
+}) {
+  return (
+    <div data-testid={`live-subtitle-line-${lineIndex}`}>
+      {line.map((word, index) => {
+        const globalIndex = getLineWordOffset(lines, lineIndex) + index;
+        return (
+          <span
+            key={`${word.start}-${word.word}`}
+            style={globalIndex === activeWordIndex ? { color: highlightColor } : undefined}
+          >
+            {index > 0 ? ' ' : null}
+            {word.word}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function getLineWordOffset(lines: ReturnType<typeof getSubtitleChunkLines>, lineIndex: number): number {
+  return lines
+    .slice(0, lineIndex)
+    .reduce((sum, candidate) => sum + candidate.length, 0);
 }
 
 function scaleCssFontSize(fontSize: string | number | undefined, fontScale?: number): string | number | undefined {
@@ -283,18 +309,20 @@ function CropSlider({
   centerX: number;
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div
       role="slider"
       tabIndex={0}
-      aria-label="Crop position"
+      aria-label={t('media.cropPosition')}
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={Math.round(centerX * 100)}
       onKeyDown={onKeyDown}
       className="absolute left-3 top-3 rounded border border-border bg-background/80 px-3 py-1.5 text-[11px] font-mono text-foreground/70 backdrop-blur-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
     >
-      CROP: {(centerX * 100).toFixed(1)}%
+      {t('media.cropValue', { value: (centerX * 100).toFixed(1) })}
     </div>
   );
 }

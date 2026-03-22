@@ -1,0 +1,36 @@
+{
+  "job_id": "manualcut_1774131572_1acf47",
+  "kind": "batch_manual_cut_upload",
+  "request": {
+    "source_file": "workspace/projects/a4069ffa93794396e1a7bf578c6a7b8b/up_a4069ffa93794396e1a7bf578c6a7b8b_1f063fc510c6/shorts/cut_1_3736_3837_raw.mp4",
+    "start_time": 10,
+    "end_time": 20,
+    "num_clips": 3,
+    "style_name": "HORMOZI",
+    "animation_type": "default",
+    "layout": "auto",
+    "skip_subtitles": false
+  },
+  "response": {
+    "status": "started",
+    "project_id": "up_a4069ffa93794396e1a7bf578c6a7b8b_4afa3ee53060",
+    "clip_name": null,
+    "output_url": null,
+    "message": "Otomatik manual cut başlatıldı (3 klip)."
+  },
+  "final_job": {
+    "status": "completed",
+    "progress": 100,
+    "last_message": "Toplu kesim tamamlandı ancak çıktı üretilemedi.",
+    "num_clips": 3,
+    "clip_name": null,
+    "output_url": null,
+    "output_paths": [],
+    "output_path": null
+  },
+  "timeline_excerpt": [
+    {"status": "processing", "progress": 10, "message": "AI Toplu Analiz başlıyor (3 klip)..."},
+    {"status": "error", "progress": -1, "message": "HATA: İstenen süre aralığında uygun segment bulunamadı."},
+    {"status": "completed", "progress": 100, "message": "Toplu kesim tamamlandı ancak çıktı üretilemedi."}
+  ]
+}

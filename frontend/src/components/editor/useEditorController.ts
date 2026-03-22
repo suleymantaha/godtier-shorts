@@ -4,9 +4,10 @@ import { clipsApi, editorApi } from '../../api/client';
 import { MAX_UPLOAD_BYTES } from '../../config';
 import { useDebouncedEffect } from '../../hooks/useDebouncedEffect';
 import { useThrottledCallback } from '../../hooks/useThrottle';
+import { tSafe } from '../../i18n';
 import { useJobStore } from '../../store/useJobStore';
 import type { Clip, Job, Segment } from '../../types';
-import { normalizeTranscript } from '../../utils/transcript';
+import { normalizeTranscript, syncSegmentTextAndWords } from '../../utils/transcript';
 import { isStyleName, isSubtitleAnimationType } from '../../config/subtitleStyles';
 import {
   buildEditorSessionKey,
@@ -481,7 +482,7 @@ function useEditorUploadAction({
 function useTranscriptUpdateAction(transcript: Segment[]) {
   return useCallback((index: number, text: string) => {
     const nextTranscript = [...transcript];
-    nextTranscript[index] = { ...nextTranscript[index], text };
+    nextTranscript[index] = syncSegmentTextAndWords(nextTranscript[index], text);
     return nextTranscript;
   }, [transcript]);
 }
@@ -518,7 +519,7 @@ function useEditorSaveAction({
     try {
       if (mode === 'clip' && targetClip) {
         if (!clipProjectId) {
-          throw new Error('Bu klip icin proje baglami bulunamadi.');
+          throw new Error(tSafe('editorWorkspace.errors.missingProjectContext'));
         }
 
         const response = await editorApi.reburn({
@@ -534,7 +535,7 @@ function useEditorSaveAction({
         await editorApi.saveTranscript(transcript, projectId);
       }
     } catch (error) {
-      setError(getErrorMessage(error, 'Kaydetme başarısız.'));
+      setError(getErrorMessage(error, tSafe('editorWorkspace.errors.saveFailed')));
     } finally {
       setSaving(false);
     }
@@ -586,7 +587,7 @@ function useEditorProcessActions({
       });
       setCurrentJobId(response.job_id);
     } catch (error) {
-      setError(getErrorMessage(error, 'Toplu iş başarısız.'));
+      setError(getErrorMessage(error, tSafe('editorWorkspace.errors.batchFailed')));
       setProcessing(false);
     }
   }, [animationType, endTime, numClips, projectId, setCurrentJobId, setError, setProcessing, startTime, style]);
@@ -612,7 +613,7 @@ function useEditorProcessActions({
       });
       setCurrentJobId(response.job_id);
     } catch (error) {
-      setError(getErrorMessage(error, 'Manuel iş başarısız.'));
+      setError(getErrorMessage(error, tSafe('editorWorkspace.errors.manualFailed')));
       setProcessing(false);
     }
   }, [animationType, centerX, endTime, projectId, setCurrentJobId, setError, setProcessing, startTime, style, transcript]);

@@ -53,7 +53,13 @@ describe('subtitleEditor helpers', () => {
       mode: 'clip',
       selectedClip: clip,
       selectedProjectId: null,
-    })).toContain('clip_1.mp4?t=3');
+    })).toContain(`clip_1.mp4?t=${clip.created_at}%3A3`);
+    expect(resolveSubtitleVideoSrc({
+      cacheBust: 0,
+      mode: 'clip',
+      selectedClip: clip,
+      selectedProjectId: null,
+    })).toContain(`clip_1.mp4?t=${clip.created_at}`);
     expect(resolveClipSelectValue(clip)).toBe('proj_1:clip_1.mp4');
     expect(selectClipByValue([clip], 'proj_1:clip_1.mp4')).toEqual(clip);
   });
@@ -65,6 +71,56 @@ describe('subtitleEditor helpers', () => {
     ]);
     expect(resolveTranscriptDuration(transcript)).toBe(60);
     expect(resolveLoadedEndTime(32, 60)).toBe(32);
+  });
+
+  it('preserves existing word timings when edited text keeps the same token count', () => {
+    const timedTranscript: Segment[] = [
+      {
+        end: 4,
+        start: 0,
+        text: 'First line',
+        words: [
+          { word: 'First', start: 0, end: 1.5, score: 0.8 },
+          { word: 'line', start: 1.5, end: 4, score: 0.9 },
+        ],
+      },
+    ];
+
+    expect(replaceTranscriptText(timedTranscript, 0, 'Fresh copy')[0]).toEqual({
+      end: 4,
+      start: 0,
+      text: 'Fresh copy',
+      words: [
+        { word: 'Fresh', start: 0, end: 1.5, score: 0.8 },
+        { word: 'copy', start: 1.5, end: 4, score: 0.9 },
+      ],
+    });
+  });
+
+  it('rebuilds word timings when edited text changes token count or becomes empty', () => {
+    const timedTranscript: Segment[] = [
+      {
+        end: 4,
+        start: 0,
+        text: 'First line',
+        words: [
+          { word: 'First', start: 0, end: 2, score: 0.8 },
+          { word: 'line', start: 2, end: 4, score: 0.9 },
+        ],
+      },
+    ];
+
+    expect(replaceTranscriptText(timedTranscript, 0, 'Fresh new copy')[0]).toEqual({
+      end: 4,
+      start: 0,
+      text: 'Fresh new copy',
+      words: [
+        { word: 'Fresh', start: 0, end: 4 / 3, score: 1 },
+        { word: 'new', start: 4 / 3, end: 8 / 3, score: 1 },
+        { word: 'copy', start: 8 / 3, end: 4, score: 1 },
+      ],
+    });
+    expect(replaceTranscriptText(timedTranscript, 0, '   ')[0].words).toEqual([]);
   });
 
   it('derives completion messages', () => {

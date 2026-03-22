@@ -72,7 +72,7 @@ def main():
         print(f"📝 ASS dosyası oluşturuluyor: {ass_file}")
         try:
             renderer.generate_ass_file(
-                whisperx_json_path=TRANSCRIPT_PATH,
+                transcript_json_path=TRANSCRIPT_PATH,
                 output_ass_path=ass_file,
                 max_words_per_screen=4
             )

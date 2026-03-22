@@ -70,7 +70,11 @@ def test_foreign_job_cancel_returns_not_found(auth_headers: dict[str, dict[str, 
     }
 
     client = TestClient(_build_app())
-    response = client.post("/api/cancel-job/job-b", headers=auth_headers["a"])
+    response = client.post(
+        "/api/cancel-job/job-b",
+        headers=auth_headers["a"],
+        json={"confirmed": True, "source": "test"},
+    )
 
     assert response.status_code == 404
 
@@ -87,8 +91,30 @@ def test_owner_can_cancel_own_job(auth_headers: dict[str, dict[str, str]]) -> No
     }
 
     client = TestClient(_build_app())
-    response = client.post("/api/cancel-job/job-a", headers=auth_headers["a"])
+    response = client.post(
+        "/api/cancel-job/job-a",
+        headers=auth_headers["a"],
+        json={"confirmed": True, "source": "test"},
+    )
 
     assert response.status_code == 200
     assert response.json()["status"] == "success"
     assert manager.jobs["job-a"]["status"] == "cancelled"
+
+
+def test_cancel_requires_confirmation(auth_headers: dict[str, dict[str, str]]) -> None:
+    manager.jobs["job-a"] = {
+        "job_id": "job-a",
+        "status": "queued",
+        "progress": 0,
+        "last_message": "queued",
+        "created_at": 1.0,
+        "subject": _static_subject("token-a"),
+        "cancel_event": threading.Event(),
+    }
+
+    client = TestClient(_build_app())
+    response = client.post("/api/cancel-job/job-a", headers=auth_headers["a"])
+
+    assert response.status_code == 400
+    assert manager.jobs["job-a"]["status"] == "queued"
