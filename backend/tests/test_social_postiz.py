@@ -1,6 +1,6 @@
 import httpx
 
-from backend.services.social.postiz import PostizClient
+from backend.services.social.postiz import PostizClient, exchange_postiz_oauth_code
 from backend.services.social.service import _build_post_settings
 
 
@@ -79,4 +79,32 @@ def test_postiz_create_post_normalizes_tags(monkeypatch):
     assert settings_payload["tags"] == [
         {"label": "shorts", "value": "shorts"},
         {"label": "viral", "value": "viral"},
+    ]
+
+
+def test_exchange_postiz_oauth_code_falls_back_from_redirect_to_api_token(monkeypatch):
+    calls: list[str] = []
+
+    def fake_post(url, **kwargs):
+        calls.append(url)
+        if url == "http://localhost:4007/oauth/token":
+            return _FakeResponse(307, "/auth", {"location": "/auth"})
+        if url == "http://localhost:4007/api/oauth/token":
+            return _FakeResponse(200, "{\"access_token\":\"tok_123\",\"token_type\":\"bearer\"}")
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setenv("POSTIZ_API_BASE_URL", "http://localhost:4007/api/public/v1")
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    payload = exchange_postiz_oauth_code(
+        client_id="client_123",
+        client_secret="secret_123",
+        code="code_123",
+        redirect_uri="http://localhost:8000/api/social/oauth/callback",
+    )
+
+    assert payload["access_token"] == "tok_123"
+    assert calls == [
+        "http://localhost:4007/oauth/token",
+        "http://localhost:4007/api/oauth/token",
     ]

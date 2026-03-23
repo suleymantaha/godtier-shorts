@@ -1,5 +1,5 @@
 import type { Clip } from '../types';
-import { openSocialComposeWindow } from './shareComposer/helpers';
+import { resolveProjectId } from './shareComposer/helpers';
 import { useClipGalleryController } from './clipGallery/useClipGalleryController';
 import {
     AuthBlockedState,
@@ -14,6 +14,22 @@ import {
 
 interface ClipGalleryProps {
     onEditClip?: (clip: Clip) => void;
+}
+
+function openSocialWorkspaceForClip(clip: Clip): void {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    const params = new URLSearchParams({ tab: 'social' });
+    params.set('clip_name', clip.name);
+
+    const projectId = resolveProjectId(clip);
+    if (projectId) {
+        params.set('project_id', projectId);
+    }
+
+    window.open(`/?${params.toString()}`, '_blank', 'noopener,noreferrer');
 }
 
 export const ClipGallery = ({ onEditClip }: ClipGalleryProps) => {
@@ -82,7 +98,7 @@ export const ClipGallery = ({ onEditClip }: ClipGalleryProps) => {
                     clips={clips}
                     onDeleteClip={handleRequestDelete}
                     onEditClip={onEditClip}
-                    onShareClip={openSocialComposeWindow}
+                    onShareClip={openSocialWorkspaceForClip}
                 />
             )}
             <DeleteClipModal

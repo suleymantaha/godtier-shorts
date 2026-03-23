@@ -201,7 +201,7 @@ describe('ClipGallery loading and empty states', () => {
     expect(mockListClips).toHaveBeenCalledWith(1, 200);
   });
 
-  it('opens a dedicated social compose page when sharing a clip', async () => {
+  it('opens the social workspace tab when sharing a clip', async () => {
     mockClipsResponse = {
       clips: [{
         name: 'clip-share.mp4',
@@ -226,7 +226,7 @@ describe('ClipGallery loading and empty states', () => {
 
     await waitFor(() => {
       expect(windowOpenMock).toHaveBeenCalledWith(
-        '/?tab=social-compose&clip_name=clip-share.mp4&clip_url=%2Fclips%2Fclip-share.mp4&clip_created_at=456&project_id=project-1&clip_title=Share+Me&clip_duration=42',
+        '/?tab=social&clip_name=clip-share.mp4&project_id=project-1',
         '_blank',
         'noopener,noreferrer',
       );

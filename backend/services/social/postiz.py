@@ -15,6 +15,22 @@ class PostizApiError(RuntimeError):
     pass
 
 
+def _looks_like_auth_redirect(response: httpx.Response) -> bool:
+    if response.status_code not in {301, 302, 307, 308}:
+        return False
+    location = response.headers.get("location", "")
+    return location.endswith("/auth") or location == "/auth"
+
+
+def _looks_like_html_or_auth_body(body: str) -> bool:
+    text = (body or "").strip().lower()
+    return bool(text) and (
+        text == "/auth"
+        or text.startswith("<!doctype html")
+        or text.startswith("<html")
+    )
+
+
 def _build_postiz_root_candidates() -> list[str]:
     configured_base_url = os.getenv("POSTIZ_API_BASE_URL", "http://localhost:4007/api/public/v1").rstrip("/")
     candidates: list[str] = []
@@ -119,6 +135,12 @@ def exchange_postiz_oauth_code(
                 continue
             raise last_error from exc
 
+        if _looks_like_auth_redirect(response):
+            last_error = PostizApiError("Postiz oauth token endpoint redirected to auth")
+            if index < len(token_urls) - 1:
+                continue
+            raise last_error
+
         if response.status_code == 404 and index < len(token_urls) - 1:
             last_error = PostizApiError("Postiz oauth token endpoint not found")
             continue
@@ -126,10 +148,19 @@ def exchange_postiz_oauth_code(
         if response.status_code >= 400:
             raise PostizApiError(f"Postiz OAuth HTTP {response.status_code}: {response.text[:600]}")
 
+        if _looks_like_html_or_auth_body(response.text):
+            last_error = PostizApiError("Postiz OAuth token response is not JSON")
+            if index < len(token_urls) - 1:
+                continue
+            raise last_error
+
         try:
             data = response.json() if response.text else {}
         except ValueError as exc:
-            raise PostizApiError("Postiz OAuth token response is not valid JSON") from exc
+            last_error = PostizApiError("Postiz OAuth token response is not valid JSON")
+            if index < len(token_urls) - 1:
+                continue
+            raise last_error from exc
 
         if not isinstance(data, dict):
             raise PostizApiError("Postiz OAuth token response must be an object")
@@ -208,19 +239,11 @@ class PostizClient:
 
     @staticmethod
     def _looks_like_auth_redirect(response: httpx.Response) -> bool:
-        if response.status_code not in {301, 302, 307, 308}:
-            return False
-        location = response.headers.get("location", "")
-        return location.endswith("/auth") or location == "/auth"
+        return _looks_like_auth_redirect(response)
 
     @staticmethod
     def _looks_like_html_or_auth_body(body: str) -> bool:
-        text = (body or "").strip().lower()
-        return bool(text) and (
-            text == "/auth"
-            or text.startswith("<!doctype html")
-            or text.startswith("<html")
-        )
+        return _looks_like_html_or_auth_body(body)
 
     def _request(
         self,
