@@ -226,9 +226,16 @@ describe('ClipGallery loading and empty states', () => {
 
     await waitFor(() => {
       expect(windowOpenMock).toHaveBeenCalledWith(
-        '/?tab=social&clip_name=clip-share.mp4&project_id=project-1',
-        '_blank',
-        'noopener,noreferrer',
+        expect.stringContaining('/?tab=social-compose'),
+        '_self',
+      );
+      expect(windowOpenMock).toHaveBeenCalledWith(
+        expect.stringContaining('clip_name=clip-share.mp4'),
+        '_self',
+      );
+      expect(windowOpenMock).toHaveBeenCalledWith(
+        expect.stringContaining('project_id=project-1'),
+        '_self',
       );
     });
   });

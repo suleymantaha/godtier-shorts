@@ -93,6 +93,7 @@ vi.mock('../components/Editor', () => ({
 }));
 vi.mock('../components/AutoCutEditor', () => ({ AutoCutEditor: () => <div>AutoCutEditor</div> }));
 vi.mock('../components/SocialWorkspace', () => ({ SocialWorkspace: () => <div>SocialWorkspace</div> }));
+vi.mock('../components/SocialComposePage', () => ({ SocialComposePage: () => <div>SocialComposePage</div> }));
 vi.mock('../components/SubtitleEditor', () => ({
   SubtitleEditor: ({
     lockedToClip,
@@ -219,6 +220,22 @@ describe('App navigation and workspace restoration', () => {
     });
   });
 
+  it('opens social compose when share deep-link contains clip params without a tab', async () => {
+    window.history.replaceState({}, '', '/?project_id=proj-1&clip_name=clip-1.mp4');
+
+    render(<App />);
+
+    expect(await screen.findByText('SocialComposePage')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(window.location.search).toContain('tab=social-compose');
+      expect(JSON.parse(localStorage.getItem(APP_STATE_STORAGE_KEY) ?? '{}')).toEqual({
+        editingClip: null,
+        subtitleTargetClip: null,
+        viewMode: 'social_compose',
+      });
+    });
+  });
+
   it('renders Turkish navigation and form labels in tr locale', async () => {
     await i18n.changeLanguage('tr');
 
@@ -314,6 +331,7 @@ describe('App auth and fallback rendering', () => {
 
 describe('App identity reset handling', () => {
   it('clears user-scoped persisted state when the authenticated identity changes', async () => {
+    window.history.replaceState({}, '', '/');
     localStorage.setItem(AUTH_IDENTITY_STORAGE_KEY, 'user-legacy');
     localStorage.setItem(APP_STATE_STORAGE_KEY, JSON.stringify({
       editingClip: { created_at: 1, has_transcript: true, name: 'clip-1.mp4', project: 'proj-1', url: '/clip-1.mp4' },

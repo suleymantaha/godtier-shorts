@@ -10,6 +10,7 @@ import {
   Subtitles,
   Sun,
   Twitter,
+  Wand2,
   type LucideIcon,
 } from 'lucide-react';
 import { Suspense } from 'react';
@@ -62,6 +63,7 @@ interface SignedInShellProps {
   openClipSubtitleEditor: (clip: Clip) => void;
   openConfig: () => void;
   openManual: () => void;
+  openSocialCompose: () => void;
   openSocial: () => void;
   openSubtitle: () => void;
   pauseReason: ResilientAuthState['pauseReason'];
@@ -108,6 +110,7 @@ export function SignedInShell({
   openClipSubtitleEditor,
   openConfig,
   openManual,
+  openSocialCompose,
   openSocial,
   openSubtitle,
   pauseReason,
@@ -129,6 +132,7 @@ export function SignedInShell({
         authStatus={authStatus}
         openConfig={openConfig}
         openManual={openManual}
+        openSocialCompose={openSocialCompose}
         openSocial={openSocial}
         openSubtitle={openSubtitle}
         locale={locale}
@@ -148,6 +152,7 @@ export function SignedInShell({
         handleStyleChange={handleStyleChange}
         openConfig={openConfig}
         openClipSubtitleEditor={openClipSubtitleEditor}
+        openSocialCompose={openSocialCompose}
         openSocial={openSocial}
         subtitleSessionNonce={subtitleSessionNonce}
         subtitleTargetClip={subtitleTargetClip}
@@ -170,6 +175,7 @@ function AppHeader({
   locale,
   openConfig,
   openManual,
+  openSocialCompose,
   openSocial,
   openSubtitle,
   setLocale,
@@ -182,6 +188,7 @@ function AppHeader({
   locale: AppLocale;
   openConfig: () => void;
   openManual: () => void;
+  openSocialCompose: () => void;
   openSocial: () => void;
   openSubtitle: () => void;
   setLocale: (locale: AppLocale) => void;
@@ -197,6 +204,7 @@ function AppHeader({
         <ViewNavigation
           openConfig={openConfig}
           openManual={openManual}
+          openSocialCompose={openSocialCompose}
           openSocial={openSocial}
           openSubtitle={openSubtitle}
           viewMode={viewMode}
@@ -237,12 +245,14 @@ function BrandPanel() {
 function ViewNavigation({
   openConfig,
   openManual,
+  openSocialCompose,
   openSocial,
   openSubtitle,
   viewMode,
 }: {
   openConfig: () => void;
   openManual: () => void;
+  openSocialCompose: () => void;
   openSocial: () => void;
   openSubtitle: () => void;
   viewMode: AppViewMode;
@@ -257,6 +267,7 @@ function ViewNavigation({
     { activeClass: 'bg-accent/20 text-foreground shadow-lg shadow-accent/10 border border-accent/30', icon: Settings, label: t('app.nav.configure'), mode: 'config' },
     { activeClass: 'bg-primary/20 text-foreground shadow-lg shadow-primary/10 border border-primary/30', icon: Scissors, label: t('app.nav.autoCut'), mode: 'manual' },
     { activeClass: 'bg-accent/20 text-foreground shadow-lg shadow-accent/10 border border-accent/30', icon: Subtitles, label: t('app.nav.subtitleEdit'), mode: 'subtitle' },
+    { activeClass: 'bg-secondary/20 text-foreground shadow-lg shadow-secondary/10 border border-secondary/30', icon: Wand2, label: t('app.nav.socialCompose'), mode: 'social_compose' },
     { activeClass: 'bg-secondary/20 text-foreground shadow-lg shadow-secondary/10 border border-secondary/30', icon: Share2, label: t('app.nav.social'), mode: 'social' },
   ];
   return (
@@ -269,7 +280,9 @@ function ViewNavigation({
             ? openManual
             : mode === 'subtitle'
               ? openSubtitle
-              : openSocial;
+              : mode === 'social_compose'
+                ? openSocialCompose
+                : openSocial;
         return (
           <button
             key={mode}
@@ -346,6 +359,7 @@ function MainContent({
   handleSkipSubtitlesChange,
   handleStyleChange,
   openConfig,
+  openSocialCompose,
   openSocial,
   openClipSubtitleEditor,
   subtitleSessionNonce,
@@ -361,6 +375,7 @@ function MainContent({
   handleSkipSubtitlesChange: (disabled: boolean) => void;
   handleStyleChange: (styleName: string) => void;
   openConfig: () => void;
+  openSocialCompose: () => void;
   openSocial: () => void;
   openClipSubtitleEditor: (clip: Clip) => void;
   subtitleSessionNonce: number;
@@ -413,6 +428,7 @@ function MainContent({
       handleAnimationChange={handleAnimationChange}
       handleSkipSubtitlesChange={handleSkipSubtitlesChange}
       handleStyleChange={handleStyleChange}
+      openSocialCompose={openSocialCompose}
       openSocial={openSocial}
       openClipSubtitleEditor={openClipSubtitleEditor}
       subtitlesDisabled={subtitlesDisabled}
@@ -475,6 +491,7 @@ function ConfigWorkspace({
   handleAnimationChange,
   handleSkipSubtitlesChange,
   handleStyleChange,
+  openSocialCompose,
   openSocial,
   openClipSubtitleEditor,
   subtitlesDisabled,
@@ -484,6 +501,7 @@ function ConfigWorkspace({
   handleAnimationChange: (animationType: SubtitleAnimationType) => void;
   handleSkipSubtitlesChange: (disabled: boolean) => void;
   handleStyleChange: (styleName: string) => void;
+  openSocialCompose: () => void;
   openSocial: () => void;
   openClipSubtitleEditor: (clip: Clip) => void;
   subtitlesDisabled: boolean;
@@ -523,6 +541,14 @@ function ConfigWorkspace({
         <ClipGallery onEditClip={openClipSubtitleEditor} />
       </div>
       <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={openSocialCompose}
+          className="mr-2 inline-flex items-center gap-2 rounded-lg border border-accent/40 bg-accent/10 px-4 py-2 text-xs font-mono uppercase tracking-[0.16em] text-accent"
+        >
+          <Wand2 className="w-3 h-3" />
+          {t('app.social.openComposer')}
+        </button>
         <button
           type="button"
           onClick={openSocial}

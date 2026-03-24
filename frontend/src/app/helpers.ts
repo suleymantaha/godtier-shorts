@@ -120,7 +120,14 @@ export function readQueryViewMode(search = typeof window !== 'undefined' ? windo
     return null;
   }
   const params = new URLSearchParams(search);
-  return normalizeQueryTab(params.get('tab'));
+  const tabMode = normalizeQueryTab(params.get('tab'));
+  if (tabMode) {
+    return tabMode;
+  }
+  if (params.has('clip_name') || params.has('project_id')) {
+    return 'social_compose';
+  }
+  return null;
 }
 
 export function syncViewModeToUrl(viewMode: AppViewMode): void {

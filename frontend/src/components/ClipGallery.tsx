@@ -1,5 +1,5 @@
 import type { Clip } from '../types';
-import { resolveProjectId } from './shareComposer/helpers';
+import { buildSocialComposeUrl } from './shareComposer/helpers';
 import { useClipGalleryController } from './clipGallery/useClipGalleryController';
 import {
     AuthBlockedState,
@@ -20,16 +20,7 @@ function openSocialWorkspaceForClip(clip: Clip): void {
     if (typeof window === 'undefined') {
         return;
     }
-
-    const params = new URLSearchParams({ tab: 'social' });
-    params.set('clip_name', clip.name);
-
-    const projectId = resolveProjectId(clip);
-    if (projectId) {
-        params.set('project_id', projectId);
-    }
-
-    window.open(`/?${params.toString()}`, '_blank', 'noopener,noreferrer');
+    window.open(buildSocialComposeUrl(clip), '_self');
 }
 
 export const ClipGallery = ({ onEditClip }: ClipGalleryProps) => {

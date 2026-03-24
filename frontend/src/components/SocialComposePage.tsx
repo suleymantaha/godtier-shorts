@@ -2,6 +2,7 @@ import {
   AlertCircle,
   CalendarClock,
   CheckCircle2,
+  ChevronDown,
   ExternalLink,
   Hash,
   Loader2,
@@ -9,12 +10,13 @@ import {
   Sparkles,
   Wand2,
 } from 'lucide-react';
-import { useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { clipsApi } from '../api/client';
 import type { Clip, ShareDraftContent, SocialAccount, SocialPlatform } from '../types';
 import { getClipUrl } from '../utils/url';
-import { getPlatformLabel, resolveProjectId } from './shareComposer/helpers';
+import { buildSocialComposeUrl, getPlatformLabel, resolveProjectId } from './shareComposer/helpers';
 import { useShareComposerController } from './shareComposer/useShareComposerController';
 
 function readClipFromQuery(): Clip | null {
@@ -24,8 +26,8 @@ function readClipFromQuery(): Clip | null {
 
   const params = new URLSearchParams(window.location.search);
   const clipName = params.get('clip_name');
-  const clipUrl = params.get('clip_url');
   const projectId = params.get('project_id');
+  const clipUrl = params.get('clip_url') ?? (projectId ? buildFallbackClipUrl(projectId, clipName) : null);
 
   if (!clipName || !clipUrl) {
     return null;
@@ -44,6 +46,25 @@ function readClipFromQuery(): Clip | null {
     ui_title: params.get('clip_title') ?? undefined,
     url: clipUrl,
   };
+}
+
+function buildFallbackClipUrl(projectId: string, clipName: string | null): string | null {
+  if (!clipName) {
+    return null;
+  }
+
+  return `/api/projects/${encodeURIComponent(projectId)}/files/clip/${encodeURIComponent(clipName)}`;
+}
+
+function normalizeSearchValue(value: string): string {
+  return value
+    .toLocaleLowerCase('tr-TR')
+    .normalize('NFKD')
+    .replace(/\p{Diacritic}/gu, '');
+}
+
+function clipIdentityKey(clip: Clip): string {
+  return `${clip.project ?? clip.resolved_project_id ?? 'legacy'}:${clip.name}`;
 }
 
 function buildKeywordHints(content: ShareDraftContent): string[] {
@@ -99,38 +120,70 @@ function defaultCtaForPlatform(platform: SocialPlatform): string {
 
 export function SocialComposePage() {
   const { t } = useTranslation();
-  const clip = useMemo(() => readClipFromQuery(), []);
+  const [clip, setClip] = useState<Clip | null>(() => readClipFromQuery());
+  const [clipOptions, setClipOptions] = useState<Clip[]>([]);
+  const [clipQuery, setClipQuery] = useState('');
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerError, setPickerError] = useState<string | null>(null);
   const controller = useShareComposerController({ clip, open: true });
   const previewUrl = useMemo(
     () => (clip ? getClipUrl(clip, { cacheBust: clip.created_at }) : null),
     [clip],
   );
+  const filteredClipOptions = useMemo(() => {
+    const query = normalizeSearchValue(clipQuery.trim());
+    if (!query) {
+      return clipOptions;
+    }
+
+    return clipOptions.filter((candidate) => {
+      const title = normalizeSearchValue(candidate.ui_title ?? '');
+      const name = normalizeSearchValue(candidate.name);
+      return title.includes(query) || name.includes(query);
+    });
+  }, [clipOptions, clipQuery]);
   const activeContent = controller.activeContent;
   const selectedPlatformAccounts = useMemo(
     () => controller.accounts.filter((account) => account.platform === controller.selectedPlatform),
     [controller.accounts, controller.selectedPlatform],
   );
 
-  if (!clip) {
-    return (
-      <main className="mx-auto max-w-5xl space-y-6">
-        <section className="glass-card border-secondary/20 p-8 text-center space-y-4">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-secondary/30 bg-secondary/15">
-            <Sparkles className="h-6 w-6 text-secondary" />
-          </div>
-          <h2 className="text-2xl font-black tracking-tight text-foreground">{t('socialComposePage.title')}</h2>
-          <p className="mx-auto max-w-2xl text-sm text-muted-foreground">{t('socialComposePage.missingClip')}</p>
-          <a
-            href="/?tab=social"
-            className="inline-flex items-center gap-2 rounded-xl border border-primary/40 bg-primary/15 px-4 py-3 text-xs font-mono uppercase tracking-[0.18em] text-primary"
-          >
-            <ExternalLink className="h-4 w-4" />
-            {t('socialComposePage.actions.dashboard')}
-          </a>
-        </section>
-      </main>
-    );
-  }
+  useEffect(() => {
+    let cancelled = false;
+    setPickerLoading(true);
+    setPickerError(null);
+    void (async () => {
+      try {
+        const response = await clipsApi.list(1, 120);
+        if (cancelled) {
+          return;
+        }
+        setClipOptions(response.clips ?? []);
+      } catch (error) {
+        if (!cancelled) {
+          setPickerError(error instanceof Error ? error.message : t('socialComposePage.clipPicker.error'));
+        }
+      } finally {
+        if (!cancelled) {
+          setPickerLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [t]);
+
+  const handleSelectClip = (selectedClip: Clip) => {
+    setClip(selectedClip);
+    setPickerOpen(false);
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.history.replaceState({}, '', buildSocialComposeUrl(selectedClip));
+  };
 
   return (
     <main className="mx-auto max-w-[1500px] space-y-6">
@@ -142,33 +195,111 @@ export function SocialComposePage() {
               {t('socialComposePage.title')}
             </div>
             <div>
-              <h1 className="text-3xl font-black tracking-tight text-foreground sm:text-4xl">{clip.ui_title || clip.name}</h1>
+              <h1 className="text-3xl font-black tracking-tight text-foreground sm:text-4xl">
+                {clip?.ui_title || clip?.name || t('socialComposePage.clipPicker.choose')}
+              </h1>
               <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{t('socialComposePage.subtitle')}</p>
             </div>
             <div className="flex flex-wrap gap-2 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
-              <span className="rounded-full border border-border bg-foreground/5 px-3 py-1">{resolveProjectId(clip) ?? 'no-project'}</span>
-              <span className="rounded-full border border-border bg-foreground/5 px-3 py-1">{clip.name}</span>
+              <span className="rounded-full border border-border bg-foreground/5 px-3 py-1">{clip ? (resolveProjectId(clip) ?? 'no-project') : 'clip-not-selected'}</span>
+              <span className="rounded-full border border-border bg-foreground/5 px-3 py-1">{clip?.name ?? t('socialComposePage.clipPicker.choose')}</span>
               <span className="rounded-full border border-border bg-foreground/5 px-3 py-1">{getPlatformLabel(controller.selectedPlatform)}</span>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <a
-              href="/?tab=social"
-              className="inline-flex items-center gap-2 rounded-xl border border-border bg-foreground/5 px-4 py-3 text-xs font-mono uppercase tracking-[0.16em]"
-            >
-              <ExternalLink className="h-4 w-4" />
-              {t('socialComposePage.actions.dashboard')}
-            </a>
-            {controller.connectionMode === 'managed' && controller.connectUrl ? (
-              <a
-                href={controller.connectUrl}
-                onClick={controller.handleManagedConnectOpen}
-                className="inline-flex items-center gap-2 rounded-xl border border-primary/40 bg-primary/15 px-4 py-3 text-xs font-mono uppercase tracking-[0.16em] text-primary"
+          <div className="w-full max-w-xl space-y-2">
+            <input
+              type="search"
+              value={clipQuery}
+              onChange={(event) => setClipQuery(event.target.value)}
+              placeholder={t('socialComposePage.clipPicker.searchPlaceholder')}
+              className="w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm text-foreground focus:border-secondary/60 focus:outline-none"
+            />
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setPickerOpen((open) => !open)}
+                className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-background/70 px-3 py-2 text-left"
+                aria-expanded={pickerOpen}
+                aria-label={t('socialComposePage.clipPicker.label')}
               >
-                <Sparkles className="h-4 w-4" />
-                {t('socialComposePage.actions.connect')}
+                {clip ? (
+                  <div className="flex min-w-0 items-center gap-3">
+                    <video
+                      src={getClipUrl(clip, { cacheBust: clip.created_at })}
+                      className="h-10 w-16 rounded-md border border-border bg-black object-cover"
+                      muted
+                      playsInline
+                      preload="metadata"
+                    />
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-foreground">{clip.ui_title || clip.name}</div>
+                      <div className="truncate text-[11px] font-mono uppercase tracking-[0.14em] text-muted-foreground">{resolveProjectId(clip) ?? 'no-project'}</div>
+                    </div>
+                  </div>
+                ) : (
+                  <span className="text-sm text-muted-foreground">{t('socialComposePage.clipPicker.choose')}</span>
+                )}
+                <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${pickerOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {pickerOpen ? (
+                <div className="absolute z-50 mt-2 max-h-80 w-full overflow-y-auto rounded-xl border border-border bg-background/95 p-2 shadow-2xl">
+                  {pickerLoading ? (
+                    <div className="flex items-center gap-2 px-2 py-2 text-xs font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      {t('socialComposePage.clipPicker.loading')}
+                    </div>
+                  ) : pickerError ? (
+                    <div className="px-2 py-2 text-sm text-red-300">{pickerError}</div>
+                  ) : filteredClipOptions.length === 0 ? (
+                    <div className="px-2 py-2 text-sm text-muted-foreground">{t('socialComposePage.clipPicker.empty')}</div>
+                  ) : (
+                    filteredClipOptions.map((candidate) => (
+                      <button
+                        key={clipIdentityKey(candidate)}
+                        type="button"
+                        onClick={() => handleSelectClip(candidate)}
+                        className={`mb-1 flex w-full items-center gap-3 rounded-lg border px-2 py-2 text-left transition ${
+                          clip && clipIdentityKey(clip) === clipIdentityKey(candidate)
+                            ? 'border-primary/40 bg-primary/10'
+                            : 'border-border bg-background/40 hover:border-secondary/40 hover:bg-secondary/10'
+                        }`}
+                      >
+                        <video
+                          src={getClipUrl(candidate, { cacheBust: candidate.created_at })}
+                          className="h-10 w-16 rounded-md border border-border bg-black object-cover"
+                          muted
+                          playsInline
+                          preload="metadata"
+                        />
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-foreground">{candidate.ui_title || candidate.name}</div>
+                          <div className="truncate text-[11px] font-mono uppercase tracking-[0.14em] text-muted-foreground">{resolveProjectId(candidate) ?? 'no-project'}</div>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <a
+                href="/?tab=social"
+                className="inline-flex items-center gap-2 rounded-xl border border-border bg-foreground/5 px-4 py-3 text-xs font-mono uppercase tracking-[0.16em]"
+              >
+                <ExternalLink className="h-4 w-4" />
+                {t('socialComposePage.actions.dashboard')}
               </a>
-            ) : null}
+              {controller.connectionMode === 'managed' && controller.connectUrl ? (
+                <a
+                  href={controller.connectUrl}
+                  onClick={controller.handleManagedConnectOpen}
+                  className="inline-flex items-center gap-2 rounded-xl border border-primary/40 bg-primary/15 px-4 py-3 text-xs font-mono uppercase tracking-[0.16em] text-primary"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  {t('socialComposePage.actions.connect')}
+                </a>
+              ) : null}
+            </div>
           </div>
         </div>
       </section>
@@ -207,7 +338,7 @@ function PreviewPanel({
   selectedPlatform,
 }: {
   activeContent: ShareDraftContent | null;
-  clip: Clip;
+  clip: Clip | null;
   previewUrl: string | null;
   selectedAccounts: SocialAccount[];
   selectedPlatform: SocialPlatform;
@@ -252,10 +383,16 @@ function PreviewPanel({
         </div>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <InfoChip label={clip.name} />
-        <InfoChip label={resolveProjectId(clip) ?? 'no-project'} />
-      </div>
+      {clip ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <InfoChip label={clip.name} />
+          <InfoChip label={resolveProjectId(clip) ?? 'no-project'} />
+        </div>
+      ) : (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          {t('socialComposePage.clipPicker.choose')}
+        </div>
+      )}
     </section>
   );
 }
@@ -412,7 +549,7 @@ function ActionPanel({
   clip,
   controller,
 }: {
-  clip: Clip;
+  clip: Clip | null;
   controller: ReturnType<typeof useShareComposerController>;
 }) {
   const { t } = useTranslation();
@@ -434,7 +571,7 @@ function ActionPanel({
         <button
           type="button"
           onClick={() => void controller.submitPublish('now', false)}
-          disabled={controller.publishing}
+          disabled={controller.publishing || !clip}
           className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary/15 px-4 py-3 text-xs font-mono uppercase tracking-[0.16em] text-primary disabled:opacity-50"
         >
           {controller.publishing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
@@ -443,7 +580,7 @@ function ActionPanel({
         <button
           type="button"
           onClick={() => void controller.submitPublish('scheduled', false)}
-          disabled={controller.publishing}
+          disabled={controller.publishing || !clip}
           className="inline-flex items-center justify-center gap-2 rounded-xl border border-secondary/40 bg-secondary/15 px-4 py-3 text-xs font-mono uppercase tracking-[0.16em] text-secondary disabled:opacity-50"
         >
           <CalendarClock className="h-4 w-4" />
@@ -452,7 +589,7 @@ function ActionPanel({
         <button
           type="button"
           onClick={() => void controller.submitPublish('now', true)}
-          disabled={controller.publishing}
+          disabled={controller.publishing || !clip}
           className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-foreground/5 px-4 py-3 text-xs font-mono uppercase tracking-[0.16em] disabled:opacity-50"
         >
           <Sparkles className="h-4 w-4" />
@@ -460,7 +597,9 @@ function ActionPanel({
         </button>
       </div>
       <div className="rounded-2xl border border-border bg-foreground/5 p-4 text-sm text-muted-foreground">
-        {clip.name} · {resolveProjectId(clip) ?? 'no-project'} · {getPlatformLabel(controller.selectedPlatform)}
+        {clip
+          ? `${clip.name} · ${resolveProjectId(clip) ?? 'no-project'} · ${getPlatformLabel(controller.selectedPlatform)}`
+          : t('socialComposePage.clipPicker.choose')}
       </div>
     </section>
   );

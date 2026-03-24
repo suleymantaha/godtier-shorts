@@ -6,7 +6,7 @@ import { useJobStore } from '../store/useJobStore';
 import { useLocaleStore } from '../store/useLocaleStore';
 import { useThemeStore } from '../store/useThemeStore';
 import type { Clip } from '../types';
-import { normalizeStoredClip, persistAppState, readAppState, syncViewModeToUrl, type AppViewMode } from './helpers';
+import { normalizeStoredClip, persistAppState, readAppState, readQueryViewMode, syncViewModeToUrl, type AppViewMode } from './helpers';
 import type { SubtitleAnimationType } from '../config/subtitleStyles';
 
 export function useAppShellController(canUseBackend = true, identityKey: string | null = null) {
@@ -47,6 +47,12 @@ export function useAppShellController(canUseBackend = true, identityKey: string 
     setSubtitleTargetClip(null);
   }, []);
 
+  const openSocialCompose = useCallback(() => {
+    setViewMode('social_compose');
+    setEditingClip(null);
+    setSubtitleTargetClip(null);
+  }, []);
+
   const openClipSubtitleEditor = useCallback((clip: Clip) => {
     setViewMode('subtitle');
     setEditingClip(null);
@@ -67,10 +73,12 @@ export function useAppShellController(canUseBackend = true, identityKey: string 
     if (!syncIdentityBoundary(identityKey)) {
       return;
     }
+    const requestedMode = readQueryViewMode(window.location.search);
 
     const resetTimer = window.setTimeout(() => {
       startTransition(() => {
-        setViewMode('config');
+        // Keep explicit deep-link tabs (e.g. ?tab=social) after identity boundary sync.
+        setViewMode(requestedMode ?? 'config');
         setEditingClip(null);
         setSubtitleTargetClip(null);
         setSubtitleSessionNonce(0);
@@ -97,6 +105,7 @@ export function useAppShellController(canUseBackend = true, identityKey: string 
     openClipSubtitleEditor,
     openConfig,
     openManual,
+    openSocialCompose,
     openSocial,
     openSubtitle,
     locale,

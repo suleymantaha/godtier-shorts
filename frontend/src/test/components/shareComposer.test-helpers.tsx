@@ -7,6 +7,7 @@ export const mockGetAccounts = vi.fn();
 export const mockGetPrefill = vi.fn();
 export const mockGetPublishJobs = vi.fn();
 export const mockPublish = vi.fn();
+export const mockClipsList = vi.fn();
 export const mockSaveDrafts = vi.fn();
 export const mockDeleteDrafts = vi.fn();
 export const mockSaveCredentials = vi.fn();
@@ -15,6 +16,9 @@ export const mockApproveJob = vi.fn();
 export const mockCancelJob = vi.fn();
 
 vi.mock('../../api/client', () => ({
+  clipsApi: {
+    list: (...args: unknown[]) => mockClipsList(...args),
+  },
   socialApi: {
     approveJob: (...args: unknown[]) => mockApproveJob(...args),
     cancelJob: (...args: unknown[]) => mockCancelJob(...args),
@@ -86,6 +90,7 @@ export function resetShareComposerMocks() {
   mockGetPrefill.mockResolvedValue(createPrefillResponse());
   mockGetPublishJobs.mockResolvedValue({ jobs: [] });
   mockPublish.mockResolvedValue({ jobs: [], status: 'queued' });
+  mockClipsList.mockResolvedValue({ clips: [shareComposerClip] });
   mockSaveDrafts.mockResolvedValue({ status: 'saved' });
   mockDeleteDrafts.mockResolvedValue({ deleted: 6, status: 'deleted' });
   mockSaveCredentials.mockResolvedValue({ accounts: [], provider: 'postiz', status: 'connected' });
