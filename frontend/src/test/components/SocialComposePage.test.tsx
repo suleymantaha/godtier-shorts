@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import i18n from '../../i18n';
 import {
@@ -10,9 +10,24 @@ import {
   resetShareComposerMocks,
 } from './shareComposer.test-helpers';
 
+vi.mock('../../components/ui/protectedMedia', () => ({
+  useResolvedMediaState: (src?: string) => ({
+    error: null,
+    resolvedSrc: src,
+  }),
+}));
+
 describe('SocialComposePage', () => {
   beforeEach(async () => {
     resetShareComposerMocks();
+    Object.defineProperty(HTMLMediaElement.prototype, 'load', {
+      configurable: true,
+      value: vi.fn(),
+    });
+    Object.defineProperty(HTMLMediaElement.prototype, 'pause', {
+      configurable: true,
+      value: vi.fn(),
+    });
     await i18n.changeLanguage('en');
     window.history.replaceState(
       {},
@@ -24,13 +39,14 @@ describe('SocialComposePage', () => {
   it('renders a dedicated preview-first compose page and publishes from it', async () => {
     const { SocialComposePage } = await import('../../components/SocialComposePage');
     const user = userEvent.setup();
-
-    render(<SocialComposePage />);
+    const { container } = render(<SocialComposePage />);
 
     expect(await screen.findByText(/social composer/i)).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'Hot Take' })).toBeInTheDocument();
     expect((await screen.findAllByText('HOOK')).length).toBeGreaterThan(0);
     expect(await screen.findByDisplayValue('Follow for the next part.')).toBeInTheDocument();
+    expect(container.querySelector('input[type="datetime-local"]')).toBeNull();
+    expect(container.querySelector('video')).not.toBeNull();
 
     await user.click(screen.getByRole('checkbox'));
     await user.click(screen.getByRole('button', { name: /publish now/i }));
@@ -45,7 +61,7 @@ describe('SocialComposePage', () => {
     });
   });
 
-  it('lets users pick a clip from the compose tab when no clip query exists', async () => {
+  it('lets users pick and clear a clip from the compose tab when no clip query exists', async () => {
     window.history.replaceState({}, '', '/?tab=social-compose');
     mockClipsList.mockResolvedValue({
       clips: [{
@@ -61,10 +77,13 @@ describe('SocialComposePage', () => {
     });
     const { SocialComposePage } = await import('../../components/SocialComposePage');
     const user = userEvent.setup();
+    const { container } = render(<SocialComposePage />);
 
-    render(<SocialComposePage />);
+    expect(await screen.findByText(/no clip selected yet/i)).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/search clip name or title/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /publish now/i })).toBeDisabled();
+    expect(container.querySelector('input[type="datetime-local"]')).toBeNull();
 
-    expect(await screen.findByPlaceholderText(/search clip name or title/i)).toBeInTheDocument();
     await user.click(await screen.findByRole('button', { name: /clip list/i }));
     await user.click(await screen.findByRole('button', { name: /batch 7 test/i }));
 
@@ -74,5 +93,13 @@ describe('SocialComposePage', () => {
       expect(window.location.search).toContain('tab=social-compose');
       expect(window.location.search).toContain('clip_name=batch_7_test.mp4');
     });
+
+    expect(screen.getByRole('button', { name: /publish now/i })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: /clip list/i }));
+    await user.click(screen.getByRole('button', { name: /clear selection/i }));
+
+    expect(await screen.findByText(/no clip selected yet/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /publish now/i })).toBeDisabled();
+    expect(window.location.search).toBe('?tab=social-compose');
   });
 });

@@ -98,11 +98,16 @@ export const tr: TranslationSchema = {
     preview: {
       account: 'Hedef',
       cta: 'CTA',
+      emptyBody: 'Korumalı önizleme ve üretilen içeriklerin aynı ekranda yüklenmesi için bir klip seç.',
+      emptyMeta: 'klip-secilmedi',
+      emptyTitle: 'Henüz klip seçilmedi',
       hashtags: 'Hashtagler',
       hook: 'Açılış hook’u',
       keywords: 'Anahtar kelime ipuçları',
+      loading: 'Korumalı önizleme yükleniyor...',
       noVideo: 'Bu klip için önizleme adresi bulunamadı.',
       title: 'Klip Önizleme',
+      unavailable: 'Bu klip için korumalı önizleme yüklenemedi.',
     },
     editor: {
       accounts: 'Hedef hesaplar',
@@ -119,6 +124,7 @@ export const tr: TranslationSchema = {
     },
     actions: {
       approval: 'Onaya gönder',
+      clearSelection: 'Seçimi temizle',
       connect: 'Hesap bağla',
       dashboard: 'Social Dashboard Aç',
       pickClip: 'Klip seç',
@@ -128,11 +134,18 @@ export const tr: TranslationSchema = {
     },
     clipPicker: {
       choose: 'Listeden bir klip seç',
-      empty: 'Bu aramaya uygun klip bulunamadı.',
+      empty: 'Henüz kullanılabilir klip yok.',
       error: 'Klip listesi yüklenemedi.',
       label: 'Klip listesi',
       loading: 'Klip kütüphanesi yükleniyor...',
       searchPlaceholder: 'Klip adı veya başlık ara...',
+    },
+    schedulePicker: {
+      hours: 'Saat',
+      minutes: 'Dakika',
+      nextMonth: 'Sonraki ay',
+      previousMonth: 'Önceki ay',
+      today: 'Bugün',
     },
     status: {
       generated: 'Alanlar klip metadata’sı ve kayıtlı draftlardan otomatik dolduruldu. Tamamı düzenlenebilir.',

@@ -102,11 +102,16 @@ export const en = {
     preview: {
       account: 'Destination',
       cta: 'Call to action',
+      emptyBody: 'Choose a clip to load the protected preview and generated copy on the same screen.',
+      emptyMeta: 'clip-not-selected',
+      emptyTitle: 'No clip selected yet',
       hashtags: 'Hashtags',
       hook: 'Opening hook',
       keywords: 'Keyword hints',
+      loading: 'Loading protected preview...',
       noVideo: 'Preview URL is missing for this clip.',
       title: 'Clip Preview',
+      unavailable: 'Protected preview could not be loaded for this clip.',
     },
     editor: {
       accounts: 'Destination accounts',
@@ -123,6 +128,7 @@ export const en = {
     },
     actions: {
       approval: 'Send for approval',
+      clearSelection: 'Clear selection',
       connect: 'Connect accounts',
       dashboard: 'Open Social Dashboard',
       pickClip: 'Pick clip',
@@ -132,11 +138,18 @@ export const en = {
     },
     clipPicker: {
       choose: 'Select a clip from the list',
-      empty: 'No clips found for this query.',
+      empty: 'No clips available yet.',
       error: 'Clip list could not be loaded.',
       label: 'Clip list',
       loading: 'Loading clip library...',
       searchPlaceholder: 'Search clip name or title...',
+    },
+    schedulePicker: {
+      hours: 'Hours',
+      minutes: 'Minutes',
+      nextMonth: 'Next month',
+      previousMonth: 'Previous month',
+      today: 'Today',
     },
     status: {
       generated: 'Auto-generated from clip metadata and saved drafts. All fields stay editable.',
