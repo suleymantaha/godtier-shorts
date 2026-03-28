@@ -168,6 +168,9 @@ def _serialize_accounts(accounts: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "provider": account.get("provider"),
                 "username": account.get("username"),
                 "avatar_url": account.get("avatar_url"),
+                "health_status": account.get("health_status"),
+                "health_error": account.get("health_error"),
+                "requires_reconnect": bool(account.get("requires_reconnect")),
             }
         )
     return compact
@@ -178,7 +181,6 @@ def _read_social_oauth_config() -> dict[str, str]:
     client_secret = os.getenv("POSTIZ_OAUTH_CLIENT_SECRET", "").strip()
     callback_url = os.getenv("SOCIAL_OAUTH_CALLBACK_URL", "").strip()
     return_url = os.getenv("SOCIAL_OAUTH_RETURN_URL", "").strip()
-
     if not return_url:
         return_url = os.getenv("FRONTEND_URL", "").strip()
 
@@ -212,17 +214,29 @@ def _build_social_oauth_return_url(status: Literal["success", "error"]) -> str:
 def _build_social_suite_return_url(
     status: Literal["success", "error", "pending"],
     *,
+    base_url: str | None = None,
     platform: str | None = None,
     session_id: str | None = None,
 ) -> str:
-    config = _read_social_oauth_config()
+    if base_url is None:
+        config = _read_social_oauth_config()
+        base_url = config["return_url"]
     return _append_return_query(
-        config["return_url"],
-        tab="social",
+        base_url,
         social_connect=status,
         platform=platform or "",
         session_id=session_id or "",
     )
+
+
+def _resolve_connection_session_return_url(session_id: str | None) -> str | None:
+    if not session_id:
+        return None
+    repository = get_social_repository()
+    session = repository.get_connection_session(session_id)
+    if session is None:
+        return None
+    return str(session.get("return_url") or "").strip() or None
 
 
 def _resolve_postiz_connect_url(subject: str) -> str | None:
@@ -387,6 +401,7 @@ async def social_oauth_callback(
         repository = get_social_repository()
         session_id = str(state_payload.get("connection_session_id") or "").strip() or None
         target_platform = str(state_payload.get("target_platform") or "").strip() or None
+        session_return_url = _resolve_connection_session_return_url(session_id)
         if session_id:
             repository.update_connection_session(
                 session_id,
@@ -421,14 +436,41 @@ async def social_oauth_callback(
                     last_error=str(exc),
                 )
                 return RedirectResponse(
-                    url=_build_social_suite_return_url("error", platform=target_platform, session_id=session_id),
+                    url=_build_social_suite_return_url(
+                        "error",
+                        base_url=session_return_url,
+                        platform=target_platform,
+                        session_id=session_id,
+                    ),
                     status_code=307,
                 )
     except Exception as exc:
         logger.warning("social_oauth_callback_exchange_failed reason={}", str(exc))
+        session_id = str(state_payload.get("connection_session_id") or "").strip() or None
+        session_return_url = _resolve_connection_session_return_url(session_id)
+        if session_id:
+            return RedirectResponse(
+                url=_build_social_suite_return_url(
+                    "error",
+                    base_url=session_return_url,
+                    platform=str(state_payload.get("target_platform") or "").strip() or None,
+                    session_id=session_id,
+                ),
+                status_code=307,
+            )
         return RedirectResponse(url=error_redirect, status_code=307)
 
     success_redirect = _build_social_oauth_return_url("success")
+    if session_id:
+        return RedirectResponse(
+            url=_build_social_suite_return_url(
+                "success",
+                base_url=session_return_url,
+                platform=target_platform,
+                session_id=session_id,
+            ),
+            status_code=307,
+        )
     return RedirectResponse(url=success_redirect, status_code=307)
 
 
@@ -438,6 +480,7 @@ async def list_connected_accounts(
 ) -> dict:
     connection_mode = get_social_connection_mode()
     connect_url = _resolve_postiz_connect_url(auth.subject) if connection_mode == "managed" else None
+    repository = get_social_repository()
     store = get_social_store()
     if not has_postiz_credential_configured(auth.subject, store=store):
         return {
@@ -446,17 +489,21 @@ async def list_connected_accounts(
             "connect_url": connect_url,
             "provider": SOCIAL_PROVIDER_POSTIZ,
             "accounts": [],
-        }
+    }
 
-    try:
-        client, _ = get_postiz_client_for_subject(auth.subject, store=store)
-        raw_accounts = await asyncio.to_thread(client.list_integrations)
-        accounts = normalize_postiz_accounts(raw_accounts)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Postiz hesapları alınamadı: {exc}") from exc
+    accounts = repository.list_cached_accounts(auth.subject)
+    if not accounts:
+        try:
+            accounts = await asyncio.to_thread(
+                repository.sync_accounts_for_subject,
+                auth.subject,
+                resolve_client_for_subject=get_postiz_client_for_subject,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Postiz hesapları alınamadı: {exc}") from exc
 
     return {
-        "connected": True,
+        "connected": bool(accounts),
         "connection_mode": connection_mode,
         "connect_url": connect_url,
         "provider": SOCIAL_PROVIDER_POSTIZ,
@@ -674,6 +721,8 @@ async def list_publish_jobs(
         safe_clip = sanitize_clip_name(clip_name) if clip_name else None
     except ValueError as exc:
         raise InvalidInputError(str(exc)) from exc
+    repository = get_social_repository()
+    await asyncio.to_thread(repository.sync_provider_jobs_for_subject, auth.subject)
     store = get_social_store()
     jobs = store.list_publish_jobs(auth.subject, project_id=safe_project, clip_name=safe_clip)
     return {"jobs": jobs}
@@ -854,8 +903,14 @@ async def social_connections_callback(
         status=status,
         last_error=None if status != "error" else "Provider callback error",
     )
+    return_url = str(session.get("return_url") or "").strip() or None
     return RedirectResponse(
-        url=_build_social_suite_return_url(status, platform=str(session.get("platform") or ""), session_id=session_id),
+        url=_build_social_suite_return_url(
+            status,
+            base_url=return_url,
+            platform=str(session.get("platform") or ""),
+            session_id=session_id,
+        ),
         status_code=307,
     )
 
@@ -873,6 +928,7 @@ async def sync_social_connections(
             repository.sync_accounts_for_subject,
             auth.subject,
             resolve_client_for_subject=get_postiz_client_for_subject,
+            reset_account_health=True,
         )
     except Exception as exc:
         logger.warning("social.connection.sync subject={} reason={}", auth.subject, str(exc))

@@ -415,6 +415,9 @@ export interface SocialAccount {
     provider?: string;
     username?: string | null;
     avatar_url?: string | null;
+    health_status?: 'healthy' | 'reconnect_required' | string | null;
+    health_error?: string | null;
+    requires_reconnect?: boolean;
 }
 
 export interface SocialAccountsResponse {
@@ -484,10 +487,13 @@ export interface PublishJob {
     account_id: string;
     mode: 'now' | 'scheduled';
     state: 'draft' | 'queued' | 'scheduled' | 'publishing' | 'published' | 'retrying' | 'failed' | 'cancelled' | 'pending_approval';
+    delivery_status?: 'pending' | 'scheduled' | 'published' | 'failed' | 'stalled' | string | null;
     attempts: number;
     scheduled_at?: string | null;
     last_error?: string | null;
     provider_job_id?: string | null;
+    published_at?: string | null;
+    last_provider_sync_at?: string | null;
     approval_required: boolean;
     timeline?: Array<{ state: string; message: string; at: string }>;
     created_at: string;

@@ -24,7 +24,10 @@ function useLatestRef<T>(value: T) {
 }
 
 function useWebSocketStoreRefs() {
-  const { mergeJobTimelineEvent, markClipReady, fetchJobs, setWsStatus } = useJobStore();
+  const mergeJobTimelineEvent = useJobStore((state) => state.mergeJobTimelineEvent);
+  const markClipReady = useJobStore((state) => state.markClipReady);
+  const fetchJobs = useJobStore((state) => state.fetchJobs);
+  const setWsStatus = useJobStore((state) => state.setWsStatus);
 
   return {
     fetchJobsRef: useLatestRef(fetchJobs),
@@ -211,5 +214,5 @@ export const useWebSocket = (enabled = true) => {
     void connect();
 
     return () => closeSocket(ws, reconnectTimeoutId, isUnmounted);
-  }, [canConnect, fetchJobsRef, markClipReadyRef, mergeJobTimelineEventRef, setWsStatusRef]);
+  }, [canConnect]);
 };

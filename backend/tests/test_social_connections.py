@@ -116,6 +116,62 @@ def test_social_connection_delete_marks_account_disconnected(
     assert cached[0]["disabled"] is True
 
 
+def test_social_accounts_endpoint_surfaces_reconnect_required_state(
+    monkeypatch: pytest.MonkeyPatch,
+    social_store: SocialStore,
+    auth_header: dict[str, str],
+):
+    subject = _static_subject("editor-token")
+    _save_credential(social_store, subject)
+    social_store.replace_account_cache(
+        subject,
+        [{"id": "acc_1", "platform": "youtube_shorts", "provider": "youtube", "name": "YT Main"}],
+    )
+    social_store.mark_account_reconnect_required(subject, "acc_1", error="Token expired or invalid")
+
+    def _resolve_client(_subject: str, **_kwargs):
+        return (_FakePostizClient([{"id": "acc_1", "identifier": "youtube", "name": "YT Main"}]), {})
+
+    monkeypatch.setattr(social, "get_postiz_client_for_subject", _resolve_client)
+    monkeypatch.setattr("backend.services.social.service.get_postiz_client_for_subject", _resolve_client)
+    monkeypatch.setattr("backend.services.social.repository.get_postiz_client_for_subject", _resolve_client)
+
+    client = TestClient(_build_app())
+    response = client.get("/api/social/accounts", headers=auth_header)
+
+    assert response.status_code == 200
+    account = response.json()["accounts"][0]
+    assert account["requires_reconnect"] is True
+
+
+def test_social_connections_sync_clears_reconnect_required_state(
+    monkeypatch: pytest.MonkeyPatch,
+    social_store: SocialStore,
+    auth_header: dict[str, str],
+):
+    subject = _static_subject("editor-token")
+    _save_credential(social_store, subject)
+    social_store.replace_account_cache(
+        subject,
+        [{"id": "acc_1", "platform": "youtube_shorts", "provider": "youtube", "name": "YT Main"}],
+    )
+    social_store.mark_account_reconnect_required(subject, "acc_1", error="Token expired or invalid")
+
+    def _resolve_client(_subject: str, **_kwargs):
+        return (_FakePostizClient([{"id": "acc_1", "identifier": "youtube", "name": "YT Main"}]), {})
+
+    monkeypatch.setattr(social, "get_postiz_client_for_subject", _resolve_client)
+    monkeypatch.setattr("backend.services.social.service.get_postiz_client_for_subject", _resolve_client)
+    monkeypatch.setattr("backend.services.social.repository.get_postiz_client_for_subject", _resolve_client)
+
+    client = TestClient(_build_app())
+    response = client.post("/api/social/connections/sync", headers=auth_header)
+
+    assert response.status_code == 200
+    account = response.json()["accounts"][0]
+    assert account["requires_reconnect"] is False
+
+
 def test_social_calendar_patch_reschedules_existing_job(
     social_store: SocialStore,
     auth_header: dict[str, str],

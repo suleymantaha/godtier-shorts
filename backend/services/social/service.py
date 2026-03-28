@@ -143,12 +143,18 @@ def validate_publish_targets_for_subject(
     store: SocialStore | None = None,
     resolve_client_for_subject: Any | None = None,
 ) -> list[dict[str, Any]]:
+    db = store or get_social_store()
     accounts = resolve_postiz_accounts_for_subject(
         subject,
-        store=store,
+        store=db,
         resolve_client_for_subject=resolve_client_for_subject,
     )
+    db.replace_account_cache(subject, accounts)
     accounts_by_id = {str(account["id"]): account for account in accounts}
+    cached_accounts = {
+        str(account["id"]): account
+        for account in db.list_account_cache(subject, include_disabled=True)
+    }
 
     validated_targets: list[dict[str, Any]] = []
     for target in targets:
@@ -161,6 +167,14 @@ def validate_publish_targets_for_subject(
         account = accounts_by_id.get(account_id)
         if account is None:
             raise ValueError(f"Hedef hesap bu kullanıcıya bağlı değil: {account_id}")
+        cached = cached_accounts.get(account_id)
+        if cached is not None and bool(cached.get("disabled")):
+            raise ValueError(f"Hedef hesap devre dışı: {account_id}")
+        if cached is not None and bool(cached.get("requires_reconnect")):
+            health_error = str(cached.get("health_error") or "").strip()
+            if health_error:
+                raise ValueError(f"Hedef hesap yeniden bağlanmalı: {health_error}")
+            raise ValueError(f"Hedef hesap yeniden bağlanmalı: {account_id}")
 
         account_platform = str(account.get("platform") or "").strip()
         if account_platform != platform:
@@ -703,6 +717,7 @@ def create_scheduled_post_now(job: dict[str, Any], *, store: SocialStore | None 
         next_attempt_at=str(job.get("scheduled_at") or "") or None,
         provider_job_id=str(result.get("provider_post_id") or ""),
         result=result,
+        delivery_status="scheduled",
         last_error=None,
     )
     return db.get_publish_job(job_id) or job
@@ -842,7 +857,13 @@ def run_publish_attempt(job: dict[str, Any], *, store: SocialStore | None = None
     if state == "draft":
         db.update_publish_job(job_id, state="queued", message="Planlanan zaman geldi, kuyruğa alındı")
 
-    db.update_publish_job(job_id, state="publishing", message="Postiz yayını başlatıldı")
+    db.update_publish_job(
+        job_id,
+        state="publishing",
+        message="Postiz yayını başlatıldı",
+        delivery_status="pending",
+        last_error=None,
+    )
 
     try:
         result = publish_job_via_postiz(job, store=db)
@@ -874,8 +895,10 @@ def run_publish_attempt(job: dict[str, Any], *, store: SocialStore | None = None
 
     db.update_publish_job(
         job_id,
-        state="published",
-        message="Yayın başarılı",
+        state="publishing",
+        message="Postiz kuyruğuna alındı",
         provider_job_id=str(result.get("provider_post_id") or ""),
         result=result,
+        delivery_status="pending",
+        last_error=None,
     )

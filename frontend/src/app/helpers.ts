@@ -40,6 +40,16 @@ export interface SubtitleSessionSnapshot {
 export const APP_STATE_STORAGE_KEY = 'godtier-app-state';
 export const SUBTITLE_SESSION_STORAGE_KEY = 'godtier-subtitle-session';
 export const DEFAULT_APP_STATE: AppState = { viewMode: 'config', editingClip: null, subtitleTargetClip: null };
+export const SOCIAL_PATH = '/social';
+export const SOCIAL_COMPOSE_PATH = '/social-compose';
+const SOCIAL_COMPOSE_CONTEXT_QUERY_PARAMS = [
+  'clip_name',
+  'project_id',
+  'clip_url',
+  'clip_created_at',
+  'clip_title',
+  'clip_duration',
+] as const;
 
 export function normalizeStoredClip(clip?: Clip | null): Clip | null {
   if (!clip) {
@@ -115,7 +125,16 @@ function normalizeViewMode(viewMode?: string): AppViewMode {
   return 'config';
 }
 
-export function readQueryViewMode(search = typeof window !== 'undefined' ? window.location.search : ''): AppViewMode | null {
+export function readQueryViewMode(
+  search = typeof window !== 'undefined' ? window.location.search : '',
+  pathname = typeof window !== 'undefined' ? window.location.pathname : '/',
+): AppViewMode | null {
+  if (pathname === SOCIAL_PATH) {
+    return 'social';
+  }
+  if (pathname === SOCIAL_COMPOSE_PATH) {
+    return 'social_compose';
+  }
   if (!search) {
     return null;
   }
@@ -136,6 +155,12 @@ export function syncViewModeToUrl(viewMode: AppViewMode): void {
   }
   const currentUrl = new URL(window.location.href);
   const queryTab = queryTabForViewMode(viewMode);
+  currentUrl.pathname = pathnameForViewMode(viewMode);
+  if (viewMode !== 'social_compose') {
+    for (const param of SOCIAL_COMPOSE_CONTEXT_QUERY_PARAMS) {
+      currentUrl.searchParams.delete(param);
+    }
+  }
   if (queryTab) {
     currentUrl.searchParams.set('tab', queryTab);
   } else {
@@ -153,13 +178,18 @@ function queryTabForViewMode(viewMode: AppViewMode): string | null {
   if (viewMode === 'subtitle') {
     return 'subtitle';
   }
+  return null;
+}
+
+function pathnameForViewMode(viewMode: AppViewMode): string {
   if (viewMode === 'social') {
-    return 'social';
+    return SOCIAL_PATH;
   }
   if (viewMode === 'social_compose') {
-    return 'social-compose';
+    return SOCIAL_COMPOSE_PATH;
   }
-  return null;
+
+  return '/';
 }
 
 function normalizeQueryTab(tab: string | null): AppViewMode | null {

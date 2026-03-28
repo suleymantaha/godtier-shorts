@@ -23,8 +23,9 @@ from backend.services.social.store import SocialStore
 
 
 class _FakePostizClient:
-    def __init__(self, accounts):
+    def __init__(self, accounts, posts=None):
         self._accounts = accounts
+        self._posts = posts or []
         self.uploaded = False
         self.base_url = "http://postiz.test/public/v1"
 
@@ -38,6 +39,14 @@ class _FakePostizClient:
     def upload_media_from_url(self, _url):
         self.uploaded = True
         return {"id": "media_2", "path": "/uploads/media_2.mp4"}
+
+    def get_connect_channel_url(self, integration_key):
+        return f"http://postiz.test/connect/{integration_key}"
+
+    def list_posts(self, *, start_date: str, end_date: str):
+        assert start_date
+        assert end_date
+        return list(self._posts)
 
 
 def _build_app() -> FastAPI:
@@ -70,6 +79,7 @@ def _write_owned_social_project(project_root: Path, project_id: str, *, owner_to
 def social_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> SocialStore:
     store = SocialStore(tmp_path / "social_test.db")
     monkeypatch.setattr("backend.services.social.store._store_instance", store)
+    monkeypatch.setattr("backend.services.social.repository._repository_instance", None)
     return store
 
 
@@ -88,6 +98,10 @@ def default_postiz_client(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(social, "get_postiz_client_for_subject", _resolve_client)
     monkeypatch.setattr(
         "backend.services.social.service.get_postiz_client_for_subject",
+        _resolve_client,
+    )
+    monkeypatch.setattr(
+        "backend.services.social.repository.get_postiz_client_for_subject",
         _resolve_client,
     )
 
@@ -212,6 +226,35 @@ def test_social_oauth_start_redirects_to_postiz_authorize(
     assert "state" in query and query["state"][0]
 
 
+def test_connections_start_persists_return_url_for_session(
+    monkeypatch: pytest.MonkeyPatch,
+    social_store: SocialStore,
+    auth_header: dict[str, str],
+):
+    monkeypatch.setenv("SOCIAL_CONNECTION_MODE", "managed")
+    monkeypatch.setenv("POSTIZ_API_BASE_URL", "http://localhost:4007/api/public/v1")
+    monkeypatch.setenv("POSTIZ_OAUTH_CLIENT_ID", "postiz_client_123")
+    monkeypatch.setenv("POSTIZ_OAUTH_CLIENT_SECRET", "postiz_secret_123")
+    monkeypatch.setenv("SOCIAL_OAUTH_CALLBACK_URL", "http://localhost:8000/api/social/oauth/callback")
+    monkeypatch.setenv("SOCIAL_OAUTH_RETURN_URL", "http://localhost:5173/share")
+
+    client = TestClient(_build_app())
+    response = client.post(
+        "/api/social/connections/start",
+        headers=auth_header,
+        json={
+            "platform": "youtube_shorts",
+            "return_url": "http://localhost:5173/social-compose?project_id=proj_1&clip_name=clip_1.mp4",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    session = social_store.get_connection_session(payload["session_id"])
+    assert session is not None
+    assert session["return_url"] == "http://localhost:5173/social-compose?project_id=proj_1&clip_name=clip_1.mp4"
+
+
 def test_social_oauth_callback_saves_subject_credential_and_redirects_success(
     monkeypatch: pytest.MonkeyPatch,
     social_store: SocialStore,
@@ -239,6 +282,47 @@ def test_social_oauth_callback_saves_subject_credential_and_redirects_success(
     credential = social_store.get_credential(subject, "postiz")
     assert credential is not None
     assert SocialCrypto().decrypt(str(credential["encrypted_api_key"])) == "oauth_access_token_123"
+
+
+def test_social_oauth_callback_launches_postiz_connect_flow_for_connection_session(
+    monkeypatch: pytest.MonkeyPatch,
+    social_store: SocialStore,
+):
+    monkeypatch.setenv("POSTIZ_OAUTH_CLIENT_ID", "postiz_client_123")
+    monkeypatch.setenv("POSTIZ_OAUTH_CLIENT_SECRET", "postiz_secret_123")
+    monkeypatch.setenv("SOCIAL_OAUTH_CALLBACK_URL", "http://localhost:8000/api/social/oauth/callback")
+    monkeypatch.setenv("SOCIAL_OAUTH_RETURN_URL", "http://localhost:5173/share")
+    monkeypatch.setattr(
+        social,
+        "exchange_postiz_oauth_code",
+        lambda **_kwargs: {"access_token": "oauth_access_token_123"},
+    )
+    subject = _static_subject("editor-token")
+    session = social_store.create_connection_session(
+        subject=subject,
+        platform="youtube_shorts",
+        return_url="http://localhost:5173/social-compose?project_id=proj_1&clip_name=clip_1.mp4",
+    )
+    state = build_signed_social_oauth_state(
+        subject=subject,
+        integration="youtube",
+        target_platform="youtube_shorts",
+        connection_session_id=str(session["id"]),
+    )
+
+    client = TestClient(_build_app(), follow_redirects=False)
+    response = client.get(
+        "/api/social/oauth/callback",
+        params={"state": state, "code": "oauth_code_123"},
+    )
+
+    assert response.status_code == 307
+    assert response.headers["location"] == "http://postiz.test/connect/youtube"
+    updated_session = social_store.get_connection_session(str(session["id"]))
+    assert updated_session is not None
+    assert updated_session["phase"] == "launch_ready"
+    assert updated_session["status"] == "awaiting_user"
+    assert updated_session["return_url"] == "http://localhost:5173/social-compose?project_id=proj_1&clip_name=clip_1.mp4"
 
 
 def test_social_oauth_callback_returns_error_for_invalid_or_expired_state(
@@ -280,6 +364,30 @@ def test_social_oauth_callback_returns_error_for_invalid_or_expired_state(
     assert expired_response.headers["location"] == "http://localhost:5173/share?social_oauth=error"
     assert oauth_error_response.status_code == 307
     assert oauth_error_response.headers["location"] == "http://localhost:5173/share?social_oauth=error"
+
+
+def test_social_connections_callback_uses_session_return_url(
+    monkeypatch: pytest.MonkeyPatch,
+    social_store: SocialStore,
+):
+    monkeypatch.setenv("SOCIAL_OAUTH_RETURN_URL", "http://localhost:5173/share")
+    session = social_store.create_connection_session(
+        subject=_static_subject("editor-token"),
+        platform="youtube_shorts",
+        return_url="http://localhost:5173/social",
+    )
+
+    client = TestClient(_build_app(), follow_redirects=False)
+    response = client.get(
+        "/api/social/connections/callback",
+        params={"session_id": session["id"], "status": "success"},
+    )
+
+    assert response.status_code == 307
+    assert response.headers["location"] == (
+        "http://localhost:5173/social?social_connect=success&platform=youtube_shorts"
+        f"&session_id={session['id']}"
+    )
 
 
 def test_social_prefill_drafts_and_publish(
@@ -451,6 +559,108 @@ def test_social_user_isolation(
 
     assert jobs_a.status_code == 200 and len(jobs_a.json()["jobs"]) == 1
     assert jobs_b.status_code == 200 and len(jobs_b.json()["jobs"]) == 0
+
+
+def test_social_publish_jobs_sync_provider_delivery_state(
+    monkeypatch: pytest.MonkeyPatch,
+    social_store: SocialStore,
+    auth_header: dict[str, str],
+):
+    fake_client = _FakePostizClient(
+        [{"id": "acc_1", "provider": "youtube", "name": "YT Main"}],
+        posts=[
+            {
+                "id": "post_1",
+                "state": "POSTED",
+                "releaseURL": "https://youtube.example/watch?v=abc123",
+                "publishDate": "2026-03-28T12:34:56Z",
+            }
+        ],
+    )
+
+    def _resolve_client(_subject: str, **_kwargs):
+        return fake_client, {}
+
+    monkeypatch.setattr(social, "get_postiz_client_for_subject", _resolve_client)
+    monkeypatch.setattr("backend.services.social.service.get_postiz_client_for_subject", _resolve_client)
+    monkeypatch.setattr("backend.services.social.repository.get_postiz_client_for_subject", _resolve_client)
+
+    subject = _static_subject("editor-token")
+    social_store.save_credential(subject, "postiz", SocialCrypto().encrypt("postiz_test_key_123"), None)
+    created = social_store.create_publish_jobs(
+        subject=subject,
+        provider="postiz",
+        project_id="proj_sync",
+        clip_name="clip_sync.mp4",
+        mode="now",
+        timezone_name="UTC",
+        scheduled_at=None,
+        approval_required=False,
+        targets=[{"account_id": "acc_1", "platform": "youtube_shorts", "provider": "youtube"}],
+        content_by_platform={"youtube_shorts": {"title": "Title", "text": "Body", "hashtags": []}},
+    )
+    social_store.update_publish_job(
+        created[0]["id"],
+        state="publishing",
+        message="Postiz kuyruğuna alındı",
+        provider_job_id="post_1",
+        delivery_status="pending",
+    )
+
+    client = TestClient(_build_app())
+    response = client.get("/api/social/publish-jobs", headers=auth_header)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["jobs"][0]["state"] == "published"
+    assert payload["jobs"][0]["delivery_status"] == "published"
+    assert payload["jobs"][0]["provider_job_id"] == "post_1"
+    assert payload["jobs"][0]["published_at"] == "2026-03-28T12:34:56Z"
+
+
+def test_social_publish_rejects_accounts_marked_for_reconnect(
+    monkeypatch: pytest.MonkeyPatch,
+    social_store: SocialStore,
+    auth_header: dict[str, str],
+    tmp_path: Path,
+):
+    monkeypatch.setattr(social, "validate_postiz_credential", lambda *_args, **_kwargs: [])
+
+    project_root = tmp_path / "projects"
+    monkeypatch.setattr(config, "PROJECTS_DIR", project_root)
+    project_id = _owned_project_id("editor-token", "reconnect")
+    _write_owned_social_project(project_root, project_id, owner_token="editor-token", clip_name="clip_reconnect.mp4")
+
+    subject = _static_subject("editor-token")
+    social_store.save_credential(subject, "postiz", SocialCrypto().encrypt("postiz_test_key_123"), None)
+    social_store.replace_account_cache(
+        subject,
+        [{"id": "acc_1", "platform": "youtube_shorts", "provider": "youtube", "name": "YT Main"}],
+    )
+    social_store.mark_account_reconnect_required(subject, "acc_1", error="Token expired or invalid")
+
+    client = TestClient(_build_app())
+    response = client.post(
+        "/api/social/publish",
+        headers=auth_header,
+        json={
+            "project_id": project_id,
+            "clip_name": "clip_reconnect.mp4",
+            "mode": "now",
+            "approval_required": False,
+            "targets": [{"account_id": "acc_1", "platform": "youtube_shorts"}],
+            "content_by_platform": {
+                "youtube_shorts": {
+                    "title": "Reconnect Title",
+                    "text": "Reconnect Text",
+                    "hashtags": ["retry"],
+                }
+            },
+        },
+    )
+
+    assert response.status_code == 400
+    assert "yeniden bağlanmalı" in response.text
 
 
 def test_social_accounts_and_publish_targets_are_isolated_per_subject(

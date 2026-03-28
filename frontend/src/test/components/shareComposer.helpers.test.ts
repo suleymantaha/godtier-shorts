@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { AUTH_IDENTITY_STORAGE_KEY } from '../../auth/isolation';
 import type { Clip } from '../../types';
 import {
+  clearSocialConnectStatusQuery,
   clearSocialOAuthStatusQuery,
   getShareComposerIdentityScope,
   buildHashtagsFromInput,
@@ -16,6 +17,7 @@ import {
   mergeDraftContent,
   nowPlusHourLocal,
   parseLocalDraftBuffer,
+  readSocialConnectStatusFromQuery,
   readSocialOAuthStatusFromQuery,
   resolveProjectId,
   summarizePublishErrors,
@@ -47,12 +49,20 @@ describe('shareComposer helpers', () => {
     expect(readSocialOAuthStatusFromQuery('?social_oauth=success')).toBe('success');
     expect(readSocialOAuthStatusFromQuery('?social_oauth=error')).toBe('error');
     expect(readSocialOAuthStatusFromQuery('?social_oauth=unknown')).toBeNull();
+    expect(readSocialConnectStatusFromQuery('?social_connect=success')).toBe('success');
+    expect(readSocialConnectStatusFromQuery('?social_connect=pending')).toBe('pending');
+    expect(readSocialConnectStatusFromQuery('?social_connect=unknown')).toBeNull();
 
     window.history.replaceState({}, '', '/editor?social_oauth=success&foo=1#modal');
     clearSocialOAuthStatusQuery();
     expect(window.location.pathname).toBe('/editor');
     expect(window.location.search).toBe('?foo=1');
     expect(window.location.hash).toBe('#modal');
+
+    window.history.replaceState({}, '', '/social?social_connect=success&session_id=sess_1&platform=youtube_shorts');
+    clearSocialConnectStatusQuery();
+    expect(window.location.pathname).toBe('/social');
+    expect(window.location.search).toBe('');
   });
 
   it('parses and merges local draft buffers onto server content', () => {
@@ -62,7 +72,9 @@ describe('shareComposer helpers', () => {
 
     expect(parsed.invalid).toBe(false);
     expect(mergeDraftContent(createPrefillResponse().platforms, parsed.buffer).youtube_shorts).toEqual({
+      cta_text: 'Follow for the next part.',
       hashtags: ['custom'],
+      hook_text: 'HOOK',
       text: 'LOCAL',
       title: 'LOCAL TITLE',
     });

@@ -17,6 +17,7 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import { clipsApi } from '../api/client';
+import { SOCIAL_PATH } from '../app/helpers';
 import { useResolvedMediaState } from './ui/protectedMedia';
 import type { Clip, ShareDraftContent, SocialAccount, SocialPlatform } from '../types';
 import { getClipUrl } from '../utils/url';
@@ -775,6 +776,40 @@ export function SocialComposePage() {
     };
   }, [t]);
 
+  useEffect(() => {
+    if (!clip) {
+      return;
+    }
+
+    const matchedClip = clipOptions.find((option) =>
+      clipIdentityKey(option) === clipIdentityKey(clip)
+    );
+    if (!matchedClip) {
+      return;
+    }
+
+    const nextClip = {
+      ...clip,
+      ...matchedClip,
+      name: clip.name,
+      project: clip.project ?? matchedClip.project,
+      resolved_project_id: clip.resolved_project_id ?? matchedClip.resolved_project_id ?? null,
+    };
+    if (
+      nextClip.created_at === clip.created_at
+      && nextClip.duration === clip.duration
+      && nextClip.has_transcript === clip.has_transcript
+      && nextClip.project === clip.project
+      && nextClip.resolved_project_id === clip.resolved_project_id
+      && nextClip.ui_title === clip.ui_title
+      && nextClip.url === clip.url
+    ) {
+      return;
+    }
+
+    setClip(nextClip);
+  }, [clip, clipOptions]);
+
   const handleSelectClip = (selectedClip: Clip) => {
     setClip(selectedClip);
     if (typeof window !== 'undefined') {
@@ -822,21 +857,21 @@ export function SocialComposePage() {
             />
             <div className="flex flex-wrap gap-2">
               <a
-                href="/?tab=social"
+                href={SOCIAL_PATH}
                 className="inline-flex items-center gap-2 rounded-xl border border-border bg-foreground/5 px-4 py-3 text-xs font-mono uppercase tracking-[0.16em]"
               >
                 <ExternalLink className="h-4 w-4" />
                 {t('socialComposePage.actions.dashboard')}
               </a>
-              {controller.connectionMode === 'managed' && controller.connectUrl ? (
-                <a
-                  href={controller.connectUrl}
-                  onClick={controller.handleManagedConnectOpen}
+              {controller.connectionMode === 'managed' ? (
+                <button
+                  type="button"
+                  onClick={() => void controller.handleManagedConnectionFlow(controller.selectedPlatform)}
                   className="inline-flex items-center gap-2 rounded-xl border border-primary/40 bg-primary/15 px-4 py-3 text-xs font-mono uppercase tracking-[0.16em] text-primary"
                 >
                   <Sparkles className="h-4 w-4" />
                   {t('socialComposePage.actions.connect')}
-                </a>
+                </button>
               ) : null}
             </div>
           </div>
@@ -1054,13 +1089,15 @@ function EditorPanel({
               {t('socialComposePage.editor.noAccounts')}
             </div>
           ) : platformAccounts.map((account) => (
-            <label key={account.id} className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-border bg-foreground/5 px-3 py-2 text-xs">
+            <label key={account.id} className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs ${account.requires_reconnect ? 'border-amber-500/40 bg-amber-500/10 text-amber-100' : 'cursor-pointer border-border bg-foreground/5'}`}>
               <input
                 type="checkbox"
                 checked={controller.selectedAccountIds.includes(account.id)}
                 onChange={() => controller.toggleAccount(account.id)}
+                disabled={account.requires_reconnect}
               />
-              {account.name}
+              <span>{account.name}</span>
+              {account.requires_reconnect ? <span className="uppercase text-[10px]">Reconnect</span> : null}
             </label>
           ))}
         </div>

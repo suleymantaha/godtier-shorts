@@ -7,6 +7,15 @@ import type { Clip, PublishJob, ShareDraftContent, SocialAccount, SocialPlatform
 import { getPlatformLabel } from './helpers';
 import type { ShareComposerController } from './useShareComposerController';
 
+function formatPublishState(job: PublishJob): string {
+  const state = job.state.replaceAll('_', ' ');
+  const delivery = String(job.delivery_status ?? '').trim();
+  if (!delivery || delivery === job.state) {
+    return state;
+  }
+  return `${state} / ${delivery.replaceAll('_', ' ')}`;
+}
+
 export function ShareComposerLayout({
   clip,
   controller,
@@ -294,17 +303,24 @@ function AccountsCard({
         {accounts.map((account) => (
           <label
             key={account.id}
-            className="flex items-center gap-2 rounded-lg border border-border px-2 py-2 text-xs cursor-pointer hover:bg-foreground/10"
+            className={`flex items-center gap-2 rounded-lg border px-2 py-2 text-xs ${account.requires_reconnect ? 'border-amber-500/40 bg-amber-500/10' : 'border-border cursor-pointer hover:bg-foreground/10'}`}
           >
             <input
               type="checkbox"
               checked={selectedAccountIds.includes(account.id)}
               onChange={() => onToggleAccount(account.id)}
               className="accent-primary"
+              disabled={account.requires_reconnect}
             />
             <span className="min-w-0">
               <span className="block font-medium truncate">{account.name}</span>
-              <span className="block text-[11px] text-muted-foreground">{getPlatformLabel(account.platform)}</span>
+              <span className="block text-[11px] text-muted-foreground">
+                {getPlatformLabel(account.platform)}
+                {account.requires_reconnect ? ' · reconnect required' : ''}
+              </span>
+              {account.requires_reconnect && account.health_error ? (
+                <span className="block text-[11px] text-amber-100">{account.health_error}</span>
+              ) : null}
             </span>
           </label>
         ))}
@@ -569,8 +585,9 @@ function JobRow({
     <div className="rounded-lg border border-border px-3 py-2 text-xs bg-background/40">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-semibold">{getPlatformLabel(job.platform)}</span>
-        <span className="text-muted-foreground">{job.state}</span>
+        <span className="text-muted-foreground">{formatPublishState(job)}</span>
         {job.scheduled_at && <span className="text-muted-foreground">{formatDateTime(job.scheduled_at, locale)}</span>}
+        {job.published_at && <span className="text-green-300">{formatDateTime(job.published_at, locale)}</span>}
         {job.last_error && <span className="text-red-300 truncate">{job.last_error}</span>}
         <span className="ml-auto text-[11px] text-muted-foreground">#{job.id.slice(0, 8)}</span>
       </div>

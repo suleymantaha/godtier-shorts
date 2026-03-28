@@ -226,7 +226,7 @@ describe('ClipGallery loading and empty states', () => {
 
     await waitFor(() => {
       expect(windowOpenMock).toHaveBeenCalledWith(
-        expect.stringContaining('/?tab=social-compose'),
+        expect.stringContaining('/social-compose'),
         '_self',
       );
       expect(windowOpenMock).toHaveBeenCalledWith(

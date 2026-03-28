@@ -11,7 +11,7 @@ describe('JobForm preferences', () => {
     await renderJobForm();
 
     await user.type(screen.getByLabelText(/source feed url/i), 'https://youtube.com/watch?v=test123');
-    await user.click(screen.getByRole('button', { name: /initialize sequence/i }));
+    await user.click(screen.getByRole('button', { name: /launch pipeline/i }));
 
     expect(mockStart).toHaveBeenCalledWith(expect.objectContaining({
       youtube_url: 'https://youtube.com/watch?v=test123',
@@ -30,7 +30,7 @@ describe('JobForm preferences', () => {
 
     expect(screen.getByLabelText(/ai core engine/i)).toHaveTextContent(/cloud/i);
     await user.type(screen.getByLabelText(/source feed url/i), 'https://youtube.com/watch?v=test123');
-    await user.click(screen.getByRole('button', { name: /initialize sequence/i }));
+    await user.click(screen.getByRole('button', { name: /launch pipeline/i }));
 
     expect(mockStart).toHaveBeenCalledWith(expect.objectContaining({ ai_engine: 'cloud' }));
   });

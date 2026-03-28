@@ -20,10 +20,10 @@ describe('jobForm helpers', () => {
     expect(readInitialEngine()).toBe('cloud');
   });
 
-  it('falls back to local engine for invalid stored values', () => {
+  it('falls back to cloud engine for invalid stored values', () => {
     window.localStorage.setItem('godtier-job-form-preferences', JSON.stringify({ engine: 'unsupported' }));
 
-    expect(readInitialEngine()).toBe('local');
+    expect(readInitialEngine()).toBe('cloud');
   });
 
   it('clamps clip count and durations into allowed bounds', () => {

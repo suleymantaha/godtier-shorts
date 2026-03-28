@@ -14,6 +14,7 @@ export const mockSaveCredentials = vi.fn();
 export const mockDeleteCredentials = vi.fn();
 export const mockApproveJob = vi.fn();
 export const mockCancelJob = vi.fn();
+export const mockStartConnection = vi.fn();
 
 vi.mock('../../api/client', () => ({
   clipsApi: {
@@ -30,14 +31,18 @@ vi.mock('../../api/client', () => ({
     publish: (...args: unknown[]) => mockPublish(...args),
     saveCredentials: (...args: unknown[]) => mockSaveCredentials(...args),
     saveDrafts: (...args: unknown[]) => mockSaveDrafts(...args),
+    startConnection: (...args: unknown[]) => mockStartConnection(...args),
   },
 }));
 
 export const shareComposerClip: Clip = {
-  created_at: Date.now(),
+  created_at: 123,
+  duration: 75,
   has_transcript: true,
   name: 'clip_1.mp4',
   project: 'proj_1',
+  resolved_project_id: 'proj_1',
+  ui_title: 'Hot Take',
   url: '/api/projects/proj_1/files/clip/clip_1.mp4',
 };
 
@@ -97,6 +102,7 @@ export function resetShareComposerMocks() {
   mockDeleteCredentials.mockResolvedValue({ provider: 'postiz', status: 'deleted' });
   mockApproveJob.mockResolvedValue({ status: 'approved' });
   mockCancelJob.mockResolvedValue({ status: 'cancelled' });
+  mockStartConnection.mockResolvedValue({ launch_url: 'https://postiz.example/connect', session_id: 'sess_1', status: 'launch_ready' });
 }
 
 export async function renderShareComposerModal(

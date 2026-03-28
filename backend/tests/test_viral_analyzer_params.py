@@ -11,7 +11,11 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from backend.services.viral_analyzer import ViralAnalyzer
-from backend.services.viral_analyzer_core import build_metadata_prompt, normalize_viral_segments
+from backend.services.viral_analyzer_core import (
+    build_metadata_prompt,
+    choose_representative_sentence,
+    normalize_viral_segments,
+)
 
 
 class TestBuildFallbackSegments:
@@ -195,10 +199,62 @@ class TestAnalyzeMetadataParams:
                 {
                     "start_time": 20.0,
                     "end_time": 160.0,
-                    "hook_text": "gecerli",
+                    "hook_text": "GECERLI",
                     "ui_title": "gecerli",
-                    "social_caption": "gecerli",
+                    "social_caption": "gecerli #shorts #viral",
                     "viral_score": 81,
+                }
+            ]
+        }
+
+    def test_choose_representative_sentence_skips_low_signal_opening(self):
+        transcript_data = [
+            {"text": "Herhalde üç beş yıl dışında her yerde yapıldı yer.", "start": 0.0, "end": 3.5},
+            {"text": "Ankara'nın mahkemeleri de bizleri yargılasın.", "start": 3.5, "end": 6.2},
+            {"text": "Ne güzel bak.", "start": 6.2, "end": 7.0},
+        ]
+
+        assert choose_representative_sentence(
+            transcript_data,
+            start_time=0.0,
+            end_time=7.0,
+        ) == "Ankara'nın mahkemeleri de bizleri yargılasın."
+
+    def test_normalize_viral_segments_enriches_low_signal_copy(self):
+        transcript_data = [
+            {"text": "Gençler bunu bilmeyebilir.", "start": 0.0, "end": 1.4},
+            {"text": "Çekiç güç diye bir gerçeklik var değil mi?", "start": 1.4, "end": 3.6},
+            {"text": "Çekiç güçte ne yapıldı?", "start": 6.5, "end": 7.9},
+        ]
+
+        result = normalize_viral_segments(
+            {
+                "segments": [
+                    {
+                        "start_time": 0.0,
+                        "end_time": 7.9,
+                        "hook_text": "GENÇLER BUNU BİLMEYEBİLİR",
+                        "ui_title": "Gençler bunu bilmeyebilir.",
+                        "social_caption": "Gençler bunu bilmeyebilir. #shorts #viral",
+                        "viral_score": 88,
+                    }
+                ]
+            },
+            transcript_data,
+            limit=1,
+            duration_min=5.0,
+            duration_max=15.0,
+        )
+
+        assert result == {
+            "segments": [
+                {
+                    "start_time": 0.0,
+                    "end_time": 7.9,
+                    "hook_text": "ÇEKIÇ GÜÇ DIYE BIR GERÇEKLIK VAR DEĞIL",
+                    "ui_title": "Çekiç güç diye bir gerçeklik var değil mi?",
+                    "social_caption": "Çekiç güç diye bir gerçeklik var değil mi? #shorts #viral",
+                    "viral_score": 88,
                 }
             ]
         }

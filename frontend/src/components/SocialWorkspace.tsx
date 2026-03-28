@@ -1,12 +1,22 @@
-import { AlertCircle, BarChart3, CalendarDays, CheckCircle2, ExternalLink, Link2, Loader2, RefreshCcw, Send, Share2, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import {
+  AlertCircle,
+  BarChart3,
+  CalendarDays,
+  CheckCircle2,
+  ExternalLink,
+  Link2,
+  Loader2,
+  RefreshCcw,
+  Share2,
+  Trash2,
+} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { socialApi } from '../api/client';
 import { resolveApiUrl } from '../utils/url';
 import type {
   PublishJob,
-  ShareDraftContent,
   SocialAccount,
   SocialAccountAnalytics,
   SocialAnalyticsOverview,
@@ -15,32 +25,8 @@ import type {
   SocialPostAnalytics,
   SocialProviderStatus,
 } from '../types';
-
-type ContentMap = Record<SocialPlatform, ShareDraftContent>;
-
-const SOCIAL_PLATFORMS: SocialPlatform[] = ['youtube_shorts', 'tiktok', 'instagram_reels', 'facebook_reels', 'x', 'linkedin'];
-
-function createEmptyContentMap(): ContentMap {
-  return {
-    facebook_reels: { hashtags: [], text: '', title: '' },
-    instagram_reels: { hashtags: [], text: '', title: '' },
-    linkedin: { hashtags: [], text: '', title: '' },
-    tiktok: { hashtags: [], text: '', title: '' },
-    x: { hashtags: [], text: '', title: '' },
-    youtube_shorts: { hashtags: [], text: '', title: '' },
-  };
-}
-
-function buildPublishTargets(accounts: SocialAccount[], selectedIds: string[], platform: SocialPlatform) {
-  const idSet = new Set(selectedIds);
-  return accounts
-    .filter((account) => account.platform === platform && idSet.has(account.id))
-    .map((account) => ({
-      account_id: account.id,
-      platform: account.platform,
-      provider: account.provider ?? undefined,
-    }));
-}
+import { clearSocialConnectStatusQuery, readSocialConnectStatusFromQuery } from './shareComposer/helpers';
+import { SOCIAL_COMPOSE_PATH } from '../app/helpers';
 
 function toDateTimeLocal(value?: string | null): string {
   if (!value) {
@@ -58,18 +44,54 @@ function toDateTimeLocal(value?: string | null): string {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
-function fromHashtagInput(value: string): string[] {
-  return value
-    .split(',')
-    .map((part) => part.trim().replace(/^#/, ''))
-    .filter(Boolean);
+function formatDateTime(value?: string | null, locale = 'en-US'): string {
+  if (!value) {
+    return '-';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat(locale, {
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(date);
+}
+
+function buildComposeHref(projectId?: string | null, clipName?: string | null): string | null {
+  if (!projectId || !clipName) {
+    return null;
+  }
+  const params = new URLSearchParams({
+    project_id: projectId,
+    clip_name: clipName,
+  });
+  return `${SOCIAL_COMPOSE_PATH}?${params.toString()}`;
+}
+
+function platformLabel(value: string): string {
+  return value.replaceAll('_', ' ');
+}
+
+function formatPublishState(job: PublishJob): string {
+  const state = job.state.replaceAll('_', ' ');
+  const delivery = String(job.delivery_status ?? '').trim();
+  if (!delivery || delivery === job.state) {
+    return state;
+  }
+  return `${state} / ${delivery.replaceAll('_', ' ')}`;
 }
 
 export function SocialWorkspace() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const query = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
-  const [projectId, setProjectId] = useState(query.get('project_id') ?? '');
-  const [clipName, setClipName] = useState(query.get('clip_name') ?? '');
+  const clipContext = useMemo(() => ({
+    clipName: query.get('clip_name'),
+    projectId: query.get('project_id'),
+  }), [query]);
   const [providers, setProviders] = useState<SocialProviderStatus[]>([]);
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [queue, setQueue] = useState<PublishJob[]>([]);
@@ -78,25 +100,12 @@ export function SocialWorkspace() {
   const [platformAnalytics, setPlatformAnalytics] = useState<SocialPlatformAnalytics[]>([]);
   const [accountAnalytics, setAccountAnalytics] = useState<SocialAccountAnalytics[]>([]);
   const [postAnalytics, setPostAnalytics] = useState<SocialPostAnalytics[]>([]);
-  const [contentByPlatform, setContentByPlatform] = useState<ContentMap>(createEmptyContentMap);
-  const [selectedPlatform, setSelectedPlatform] = useState<SocialPlatform>('youtube_shorts');
-  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
-  const [mode, setMode] = useState<'now' | 'scheduled'>('now');
-  const [scheduleAt, setScheduleAt] = useState(() => toDateTimeLocal(new Date(Date.now() + 60 * 60 * 1000).toISOString()));
   const [loading, setLoading] = useState(true);
-  const [publishing, setPublishing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const filteredAccounts = useMemo(
-    () => accounts.filter((account) => account.platform === selectedPlatform),
-    [accounts, selectedPlatform],
-  );
-  const activeContent = contentByPlatform[selectedPlatform];
-
-  const loadWorkspace = async (refreshAnalytics = false) => {
-    setLoading(true);
+  const loadWorkspace = useCallback(async (refreshAnalytics = false) => {
     setError(null);
     try {
       const [providersResp, connectionsResp, queueResp, calendarResp, overviewResp, accountsResp, postsResp] = await Promise.all([
@@ -118,54 +127,51 @@ export function SocialWorkspace() {
       setPostAnalytics(postsResp.posts ?? []);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : t('socialWorkspace.errors.loadFailed'));
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [t]);
 
   useEffect(() => {
-    void loadWorkspace();
-  }, []);
-
-  useEffect(() => {
-    if (!projectId || !clipName) {
-      return;
-    }
     let cancelled = false;
     void (async () => {
-      try {
-        const prefill = await socialApi.getPrefill(projectId, clipName);
-        if (cancelled) {
-          return;
-        }
-        setContentByPlatform(prefill.platforms as ContentMap);
-      } catch (prefillError) {
-        if (!cancelled) {
-          setError(prefillError instanceof Error ? prefillError.message : t('socialWorkspace.errors.prefillFailed'));
-        }
+      setLoading(true);
+      await loadWorkspace();
+      if (!cancelled) {
+        setLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [clipName, projectId, t]);
+  }, [loadWorkspace]);
 
   useEffect(() => {
-    if (filteredAccounts.length === 0) {
-      setSelectedAccountIds([]);
+    const connectStatus = readSocialConnectStatusFromQuery(window.location.search);
+    if (!connectStatus) {
       return;
     }
-    setSelectedAccountIds((current) => {
-      const available = new Set(filteredAccounts.map((account) => account.id));
-      const next = current.filter((id) => available.has(id));
-      if (next.length > 0) {
-        return next;
-      }
-      return [filteredAccounts[0].id];
-    });
-  }, [filteredAccounts]);
 
-  const handleSyncConnections = async () => {
+    clearSocialConnectStatusQuery();
+    if (connectStatus === 'error') {
+      setError(t('socialWorkspace.errors.connectionCallbackFailed'));
+      return;
+    }
+
+    setRefreshing(true);
+    setError(null);
+    void (async () => {
+      try {
+        await socialApi.syncConnections();
+        await loadWorkspace(true);
+        setSuccess(t('socialWorkspace.connections.connected'));
+      } catch (syncError) {
+        setError(syncError instanceof Error ? syncError.message : t('socialWorkspace.errors.syncFailed'));
+      } finally {
+        setRefreshing(false);
+      }
+    })();
+  }, [loadWorkspace, t]);
+
+  const handleSyncConnections = useCallback(async () => {
     setRefreshing(true);
     setError(null);
     try {
@@ -177,23 +183,26 @@ export function SocialWorkspace() {
     } finally {
       setRefreshing(false);
     }
-  };
+  }, [loadWorkspace, t]);
 
-  const handleStartConnection = async (platform: SocialPlatform) => {
+  const handleStartConnection = useCallback(async (platform: SocialPlatform) => {
     setRefreshing(true);
     setError(null);
+    setSuccess(null);
     try {
       const response = await socialApi.startConnection({ platform, return_url: window.location.href });
       window.open(resolveApiUrl(response.launch_url), '_blank', 'noopener,noreferrer');
-      setSuccess(t('socialWorkspace.connections.connectionStarted', { platform: providers.find((item) => item.platform === platform)?.title ?? platform }));
+      setSuccess(t('socialWorkspace.connections.connectionStarted', {
+        platform: providers.find((item) => item.platform === platform)?.title ?? platform,
+      }));
     } catch (connectError) {
       setError(connectError instanceof Error ? connectError.message : t('socialWorkspace.errors.connectionStartFailed'));
     } finally {
       setRefreshing(false);
     }
-  };
+  }, [providers, t]);
 
-  const handleDeleteConnection = async (accountId: string) => {
+  const handleDeleteConnection = useCallback(async (accountId: string) => {
     setRefreshing(true);
     setError(null);
     try {
@@ -203,9 +212,9 @@ export function SocialWorkspace() {
       setError(disconnectError instanceof Error ? disconnectError.message : t('socialWorkspace.errors.disconnectFailed'));
       setRefreshing(false);
     }
-  };
+  }, [handleSyncConnections, t]);
 
-  const handleRefreshAnalytics = async () => {
+  const handleRefreshAnalytics = useCallback(async () => {
     setRefreshing(true);
     setError(null);
     try {
@@ -214,42 +223,9 @@ export function SocialWorkspace() {
     } finally {
       setRefreshing(false);
     }
-  };
+  }, [loadWorkspace, t]);
 
-  const handlePublish = async () => {
-    if (!projectId || !clipName) {
-      setError(t('socialWorkspace.composer.clipRequired'));
-      return;
-    }
-    const targets = buildPublishTargets(accounts, selectedAccountIds, selectedPlatform);
-    if (targets.length === 0) {
-      setError(t('socialWorkspace.composer.accountRequired'));
-      return;
-    }
-
-    setPublishing(true);
-    setError(null);
-    setSuccess(null);
-    try {
-      await socialApi.publish({
-        project_id: projectId,
-        clip_name: clipName,
-        mode,
-        scheduled_at: mode === 'scheduled' ? scheduleAt : undefined,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        targets,
-        content_by_platform: contentByPlatform,
-      });
-      await loadWorkspace(true);
-      setSuccess(mode === 'scheduled' ? t('socialWorkspace.composer.scheduledSuccess') : t('socialWorkspace.composer.publishedSuccess'));
-    } catch (publishError) {
-      setError(publishError instanceof Error ? publishError.message : t('socialWorkspace.errors.publishFailed'));
-    } finally {
-      setPublishing(false);
-    }
-  };
-
-  const handleQueueAction = async (job: PublishJob, action: 'approve' | 'cancel') => {
+  const handleQueueAction = useCallback(async (job: PublishJob, action: 'approve' | 'cancel') => {
     setRefreshing(true);
     setError(null);
     try {
@@ -264,9 +240,9 @@ export function SocialWorkspace() {
     } finally {
       setRefreshing(false);
     }
-  };
+  }, [loadWorkspace, t]);
 
-  const handleReschedule = async (job: PublishJob, nextValue: string) => {
+  const handleReschedule = useCallback(async (job: PublishJob, nextValue: string) => {
     if (!nextValue) {
       return;
     }
@@ -284,25 +260,10 @@ export function SocialWorkspace() {
     } finally {
       setRefreshing(false);
     }
-  };
+  }, [loadWorkspace, t]);
 
-  const toggleAccountSelection = (accountId: string) => {
-    setSelectedAccountIds((current) => (
-      current.includes(accountId)
-        ? current.filter((item) => item !== accountId)
-        : [...current, accountId]
-    ));
-  };
-
-  const updateActiveContent = (patch: Partial<ShareDraftContent>) => {
-    setContentByPlatform((current) => ({
-      ...current,
-      [selectedPlatform]: {
-        ...current[selectedPlatform],
-        ...patch,
-      },
-    }));
-  };
+  const connectedAccounts = accounts;
+  const contextComposeHref = buildComposeHref(clipContext.projectId, clipContext.clipName);
 
   if (loading) {
     return (
@@ -316,17 +277,17 @@ export function SocialWorkspace() {
   }
 
   return (
-    <main className="grid grid-cols-1 gap-8 items-start">
+    <main className="mx-auto max-w-[1500px] space-y-6">
       <section className="glass-card border-accent/20 p-5 sm:p-6 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-2">
             <h2 className="text-sm font-mono uppercase tracking-[0.2em] text-primary flex items-center gap-2">
               <Share2 className="w-4 h-4" />
               {t('socialWorkspace.title')}
             </h2>
-            <p className="text-sm text-muted-foreground mt-2">{t('socialWorkspace.subtitle')}</p>
+            <p className="text-sm text-muted-foreground">{t('socialWorkspace.subtitle')}</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => void handleSyncConnections()}
@@ -343,8 +304,33 @@ export function SocialWorkspace() {
               <BarChart3 className={`w-3 h-3 ${refreshing ? 'animate-pulse' : ''}`} />
               {t('socialWorkspace.actions.refreshAnalytics')}
             </button>
+            {contextComposeHref ? (
+              <a
+                href={contextComposeHref}
+                className="inline-flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/15 px-3 py-2 text-xs font-mono uppercase text-primary"
+              >
+                <ExternalLink className="w-3 h-3" />
+                {t('socialWorkspace.actions.openContextCompose')}
+              </a>
+            ) : (
+              <a
+                href={SOCIAL_COMPOSE_PATH}
+                className="inline-flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/15 px-3 py-2 text-xs font-mono uppercase text-primary"
+              >
+                <ExternalLink className="w-3 h-3" />
+                {t('socialWorkspace.actions.openCompose')}
+              </a>
+            )}
           </div>
         </div>
+        {clipContext.projectId || clipContext.clipName ? (
+          <div className="rounded-xl border border-secondary/25 bg-secondary/10 px-4 py-3 text-xs text-secondary-foreground">
+            {t('socialWorkspace.context.active', {
+              clip: clipContext.clipName ?? t('socialWorkspace.context.none'),
+              project: clipContext.projectId ?? t('socialWorkspace.context.none'),
+            })}
+          </div>
+        ) : null}
         {error ? (
           <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200 flex items-center gap-2">
             <AlertCircle className="w-4 h-4" />
@@ -360,18 +346,38 @@ export function SocialWorkspace() {
       </section>
 
       <section className="grid grid-cols-1 xl:grid-cols-4 gap-4">
-        <OverviewCard label={t('socialWorkspace.overview.connectedAccounts')} value={String(overview?.connected_accounts ?? 0)} />
+        <OverviewCard label={t('socialWorkspace.overview.connectedAccounts')} value={String(overview?.connected_accounts ?? connectedAccounts.length)} />
         <OverviewCard label={t('socialWorkspace.overview.totalJobs')} value={String(overview?.total_jobs ?? 0)} />
         <OverviewCard label={t('socialWorkspace.overview.scheduled')} value={String(overview?.scheduled ?? 0)} />
         <OverviewCard label={t('socialWorkspace.overview.successRate')} value={overview && overview.total_jobs > 0 ? `${Math.round((overview.published / overview.total_jobs) * 100)}%` : '0%'} />
       </section>
 
-      <section className="grid grid-cols-1 xl:grid-cols-[1.05fr_1.35fr] gap-6">
+      <section className="grid grid-cols-1 xl:grid-cols-[1.4fr_0.95fr] gap-6">
+        <div className="space-y-6">
+          <Panel title={t('socialWorkspace.calendar.title')} icon={<CalendarDays className="w-4 h-4" />}>
+            {calendar.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t('socialWorkspace.calendar.empty')}</p>
+            ) : (
+              <div className="space-y-3">
+                {calendar.map((job) => (
+                  <CalendarRow
+                    key={job.id}
+                    job={job}
+                    locale={i18n.language === 'tr' ? 'tr-TR' : 'en-US'}
+                    onCancel={() => void handleQueueAction(job, 'cancel')}
+                    onReschedule={(value) => void handleReschedule(job, value)}
+                  />
+                ))}
+              </div>
+            )}
+          </Panel>
+        </div>
+
         <div className="space-y-6">
           <Panel title={t('socialWorkspace.connections.title')} icon={<Link2 className="w-4 h-4" />}>
             <div className="space-y-3">
               {providers.map((provider) => (
-                <div key={provider.platform} className="rounded-xl border border-border/70 bg-background/40 p-3 space-y-2">
+                <div key={provider.platform} className="rounded-xl border border-border/70 bg-background/40 p-3 space-y-3">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <div className="text-sm font-semibold text-foreground">{provider.title}</div>
@@ -390,8 +396,9 @@ export function SocialWorkspace() {
                     {provider.accounts.length === 0 ? (
                       <span className="text-xs text-muted-foreground">{t('socialWorkspace.connections.noAccounts')}</span>
                     ) : provider.accounts.map((account) => (
-                      <div key={account.id} className="inline-flex items-center gap-2 rounded-full border border-border bg-foreground/5 px-3 py-1 text-xs">
+                      <div key={account.id} className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${account.requires_reconnect ? 'border-amber-500/40 bg-amber-500/10 text-amber-100' : 'border-border bg-foreground/5'}`}>
                         <span>{account.name}</span>
+                        {account.requires_reconnect ? <span className="text-[10px] uppercase">Reconnect</span> : null}
                         <button type="button" onClick={() => void handleDeleteConnection(account.id)} className="text-muted-foreground hover:text-red-300">
                           <Trash2 className="w-3 h-3" />
                         </button>
@@ -403,13 +410,28 @@ export function SocialWorkspace() {
             </div>
           </Panel>
 
+          <Panel title={t('socialWorkspace.queue.title')} icon={<Share2 className="w-4 h-4" />}>
+            <div className="space-y-3">
+              {queue.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{t('socialWorkspace.queue.empty')}</p>
+              ) : queue.slice(0, 12).map((job) => (
+                <QueueRow
+                  key={job.id}
+                  job={job}
+                  onApprove={() => void handleQueueAction(job, 'approve')}
+                  onCancel={() => void handleQueueAction(job, 'cancel')}
+                />
+              ))}
+            </div>
+          </Panel>
+
           <Panel title={t('socialWorkspace.analytics.title')} icon={<BarChart3 className="w-4 h-4" />}>
             <div className="space-y-4">
               <AnalyticsTable
                 title={t('socialWorkspace.analytics.platforms')}
                 rows={platformAnalytics.map((item) => ({
                   id: item.platform,
-                  name: item.platform,
+                  name: platformLabel(item.platform),
                   meta: `${item.published}/${item.total_jobs} ${t('socialWorkspace.analytics.publishedShort')}`,
                 }))}
               />
@@ -432,174 +454,125 @@ export function SocialWorkspace() {
             </div>
           </Panel>
         </div>
-
-        <div className="space-y-6">
-          <Panel title={t('socialWorkspace.composer.title')} icon={<Send className="w-4 h-4" />}>
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <label className="space-y-2 text-xs text-muted-foreground">
-                  <span>{t('socialWorkspace.composer.projectId')}</span>
-                  <input value={projectId} onChange={(event) => setProjectId(event.target.value)} className="w-full rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-foreground" />
-                </label>
-                <label className="space-y-2 text-xs text-muted-foreground">
-                  <span>{t('socialWorkspace.composer.clipName')}</span>
-                  <input value={clipName} onChange={(event) => setClipName(event.target.value)} className="w-full rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-foreground" />
-                </label>
-              </div>
-              {!projectId || !clipName ? (
-                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                  {t('socialWorkspace.composer.clipRequired')}
-                </div>
-              ) : null}
-              <div className="flex flex-wrap gap-2">
-                {SOCIAL_PLATFORMS.map((platform) => (
-                  <button
-                    key={platform}
-                    type="button"
-                    onClick={() => setSelectedPlatform(platform)}
-                    className={`rounded-full px-3 py-1 text-xs border ${selectedPlatform === platform ? 'border-primary/50 bg-primary/15 text-primary' : 'border-border bg-foreground/5 text-muted-foreground'}`}
-                  >
-                    {platform}
-                  </button>
-                ))}
-              </div>
-              <label className="space-y-2 text-xs text-muted-foreground">
-                <span>{t('socialWorkspace.composer.titleLabel')}</span>
-                <input
-                  value={activeContent.title}
-                  onChange={(event) => updateActiveContent({ title: event.target.value })}
-                  className="w-full rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-foreground"
-                />
-              </label>
-              <label className="space-y-2 text-xs text-muted-foreground">
-                <span>{t('socialWorkspace.composer.textLabel')}</span>
-                <textarea
-                  value={activeContent.text}
-                  onChange={(event) => updateActiveContent({ text: event.target.value })}
-                  rows={5}
-                  className="w-full rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-foreground"
-                />
-              </label>
-              <label className="space-y-2 text-xs text-muted-foreground">
-                <span>{t('socialWorkspace.composer.hashtagsLabel')}</span>
-                <input
-                  value={activeContent.hashtags.join(', ')}
-                  onChange={(event) => updateActiveContent({ hashtags: fromHashtagInput(event.target.value) })}
-                  className="w-full rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-foreground"
-                />
-              </label>
-              <div className="space-y-2">
-                <div className="text-xs text-muted-foreground">{t('socialWorkspace.composer.accountsLabel')}</div>
-                <div className="flex flex-wrap gap-2">
-                  {filteredAccounts.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">{t('socialWorkspace.composer.noAccountsForPlatform')}</span>
-                  ) : filteredAccounts.map((account) => (
-                    <label key={account.id} className="inline-flex items-center gap-2 rounded-full border border-border bg-foreground/5 px-3 py-2 text-xs cursor-pointer">
-                      <input type="checkbox" checked={selectedAccountIds.includes(account.id)} onChange={() => toggleAccountSelection(account.id)} />
-                      {account.name}
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <label className="space-y-2 text-xs text-muted-foreground">
-                  <span>{t('socialWorkspace.composer.modeLabel')}</span>
-                  <select value={mode} onChange={(event) => setMode(event.target.value === 'scheduled' ? 'scheduled' : 'now')} className="w-full rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-foreground">
-                    <option value="now">{t('socialWorkspace.composer.publishNow')}</option>
-                    <option value="scheduled">{t('socialWorkspace.composer.schedule')}</option>
-                  </select>
-                </label>
-                <label className="space-y-2 text-xs text-muted-foreground">
-                  <span>{t('socialWorkspace.composer.scheduleAt')}</span>
-                  <input type="datetime-local" value={scheduleAt} onChange={(event) => setScheduleAt(event.target.value)} disabled={mode !== 'scheduled'} className="w-full rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-foreground disabled:opacity-50" />
-                </label>
-              </div>
-              <button
-                type="button"
-                onClick={() => void handlePublish()}
-                disabled={publishing}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-primary/40 bg-primary/15 px-4 py-3 text-xs font-mono uppercase text-primary disabled:opacity-50"
-              >
-                {publishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                {mode === 'scheduled' ? t('socialWorkspace.composer.schedule') : t('socialWorkspace.composer.publishNow')}
-              </button>
-            </div>
-          </Panel>
-
-          <Panel title={t('socialWorkspace.queue.title')} icon={<Share2 className="w-4 h-4" />}>
-            <div className="space-y-3">
-              {queue.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{t('socialWorkspace.queue.empty')}</p>
-              ) : queue.slice(0, 12).map((job) => (
-                <div key={job.id} className="rounded-xl border border-border bg-background/40 p-3 space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold text-foreground">{job.clip_name}</div>
-                      <div className="text-xs text-muted-foreground">{job.platform} · {job.state}</div>
-                    </div>
-                    <div className="flex gap-2">
-                      {job.state === 'pending_approval' ? (
-                        <button type="button" onClick={() => void handleQueueAction(job, 'approve')} className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[11px] font-mono uppercase text-emerald-100">
-                          {t('socialWorkspace.queue.approve')}
-                        </button>
-                      ) : null}
-                      {job.state !== 'cancelled' && job.state !== 'published' ? (
-                        <button type="button" onClick={() => void handleQueueAction(job, 'cancel')} className="rounded-lg border border-border bg-foreground/5 px-3 py-1 text-[11px] font-mono uppercase text-muted-foreground">
-                          {t('common.actions.cancel')}
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                  {job.timeline?.length ? (
-                    <div className="space-y-1">
-                      {job.timeline.slice(-3).map((item) => (
-                        <div key={`${job.id}:${item.at}:${item.state}`} className="text-[11px] text-muted-foreground">
-                          {item.state} · {item.message}
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          </Panel>
-
-          <Panel title={t('socialWorkspace.calendar.title')} icon={<CalendarDays className="w-4 h-4" />}>
-            <div className="space-y-3">
-              {calendar.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{t('socialWorkspace.calendar.empty')}</p>
-              ) : calendar.map((job) => (
-                <div key={job.id} className="rounded-xl border border-border bg-background/40 p-3 space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold text-foreground">{job.clip_name}</div>
-                      <div className="text-xs text-muted-foreground">{job.platform} · {job.state}</div>
-                    </div>
-                    <button type="button" onClick={() => void handleQueueAction(job, 'cancel')} className="rounded-lg border border-border bg-foreground/5 px-3 py-1 text-[11px] font-mono uppercase text-muted-foreground">
-                      {t('common.actions.cancel')}
-                    </button>
-                  </div>
-                  <input
-                    type="datetime-local"
-                    defaultValue={toDateTimeLocal(job.scheduled_at)}
-                    onBlur={(event) => {
-                      if (event.target.value && event.target.value !== toDateTimeLocal(job.scheduled_at)) {
-                        void handleReschedule(job, event.target.value);
-                      }
-                    }}
-                    className="w-full rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-foreground"
-                  />
-                </div>
-              ))}
-            </div>
-          </Panel>
-        </div>
       </section>
     </main>
   );
 }
 
-function Panel({ children, icon, title }: { children: React.ReactNode; icon: React.ReactNode; title: string }) {
+function CalendarRow({
+  job,
+  locale,
+  onCancel,
+  onReschedule,
+}: {
+  job: PublishJob;
+  locale: string;
+  onCancel: () => void;
+  onReschedule: (value: string) => void;
+}) {
+  const { t } = useTranslation();
+  const composeHref = buildComposeHref(job.project_id, job.clip_name);
+
+  return (
+    <div className="rounded-xl border border-border bg-background/40 p-4 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-foreground">{job.clip_name}</div>
+          <div className="text-xs text-muted-foreground">
+            {platformLabel(job.platform)} · {formatPublishState(job)} · {formatDateTime(job.scheduled_at, locale)}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {composeHref ? (
+            <a href={composeHref} className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] font-mono uppercase text-primary">
+              {t('socialWorkspace.calendar.openCompose')}
+            </a>
+          ) : null}
+          <button type="button" onClick={onCancel} className="rounded-lg border border-border bg-foreground/5 px-3 py-1 text-[11px] font-mono uppercase text-muted-foreground">
+            {t('common.actions.cancel')}
+          </button>
+        </div>
+      </div>
+      <input
+        type="datetime-local"
+        defaultValue={toDateTimeLocal(job.scheduled_at)}
+        onBlur={(event) => {
+          if (event.target.value && event.target.value !== toDateTimeLocal(job.scheduled_at)) {
+            onReschedule(event.target.value);
+          }
+        }}
+        className="w-full rounded-lg border border-border bg-background/70 px-3 py-2 text-sm text-foreground"
+      />
+      {job.timeline?.length ? (
+        <div className="space-y-1">
+          {job.last_error ? (
+            <div className="text-[11px] text-red-300">{job.last_error}</div>
+          ) : null}
+          {job.timeline.slice(-3).map((item) => (
+            <div key={`${job.id}:${item.at}:${item.state}`} className="text-[11px] text-muted-foreground">
+              {item.state} · {item.message}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function QueueRow({
+  job,
+  onApprove,
+  onCancel,
+}: {
+  job: PublishJob;
+  onApprove: () => void;
+  onCancel: () => void;
+}) {
+  const { t } = useTranslation();
+  const composeHref = buildComposeHref(job.project_id, job.clip_name);
+
+  return (
+    <div className="rounded-xl border border-border bg-background/40 p-3 space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-foreground">{job.clip_name}</div>
+          <div className="text-xs text-muted-foreground">{platformLabel(job.platform)} · {formatPublishState(job)}</div>
+        </div>
+        <div className="flex gap-2">
+          {composeHref ? (
+            <a href={composeHref} className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] font-mono uppercase text-primary">
+              {t('socialWorkspace.queue.openCompose')}
+            </a>
+          ) : null}
+          {job.state === 'pending_approval' ? (
+            <button type="button" onClick={onApprove} className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[11px] font-mono uppercase text-emerald-100">
+              {t('socialWorkspace.queue.approve')}
+            </button>
+          ) : null}
+          {job.state !== 'cancelled' && job.state !== 'published' ? (
+            <button type="button" onClick={onCancel} className="rounded-lg border border-border bg-foreground/5 px-3 py-1 text-[11px] font-mono uppercase text-muted-foreground">
+              {t('common.actions.cancel')}
+            </button>
+          ) : null}
+        </div>
+      </div>
+      {job.timeline?.length ? (
+        <div className="space-y-1">
+          {job.last_error ? (
+            <div className="text-[11px] text-red-300">{job.last_error}</div>
+          ) : null}
+          {job.timeline.slice(-3).map((item) => (
+            <div key={`${job.id}:${item.at}:${item.state}`} className="text-[11px] text-muted-foreground">
+              {item.state} · {item.message}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function Panel({ children, icon, title }: { children: ReactNode; icon: ReactNode; title: string }) {
   return (
     <section className="glass-card border-white/10 p-5 sm:p-6 space-y-4">
       <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-[0.18em] text-accent">

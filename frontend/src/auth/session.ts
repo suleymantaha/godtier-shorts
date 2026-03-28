@@ -57,6 +57,18 @@ export function isTokenUsable(token: string | null, tokenExpiresAt: number | nul
   return tokenExpiresAt - AUTH_TOKEN_EXPIRY_SKEW_MS > now;
 }
 
+export function isTokenActive(token: string | null, tokenExpiresAt: number | null, now = Date.now()): boolean {
+  if (!token) {
+    return false;
+  }
+
+  if (tokenExpiresAt === null) {
+    return true;
+  }
+
+  return tokenExpiresAt > now;
+}
+
 export function buildAuthSnapshot({
   isSignedIn,
   sessionId = null,

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '../../i18n';
 import {
   mockClipsList,
+  mockGetAccounts,
   mockGetPrefill,
   mockPublish,
   resetShareComposerMocks,
@@ -32,7 +33,7 @@ describe('SocialComposePage', () => {
     window.history.replaceState(
       {},
       '',
-      '/?tab=social-compose&project_id=proj_1&clip_name=clip_1.mp4&clip_url=%2Fapi%2Fprojects%2Fproj_1%2Ffiles%2Fclip%2Fclip_1.mp4&clip_title=Hot%20Take&clip_created_at=123&clip_duration=75',
+      '/social-compose?project_id=proj_1&clip_name=clip_1.mp4',
     );
   });
 
@@ -62,7 +63,7 @@ describe('SocialComposePage', () => {
   });
 
   it('lets users pick and clear a clip from the compose tab when no clip query exists', async () => {
-    window.history.replaceState({}, '', '/?tab=social-compose');
+    window.history.replaceState({}, '', '/social-compose');
     mockClipsList.mockResolvedValue({
       clips: [{
         created_at: 777,
@@ -90,7 +91,7 @@ describe('SocialComposePage', () => {
     expect(await screen.findByRole('heading', { name: 'Batch 7 Test' })).toBeInTheDocument();
     await waitFor(() => {
       expect(mockGetPrefill).toHaveBeenCalledWith('proj_7', 'batch_7_test.mp4');
-      expect(window.location.search).toContain('tab=social-compose');
+      expect(window.location.pathname).toBe('/social-compose');
       expect(window.location.search).toContain('clip_name=batch_7_test.mp4');
     });
 
@@ -100,6 +101,37 @@ describe('SocialComposePage', () => {
 
     expect(await screen.findByText(/no clip selected yet/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /publish now/i })).toBeDisabled();
-    expect(window.location.search).toBe('?tab=social-compose');
+    expect(window.location.pathname).toBe('/social-compose');
+    expect(window.location.search).toBe('');
+  });
+
+  it('refreshes connected accounts from social_connect callback signal and clears the query', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/social-compose?project_id=proj_1&clip_name=clip_1.mp4&social_connect=success&session_id=sess_1&platform=youtube_shorts',
+    );
+    mockGetAccounts.mockResolvedValueOnce({
+      accounts: [],
+      connected: false,
+      connection_mode: 'managed',
+      connect_url: null,
+      provider: 'postiz',
+    });
+    mockGetAccounts.mockResolvedValueOnce({
+      accounts: [{ id: 'acc_yt', name: 'YT Return', platform: 'youtube_shorts', provider: 'youtube' }],
+      connected: true,
+      connection_mode: 'managed',
+      connect_url: null,
+      provider: 'postiz',
+    });
+
+    const { SocialComposePage } = await import('../../components/SocialComposePage');
+    render(<SocialComposePage />);
+
+    expect(await screen.findByText(/postiz account connected\./i)).toBeInTheDocument();
+    expect(await screen.findByText(/yt return/i)).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/social-compose');
+    expect(window.location.search).toBe('?project_id=proj_1&clip_name=clip_1.mp4');
   });
 });

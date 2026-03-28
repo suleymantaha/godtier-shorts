@@ -131,6 +131,9 @@ class SocialStore:
                     username TEXT,
                     avatar_url TEXT,
                     disabled INTEGER NOT NULL DEFAULT 0,
+                    health_status TEXT,
+                    health_error TEXT,
+                    health_updated_at TEXT,
                     raw_json TEXT NOT NULL,
                     last_seen_at TEXT NOT NULL,
                     disconnected_at TEXT,
@@ -175,6 +178,10 @@ class SocialStore:
                 row["name"]
                 for row in conn.execute("PRAGMA table_info(social_credentials)").fetchall()
             }
+            account_columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(social_account_cache)").fetchall()
+            }
             if "provider_job_id" not in columns:
                 conn.execute("ALTER TABLE social_publish_jobs ADD COLUMN provider_job_id TEXT")
                 columns.add("provider_job_id")
@@ -212,6 +219,14 @@ class SocialStore:
                 if column_name not in credential_columns:
                     conn.execute(ddl)
                     credential_columns.add(column_name)
+            for column_name, ddl in (
+                ("health_status", "ALTER TABLE social_account_cache ADD COLUMN health_status TEXT"),
+                ("health_error", "ALTER TABLE social_account_cache ADD COLUMN health_error TEXT"),
+                ("health_updated_at", "ALTER TABLE social_account_cache ADD COLUMN health_updated_at TEXT"),
+            ):
+                if column_name not in account_columns:
+                    conn.execute(ddl)
+                    account_columns.add(column_name)
             conn.commit()
 
     def save_credential(self, subject: str, provider: str, encrypted_api_key: str, workspace_id: str | None) -> None:
@@ -489,6 +504,7 @@ class SocialStore:
         analytics_refreshed_at: str | None = None,
         calendar_bucket: str | None = None,
         increment_attempt: bool = False,
+        append_timeline: bool = True,
     ) -> bool:
         now = utcnow_iso()
         with self._lock, self._connect() as conn:
@@ -507,7 +523,8 @@ class SocialStore:
                 timeline = json.loads(row["timeline_json"] or "[]")
             except ValueError:
                 timeline = []
-            timeline.append({"state": state, "message": message, "at": now})
+            if append_timeline:
+                timeline.append({"state": state, "message": message, "at": now})
 
             conn.execute(
                 """
@@ -788,7 +805,13 @@ class SocialStore:
             conn.commit()
             return cur.rowcount > 0
 
-    def replace_account_cache(self, subject: str, accounts: list[dict[str, Any]]) -> None:
+    def replace_account_cache(
+        self,
+        subject: str,
+        accounts: list[dict[str, Any]],
+        *,
+        reset_health: bool = False,
+    ) -> None:
         now = utcnow_iso()
         with self._lock, self._connect() as conn:
             existing_ids = {
@@ -805,23 +828,60 @@ class SocialStore:
                     continue
                 seen_ids.add(account_id)
                 conn.execute(
-                    """
-                    INSERT INTO social_account_cache(
-                        subject, account_id, platform, provider, name, username, avatar_url,
-                        disabled, raw_json, last_seen_at, disconnected_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(subject, account_id)
-                    DO UPDATE SET
-                        platform=excluded.platform,
-                        provider=excluded.provider,
-                        name=excluded.name,
-                        username=excluded.username,
-                        avatar_url=excluded.avatar_url,
-                        disabled=excluded.disabled,
-                        raw_json=excluded.raw_json,
-                        last_seen_at=excluded.last_seen_at,
-                        disconnected_at=NULL
-                    """,
+                    (
+                        """
+                        INSERT INTO social_account_cache(
+                            subject, account_id, platform, provider, name, username, avatar_url,
+                            disabled, health_status, health_error, health_updated_at,
+                            raw_json, last_seen_at, disconnected_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(subject, account_id)
+                        DO UPDATE SET
+                            platform=excluded.platform,
+                            provider=excluded.provider,
+                            name=excluded.name,
+                            username=excluded.username,
+                            avatar_url=excluded.avatar_url,
+                            disabled=excluded.disabled,
+                            health_status='healthy',
+                            health_error=NULL,
+                            health_updated_at=excluded.last_seen_at,
+                            raw_json=excluded.raw_json,
+                            last_seen_at=excluded.last_seen_at,
+                            disconnected_at=NULL
+                        """
+                        if reset_health
+                        else
+                        """
+                        INSERT INTO social_account_cache(
+                            subject, account_id, platform, provider, name, username, avatar_url,
+                            disabled, health_status, health_error, health_updated_at,
+                            raw_json, last_seen_at, disconnected_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(subject, account_id)
+                        DO UPDATE SET
+                            platform=excluded.platform,
+                            provider=excluded.provider,
+                            name=excluded.name,
+                            username=excluded.username,
+                            avatar_url=excluded.avatar_url,
+                            disabled=excluded.disabled,
+                            health_status=COALESCE(social_account_cache.health_status, 'healthy'),
+                            health_error=CASE
+                                WHEN social_account_cache.health_status = 'reconnect_required'
+                                THEN social_account_cache.health_error
+                                ELSE NULL
+                            END,
+                            health_updated_at=CASE
+                                WHEN social_account_cache.health_status = 'reconnect_required'
+                                THEN COALESCE(social_account_cache.health_updated_at, excluded.last_seen_at)
+                                ELSE NULL
+                            END,
+                            raw_json=excluded.raw_json,
+                            last_seen_at=excluded.last_seen_at,
+                            disconnected_at=NULL
+                        """
+                    ),
                     (
                         subject,
                         account_id,
@@ -831,6 +891,9 @@ class SocialStore:
                         account.get("username"),
                         account.get("avatar_url"),
                         1 if bool(account.get("disabled")) else 0,
+                        "healthy",
+                        None,
+                        now,
                         json.dumps(account, ensure_ascii=False),
                         now,
                         None,
@@ -867,6 +930,8 @@ class SocialStore:
                 item["raw"] = {}
             item["id"] = item["account_id"]
             item["disabled"] = bool(item.get("disabled"))
+            item["health_status"] = str(item.get("health_status") or "healthy")
+            item["requires_reconnect"] = item["health_status"] == "reconnect_required"
             item.pop("raw_json", None)
             out.append(item)
         return out
@@ -881,6 +946,33 @@ class SocialStore:
                 WHERE subject = ? AND account_id = ?
                 """,
                 (utcnow_iso(), subject, account_id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
+    def mark_account_reconnect_required(
+        self,
+        subject: str,
+        account_id: str,
+        *,
+        error: str | None = None,
+    ) -> bool:
+        now = utcnow_iso()
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                """
+                UPDATE social_account_cache
+                SET health_status = 'reconnect_required',
+                    health_error = ?,
+                    health_updated_at = ?
+                WHERE subject = ? AND account_id = ?
+                """,
+                (
+                    error,
+                    now,
+                    subject,
+                    account_id,
+                ),
             )
             conn.commit()
             return cur.rowcount > 0

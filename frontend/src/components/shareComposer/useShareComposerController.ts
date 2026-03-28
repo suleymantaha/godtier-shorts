@@ -5,6 +5,7 @@ import { socialApi } from '../../api/client';
 import { resolveApiUrl } from '../../utils/url';
 import type { Clip, PublishJob, ShareDraftContent, SocialAccount, SocialConnectionMode, SocialPlatform } from '../../types';
 import {
+  clearSocialConnectStatusQuery,
   clearManagedConnectPending,
   clearSocialOAuthStatusQuery,
   DEFAULT_PLATFORM,
@@ -20,6 +21,7 @@ import {
   nowPlusHourLocal,
   openSocialComposeWindow,
   parseLocalDraftBuffer,
+  readSocialConnectStatusFromQuery,
   readSocialOAuthStatusFromQuery,
   resolveProjectId,
   summarizePublishErrors,
@@ -118,14 +120,16 @@ function useShareComposerData({
   projectId: string | null;
   setState: Dispatch<SetStateAction<ShareComposerState>>;
 }) {
+  const clipName = clip?.name ?? null;
+
   const loadData = useCallback(async () => {
-    if (!open || !clip || !projectId) {
+    if (!open || !clipName || !projectId) {
       return null;
     }
 
     setState((current) => ({ ...current, error: null, loading: true }));
     try {
-      const loaded = await fetchShareComposerData(projectId, clip.name);
+      const loaded = await fetchShareComposerData(projectId, clipName);
       setState((current) => ({
         ...current,
         ...loaded,
@@ -142,7 +146,7 @@ function useShareComposerData({
     } finally {
       setState((current) => ({ ...current, loading: false }));
     }
-  }, [clip, open, projectId, setState]);
+  }, [clipName, open, projectId, setState]);
 
   useEffect(() => {
     if (!open) {
@@ -226,11 +230,13 @@ function useManagedOAuthCallbackSignal({
       return;
     }
 
+    const connectStatus = readSocialConnectStatusFromQuery(window.location.search);
     const oauthStatus = readSocialOAuthStatusFromQuery(window.location.search);
-    if (!oauthStatus) {
+    if (!connectStatus && !oauthStatus) {
       return;
     }
 
+    clearSocialConnectStatusQuery();
     clearSocialOAuthStatusQuery();
     clearManagedConnectPending();
     setState((current) => ({
@@ -238,10 +244,20 @@ function useManagedOAuthCallbackSignal({
       managedConnectionPending: false,
     }));
 
-    if (oauthStatus === 'error') {
+    if (connectStatus === 'error' || oauthStatus === 'error') {
       setState((current) => ({
         ...current,
         error: tSafe('shareComposer.connection.oauthError'),
+        success: null,
+      }));
+      return;
+    }
+
+    if (connectStatus === 'pending') {
+      setState((current) => ({
+        ...current,
+        error: null,
+        managedConnectionPending: true,
         success: null,
       }));
       return;
@@ -523,7 +539,9 @@ function useShareComposerDraftActions({
   const toggleAccount = useCallback((accountId: string) => {
     setState((current) => ({
       ...current,
-      selectedAccountIds: toggleSelection(current.selectedAccountIds, accountId),
+      selectedAccountIds: current.accounts.find((account) => account.id === accountId)?.requires_reconnect
+        ? current.selectedAccountIds
+        : toggleSelection(current.selectedAccountIds, accountId),
     }));
   }, [setState]);
 
@@ -559,6 +577,35 @@ export function useShareComposerController({ clip, open }: UseShareComposerContr
   const handleRefreshConnection = useCallback(async () => {
     await loadData();
   }, [loadData]);
+
+  const handleManagedConnectionFlow = useCallback(async (platform: SocialPlatform = state.selectedPlatform) => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    markManagedConnectPending();
+    setState((current) => ({
+      ...current,
+      error: null,
+      managedConnectionPending: true,
+      success: null,
+    }));
+
+    try {
+      const response = await socialApi.startConnection({
+        platform,
+        return_url: window.location.href,
+      });
+      window.open(resolveApiUrl(response.launch_url), '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      clearManagedConnectPending();
+      setState((current) => ({
+        ...current,
+        error: getErrorMessage(error, tSafe('shareComposer.connection.connectFailed')),
+        managedConnectionPending: false,
+      }));
+    }
+  }, [setState, state.selectedPlatform]);
 
   useShareComposerAutosave({
     clip,
@@ -607,6 +654,7 @@ export function useShareComposerController({ clip, open }: UseShareComposerContr
         success: null,
       }));
     },
+    handleManagedConnectionFlow,
     projectId,
     publishing: state.publishing,
     openSocialWorkspace: () => {

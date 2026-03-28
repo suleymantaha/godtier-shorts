@@ -34,7 +34,7 @@ class GodTierShortsCreator:
         self.clip_event_port = clip_event_port or NullClipEventPort()
         self.project: Optional[ProjectPaths] = None
         self.command_runner = CommandRunner(cancel_event=self.cancel_event)
-        self.analyzer = ViralAnalyzer(engine="local")
+        self.analyzer = ViralAnalyzer(engine="cloud")
         self.video_processor = VideoProcessor(model_version=str(YOLO_MODEL_PATH), device="cuda")
         self.gpu_stage_lock = gpu_stage_lock
     def cleanup_gpu(self) -> None:

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 import type { AppErrorCode } from '../api/errors';
-import { getCachedToken, isTokenUsable, resolveTokenExpiration } from './session';
+import { getCachedToken, isTokenActive, resolveTokenExpiration } from './session';
 
 export type BackendAuthStatus = 'fresh' | 'paused' | 'refreshing';
 
@@ -40,7 +40,7 @@ function canUseProtectedFallback(reason: AppErrorCode, tokenExpiresAt: number | 
   const cachedTokenExpiresAt = resolveTokenExpiration(cachedToken);
   const effectiveTokenExpiresAt = tokenExpiresAt ?? cachedTokenExpiresAt;
 
-  return isTokenUsable(cachedToken, effectiveTokenExpiresAt);
+  return isTokenActive(cachedToken, effectiveTokenExpiresAt);
 }
 
 function buildInitialState(): AuthRuntimeState {
@@ -70,7 +70,7 @@ export const useAuthRuntimeStore = create<AuthRuntimeStore>((set) => ({
   setBackendIdentity: (identity) => set({ backendIdentity: identity }),
   setProtectedRequestsFresh: (token) => {
     const tokenExpiresAt = resolveTokenExpiration(token);
-    const canUseProtectedRequests = isTokenUsable(token, tokenExpiresAt);
+    const canUseProtectedRequests = isTokenActive(token, tokenExpiresAt);
 
     set({
       backendAuthStatus: canUseProtectedRequests ? 'fresh' : 'paused',

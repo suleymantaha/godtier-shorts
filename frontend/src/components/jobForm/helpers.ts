@@ -13,7 +13,7 @@ import type { StartJobPayload } from '../../types';
 import { readStored } from '../../utils/storage';
 
 export const JOB_FORM_PREFS_STORAGE_KEY = 'godtier-job-form-preferences';
-export const DEFAULT_ENGINE = 'local';
+export const DEFAULT_ENGINE = 'cloud';
 export const DEFAULT_AUTO_DURATION_RANGE = { max: 180, min: 120 } as const;
 export const CLIP_COUNT_LIMITS = { max: 20, min: 1 } as const;
 export const DURATION_LIMITS = { max: 300, min: 30 } as const;

@@ -58,4 +58,16 @@ describe('auth runtime fallback access', () => {
       pauseReason: 'token_expired',
     });
   });
+
+  it('marks protected requests fresh while a short-lived token is still active', () => {
+    const token = createToken(30);
+
+    useAuthRuntimeStore.getState().setProtectedRequestsFresh(token);
+
+    expect(useAuthRuntimeStore.getState()).toMatchObject({
+      backendAuthStatus: 'fresh',
+      canUseProtectedRequests: true,
+      pauseReason: null,
+    });
+  });
 });

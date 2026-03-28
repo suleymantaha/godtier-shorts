@@ -11,11 +11,9 @@ const mockGetCalendar = vi.fn();
 const mockGetAnalyticsOverview = vi.fn();
 const mockGetAnalyticsAccounts = vi.fn();
 const mockGetAnalyticsPosts = vi.fn();
-const mockGetPrefill = vi.fn();
 const mockStartConnection = vi.fn();
 const mockSyncConnections = vi.fn();
 const mockDeleteConnection = vi.fn();
-const mockPublish = vi.fn();
 const mockApproveJob = vi.fn();
 const mockCancelJob = vi.fn();
 const mockUpdateCalendarItem = vi.fn();
@@ -31,10 +29,8 @@ vi.mock('../../api/client', () => ({
     getAnalyticsPosts: (...args: unknown[]) => mockGetAnalyticsPosts(...args),
     getCalendar: (...args: unknown[]) => mockGetCalendar(...args),
     getConnections: (...args: unknown[]) => mockGetConnections(...args),
-    getPrefill: (...args: unknown[]) => mockGetPrefill(...args),
     getProviders: (...args: unknown[]) => mockGetProviders(...args),
     getQueue: (...args: unknown[]) => mockGetQueue(...args),
-    publish: (...args: unknown[]) => mockPublish(...args),
     startConnection: (...args: unknown[]) => mockStartConnection(...args),
     syncConnections: (...args: unknown[]) => mockSyncConnections(...args),
     updateCalendarItem: (...args: unknown[]) => mockUpdateCalendarItem(...args),
@@ -78,24 +74,9 @@ function setupMocks() {
   });
   mockGetAnalyticsAccounts.mockResolvedValue({ accounts: [{ account_id: 'acc_yt', account_name: 'YT Main', active: 1, failed: 0, platform: 'youtube_shorts', published: 3, scheduled: 2, total_jobs: 4 }] });
   mockGetAnalyticsPosts.mockResolvedValue({ posts: [{ account_id: 'acc_yt', account_name: 'YT Main', clip_name: 'clip_1.mp4', failed: 0, latest_at: new Date().toISOString(), latest_state: 'published', platform: 'youtube_shorts', project_id: 'proj_1', published: 1, total_jobs: 1 }] });
-  mockGetPrefill.mockResolvedValue({
-    clip_exists: true,
-    clip_name: 'clip_1.mp4',
-    platforms: {
-      facebook_reels: { hashtags: ['viral'], text: 'Caption', title: 'Title' },
-      instagram_reels: { hashtags: ['viral'], text: 'Caption', title: 'Title' },
-      linkedin: { hashtags: ['viral'], text: 'Caption', title: 'Title' },
-      tiktok: { hashtags: ['viral'], text: 'Caption', title: 'Title' },
-      x: { hashtags: ['viral'], text: 'Caption', title: 'Title' },
-      youtube_shorts: { hashtags: ['viral'], text: 'Caption', title: 'Title' },
-    },
-    project_id: 'proj_1',
-    source: { has_clip_metadata: true, has_drafts: false, viral_metadata: null },
-  });
   mockStartConnection.mockResolvedValue({ launch_url: 'https://postiz.example/connect', session_id: 'sess_1', status: 'launch_ready' });
   mockSyncConnections.mockResolvedValue({ accounts: [], providers: [], status: 'synced' });
   mockDeleteConnection.mockResolvedValue({ account_id: 'acc_yt', status: 'deleted' });
-  mockPublish.mockResolvedValue({ jobs: [], status: 'queued' });
   mockApproveJob.mockResolvedValue({ job_id: 'job_1', status: 'approved' });
   mockCancelJob.mockResolvedValue({ job_id: 'job_1', status: 'cancelled' });
   mockUpdateCalendarItem.mockResolvedValue({ job: { id: 'job_1' }, status: 'updated' });
@@ -106,7 +87,7 @@ describe('SocialWorkspace', () => {
     vi.clearAllMocks();
     setupMocks();
     await i18n.changeLanguage('en');
-    window.history.replaceState({}, '', '/?tab=social&project_id=proj_1&clip_name=clip_1.mp4');
+    window.history.replaceState({}, '', '/social?project_id=proj_1&clip_name=clip_1.mp4');
     windowOpenMock.mockReset();
     Object.defineProperty(window, 'open', { configurable: true, value: windowOpenMock });
   });
@@ -126,22 +107,46 @@ describe('SocialWorkspace', () => {
     });
   });
 
-  it('publishes the selected clip with the selected connected account', async () => {
+  it('renders a calendar-first workspace and deep-links back to compose context', async () => {
     const { SocialWorkspace } = await import('../../components/SocialWorkspace');
-    const user = userEvent.setup();
+    mockGetCalendar.mockResolvedValueOnce({
+      items: [{
+        account_id: 'acc_yt',
+        clip_name: 'clip_1.mp4',
+        id: 'job_1',
+        mode: 'scheduled',
+        platform: 'youtube_shorts',
+        project_id: 'proj_1',
+        scheduled_at: '2026-03-27T12:30:00.000Z',
+        state: 'scheduled',
+        timeline: [],
+      }],
+    });
 
     render(<SocialWorkspace />);
 
-    expect(await screen.findByDisplayValue('Title')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /^publish now$/i }));
+    expect(await screen.findByText(/filtered by clip clip_1\.mp4 in project proj_1/i)).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Title')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /open context compose/i })).toHaveAttribute(
+      'href',
+      '/social-compose?project_id=proj_1&clip_name=clip_1.mp4',
+    );
+    expect(screen.getAllByRole('link', { name: /open compose/i })[0]).toHaveAttribute(
+      'href',
+      '/social-compose?project_id=proj_1&clip_name=clip_1.mp4',
+    );
+  });
+
+  it('auto-syncs connections from social_connect query signal and clears the query', async () => {
+    window.history.replaceState({}, '', '/social?social_connect=success&session_id=sess_1&platform=youtube_shorts');
+    const { SocialWorkspace } = await import('../../components/SocialWorkspace');
+
+    render(<SocialWorkspace />);
 
     await waitFor(() => {
-      expect(mockPublish).toHaveBeenCalledWith(expect.objectContaining({
-        clip_name: 'clip_1.mp4',
-        mode: 'now',
-        project_id: 'proj_1',
-        targets: [{ account_id: 'acc_yt', platform: 'youtube_shorts', provider: 'youtube' }],
-      }));
+      expect(mockSyncConnections).toHaveBeenCalledTimes(1);
     });
+    expect(window.location.pathname).toBe('/social');
+    expect(window.location.search).toBe('');
   });
 });

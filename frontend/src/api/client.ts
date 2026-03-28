@@ -7,7 +7,7 @@
  */
 
 import { useAuthRuntimeStore } from '../auth/runtime';
-import { getCachedToken, isTokenUsable, resolveTokenExpiration } from '../auth/session';
+import { getCachedToken, isTokenActive, resolveTokenExpiration } from '../auth/session';
 import { API_BASE, API_REQUEST_TIMEOUT_MS, API_RETRY_COUNT, CLERK_JWT_TEMPLATE } from '../config';
 import { extractApiErrorPayload, mergeApiHeaders } from './client.helpers';
 import { createAppError, isAppError, type AppErrorCode } from './errors';
@@ -128,7 +128,7 @@ function readOnlineStatus(): boolean {
 }
 
 function hasUsableActiveToken(): boolean {
-    return isTokenUsable(activeToken, resolveTokenExpiration(activeToken));
+    return isTokenActive(activeToken, resolveTokenExpiration(activeToken));
 }
 
 function shouldRetry(error: unknown, attempt: number): boolean {

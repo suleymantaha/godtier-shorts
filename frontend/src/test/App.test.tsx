@@ -212,6 +212,8 @@ describe('App navigation and workspace restoration', () => {
     expect(await screen.findByText('SocialWorkspace')).toBeInTheDocument();
 
     await waitFor(() => {
+      expect(window.location.pathname).toBe('/social');
+      expect(window.location.search).toBe('');
       expect(JSON.parse(localStorage.getItem(APP_STATE_STORAGE_KEY) ?? '{}')).toEqual({
         editingClip: null,
         subtitleTargetClip: null,
@@ -227,12 +229,47 @@ describe('App navigation and workspace restoration', () => {
 
     expect(await screen.findByText('SocialComposePage')).toBeInTheDocument();
     await waitFor(() => {
-      expect(window.location.search).toContain('tab=social-compose');
+      expect(window.location.pathname).toBe('/social-compose');
+      expect(window.location.search).toBe('?project_id=proj-1&clip_name=clip-1.mp4');
       expect(JSON.parse(localStorage.getItem(APP_STATE_STORAGE_KEY) ?? '{}')).toEqual({
         editingClip: null,
         subtitleTargetClip: null,
         viewMode: 'social_compose',
       });
+    });
+  });
+
+  it('clears social compose clip context when navigating away to other views', async () => {
+    window.history.replaceState({}, '', '/social-compose?project_id=proj-1&clip_name=clip-1.mp4');
+
+    render(<App />);
+
+    expect(await screen.findByText('SocialComposePage')).toBeInTheDocument();
+
+    const navigation = screen.getByRole('navigation', { name: /main navigation/i });
+
+    fireEvent.click(within(navigation).getByRole('button', { name: /^social$/i }));
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/social');
+      expect(window.location.search).toBe('');
+    });
+
+    fireEvent.click(within(navigation).getByRole('button', { name: /auto cut/i }));
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/');
+      expect(window.location.search).toBe('?tab=manual');
+    });
+
+    fireEvent.click(within(navigation).getByRole('button', { name: /subtitle edit/i }));
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/');
+      expect(window.location.search).toBe('?tab=subtitle');
+    });
+
+    fireEvent.click(within(navigation).getByRole('button', { name: /configure/i }));
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/');
+      expect(window.location.search).toBe('');
     });
   });
 

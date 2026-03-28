@@ -3,9 +3,63 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Callable
 
 from backend.core.render_contracts import resolve_duration_validation_status
+
+
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+_WORD_RE = re.compile(r"[A-Za-zÇĞİÖŞÜçğıöşü0-9']+")
+_LOW_SIGNAL_PREFIXES = (
+    "acaba",
+    "bak",
+    "bire bir",
+    "diyorlar ki",
+    "girecektir",
+    "gençler bunu",
+    "herhalde",
+    "işte",
+    "şimdi",
+    "ve hala",
+    "yani",
+)
+_FILLER_WORDS = {
+    "abi",
+    "acaba",
+    "aslında",
+    "bak",
+    "bence",
+    "bir",
+    "bire",
+    "bu",
+    "bunu",
+    "çok",
+    "da",
+    "de",
+    "değil",
+    "diyorlar",
+    "gibi",
+    "hala",
+    "hatta",
+    "herhalde",
+    "hiç",
+    "işte",
+    "ki",
+    "mi",
+    "mu",
+    "mü",
+    "ne",
+    "o",
+    "orada",
+    "orada",
+    "sen",
+    "şey",
+    "şimdi",
+    "ve",
+    "var",
+    "yani",
+}
 
 
 def clip_words(text: str, limit: int) -> str:
@@ -15,6 +69,147 @@ def clip_words(text: str, limit: int) -> str:
 def normalize_hook(text: str) -> str:
     hook = " ".join(text.split()[:7]).strip()
     return (hook or "DIKKAT CEKEN AN").upper()
+
+
+def _collect_segment_window_text(
+    transcript_data: list[dict],
+    *,
+    start_time: float,
+    end_time: float,
+) -> str:
+    parts: list[str] = []
+    for segment in transcript_data:
+        seg_start = segment.get("start")
+        seg_end = segment.get("end")
+        if not isinstance(seg_start, (int, float)) or not isinstance(seg_end, (int, float)):
+            continue
+        if float(seg_end) <= start_time or float(seg_start) >= end_time:
+            continue
+        text = str(segment.get("text", "")).strip()
+        if text:
+            parts.append(text)
+    return " ".join(parts).strip()
+
+
+def _split_sentences(text: str) -> list[str]:
+    cleaned = " ".join(text.split()).strip()
+    if not cleaned:
+        return []
+    return [sentence.strip(" ,;:-") for sentence in _SENTENCE_SPLIT_RE.split(cleaned) if sentence.strip(" ,;:-")]
+
+
+def _tokenize_words(text: str) -> list[str]:
+    return [match.group(0).lower() for match in _WORD_RE.finditer(text)]
+
+
+def _starts_with_low_signal_prefix(text: str) -> bool:
+    lowered = " ".join(text.lower().split())
+    return any(lowered.startswith(prefix) for prefix in _LOW_SIGNAL_PREFIXES)
+
+
+def _sentence_score(text: str) -> float:
+    words = _tokenize_words(text)
+    if not words:
+        return float("-inf")
+
+    informative_words = [word for word in words if word not in _FILLER_WORDS and len(word) >= 4]
+    unique_words = len(set(informative_words))
+    score = unique_words * 2.5 + len(informative_words) * 0.8
+
+    if text.endswith("?"):
+        score += 2.0
+    if any(char.isdigit() for char in text):
+        score += 1.0
+    if _starts_with_low_signal_prefix(text):
+        score -= 4.0
+    if len(words) < 4:
+        score -= 2.5
+    if len(words) > 16:
+        score -= 1.0
+    return score
+
+
+def choose_representative_sentence(
+    transcript_data: list[dict],
+    *,
+    start_time: float,
+    end_time: float,
+    fallback_text: str = "",
+) -> str:
+    window_text = _collect_segment_window_text(
+        transcript_data,
+        start_time=start_time,
+        end_time=end_time,
+    )
+    candidates = _split_sentences(window_text)
+    if fallback_text.strip():
+        candidates.extend(_split_sentences(fallback_text))
+
+    unique_candidates: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = " ".join(candidate.lower().split())
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        unique_candidates.append(candidate)
+
+    if not unique_candidates:
+        return fallback_text.strip()
+
+    return max(unique_candidates, key=_sentence_score)
+
+
+def _normalize_title(text: str) -> str:
+    compact = " ".join(text.split()).strip(" ,;:-")
+    return clip_words(compact, 12) or "Otomatik Secilen Klip"
+
+
+def _normalize_caption(text: str, *, fallback_title: str) -> str:
+    base = " ".join(text.split()).strip(" ,;:-") or fallback_title
+    return f"{base} #shorts #viral"
+
+
+def _looks_low_quality(text: str) -> bool:
+    compact = " ".join(text.split()).strip()
+    if not compact:
+        return True
+
+    words = _tokenize_words(compact)
+    informative_words = [word for word in words if word not in _FILLER_WORDS and len(word) >= 4]
+    return _starts_with_low_signal_prefix(compact) or len(informative_words) < 2
+
+
+def enrich_segment_copy(segment: dict, transcript_data: list[dict]) -> dict:
+    try:
+        start_time = float(segment.get("start_time"))
+        end_time = float(segment.get("end_time"))
+    except (TypeError, ValueError):
+        return segment
+
+    preferred_sentence = choose_representative_sentence(
+        transcript_data,
+        start_time=start_time,
+        end_time=end_time,
+        fallback_text=str(segment.get("ui_title") or segment.get("hook_text") or ""),
+    )
+    if not preferred_sentence:
+        return segment
+
+    if _looks_low_quality(str(segment.get("ui_title") or "")):
+        segment["ui_title"] = _normalize_title(preferred_sentence)
+
+    if _looks_low_quality(str(segment.get("hook_text") or "")):
+        segment["hook_text"] = normalize_hook(preferred_sentence)
+
+    caption = str(segment.get("social_caption") or "").strip()
+    if _looks_low_quality(caption) or caption == str(segment.get("ui_title") or "").strip():
+        segment["social_caption"] = _normalize_caption(
+            preferred_sentence,
+            fallback_title=str(segment.get("ui_title") or ""),
+        )
+
+    return segment
 
 
 def normalize_viral_segments(
@@ -76,14 +271,17 @@ def normalize_viral_segments(
             viral_score = 70
 
         normalized_segments.append(
-            {
-                "start_time": start_time,
-                "end_time": end_time,
-                "hook_text": hook_text,
-                "ui_title": ui_title,
-                "social_caption": social_caption,
-                "viral_score": max(1, min(100, viral_score)),
-            }
+            enrich_segment_copy(
+                {
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "hook_text": hook_text,
+                    "ui_title": ui_title,
+                    "social_caption": social_caption,
+                    "viral_score": max(1, min(100, viral_score)),
+                },
+                transcript_data,
+            )
         )
         if len(normalized_segments) >= limit:
             break
@@ -161,14 +359,17 @@ def build_fallback_segments(
             return {"segments": []}
         return {
             "segments": [
-                {
-                    "start_time": full_start,
-                    "end_time": full_end,
-                    "hook_text": normalize_hook(joined_text),
-                    "ui_title": title,
-                    "social_caption": f"{title} #shorts #viral",
-                    "viral_score": 70,
-                }
+                enrich_segment_copy(
+                    {
+                        "start_time": full_start,
+                        "end_time": full_end,
+                        "hook_text": normalize_hook(joined_text),
+                        "ui_title": title,
+                        "social_caption": f"{title} #shorts #viral",
+                        "viral_score": 70,
+                    },
+                    transcript_data,
+                )
             ]
         }
 
@@ -189,14 +390,17 @@ def build_fallback_segments(
         joined_text = " ".join(str(seg.get("text", "")).strip() for seg in candidate["window"])
         title = clip_words(joined_text, 12) or "Otomatik Secilen Klip"
         selected.append(
-            {
-                "start_time": candidate["start_time"],
-                "end_time": candidate["end_time"],
-                "hook_text": normalize_hook(joined_text),
-                "ui_title": title,
-                "social_caption": f"{title} #shorts #viral",
-                "viral_score": max(60, min(95, int(candidate["score"] * 5))),
-            }
+            enrich_segment_copy(
+                {
+                    "start_time": candidate["start_time"],
+                    "end_time": candidate["end_time"],
+                    "hook_text": normalize_hook(joined_text),
+                    "ui_title": title,
+                    "social_caption": f"{title} #shorts #viral",
+                    "viral_score": max(60, min(95, int(candidate["score"] * 5))),
+                },
+                transcript_data,
+            )
         )
 
         if len(selected) >= limit:

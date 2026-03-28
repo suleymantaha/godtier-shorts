@@ -18,7 +18,8 @@ const storeMock = {
 const getFreshTokenMock = vi.fn().mockResolvedValue(null);
 
 vi.mock('../../store/useJobStore', () => ({
-  useJobStore: () => storeMock,
+  useJobStore: (selector?: (state: typeof storeMock) => unknown) =>
+    selector ? selector(storeMock) : storeMock,
 }));
 
 vi.mock('../../auth/runtime', () => ({
@@ -90,6 +91,16 @@ describe('useWebSocket connection lifecycle', () => {
     act(() => ws.onclose?.());
     view.unmount();
     act(() => vi.advanceTimersByTime(3000));
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
+  it('does not recreate the socket on a plain rerender', async () => {
+    const view = render(<TestComponent />);
+    await act(async () => {});
+
+    view.rerender(<TestComponent />);
+    await act(async () => {});
+
     expect(FakeWebSocket.instances).toHaveLength(1);
   });
 });

@@ -1,6 +1,7 @@
 import type { Clip, ShareDraftContent, SharePrefillResponse, SocialAccount, SocialPlatform } from '../../types';
 import { AUTH_IDENTITY_STORAGE_KEY } from '../../auth/isolation';
 import { tSafe } from '../../i18n';
+import { SOCIAL_COMPOSE_PATH } from '../../app/helpers';
 
 export function getPlatformLabel(platform: SocialPlatform): string {
   return tSafe(`shareComposer.platforms.${platform}`, { defaultValue: platform });
@@ -20,6 +21,7 @@ export interface ParsedDraftBuffer {
 
 export type ShareComposerContentMap = Record<SocialPlatform, ShareDraftContent>;
 export type SocialOAuthStatus = 'success' | 'error';
+export type SocialConnectStatus = 'success' | 'error' | 'pending';
 const MANAGED_CONNECT_PENDING_PREFIX = 'social-postiz-managed-connect-pending';
 
 export function resolveProjectId(clip: Clip | null): string | null {
@@ -32,25 +34,27 @@ export function resolveProjectId(clip: Clip | null): string | null {
 }
 
 export function buildSocialComposeUrl(clip: Clip | null): string {
-  const params = new URLSearchParams({ tab: 'social-compose' });
+  const params = new URLSearchParams();
   const projectId = resolveProjectId(clip);
 
   if (clip) {
     params.set('clip_name', clip.name);
-    params.set('clip_url', clip.url);
-    params.set('clip_created_at', String(clip.created_at));
     if (projectId) {
       params.set('project_id', projectId);
-    }
-    if (clip.ui_title) {
-      params.set('clip_title', clip.ui_title);
-    }
-    if (typeof clip.duration === 'number' && Number.isFinite(clip.duration)) {
-      params.set('clip_duration', String(clip.duration));
+    } else {
+      params.set('clip_url', clip.url);
+      params.set('clip_created_at', String(clip.created_at));
+      if (clip.ui_title) {
+        params.set('clip_title', clip.ui_title);
+      }
+      if (typeof clip.duration === 'number' && Number.isFinite(clip.duration)) {
+        params.set('clip_duration', String(clip.duration));
+      }
     }
   }
 
-  return `/?${params.toString()}`;
+  const query = params.toString();
+  return `${SOCIAL_COMPOSE_PATH}${query ? `?${query}` : ''}`;
 }
 
 export function openSocialComposeWindow(clip: Clip | null): void {
@@ -111,6 +115,15 @@ export function readSocialOAuthStatusFromQuery(search: string): SocialOAuthStatu
   return null;
 }
 
+export function readSocialConnectStatusFromQuery(search: string): SocialConnectStatus | null {
+  const params = new URLSearchParams(search);
+  const status = params.get('social_connect');
+  if (status === 'success' || status === 'error' || status === 'pending') {
+    return status;
+  }
+  return null;
+}
+
 export function clearSocialOAuthStatusQuery(): void {
   if (typeof window === 'undefined') {
     return;
@@ -121,6 +134,23 @@ export function clearSocialOAuthStatusQuery(): void {
     return;
   }
   currentUrl.searchParams.delete('social_oauth');
+  const nextQuery = currentUrl.searchParams.toString();
+  const nextUrl = `${currentUrl.pathname}${nextQuery ? `?${nextQuery}` : ''}${currentUrl.hash}`;
+  window.history.replaceState({}, '', nextUrl);
+}
+
+export function clearSocialConnectStatusQuery(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const currentUrl = new URL(window.location.href);
+  if (!currentUrl.searchParams.has('social_connect') && !currentUrl.searchParams.has('session_id') && !currentUrl.searchParams.has('platform')) {
+    return;
+  }
+  currentUrl.searchParams.delete('social_connect');
+  currentUrl.searchParams.delete('session_id');
+  currentUrl.searchParams.delete('platform');
   const nextQuery = currentUrl.searchParams.toString();
   const nextUrl = `${currentUrl.pathname}${nextQuery ? `?${nextQuery}` : ''}${currentUrl.hash}`;
   window.history.replaceState({}, '', nextUrl);
@@ -206,7 +236,7 @@ export function buildPublishTargets(accounts: SocialAccount[], selectedAccountId
   const selectedIds = new Set(selectedAccountIds);
 
   return accounts
-    .filter((account) => selectedIds.has(account.id))
+    .filter((account) => selectedIds.has(account.id) && !account.requires_reconnect)
     .map((account) => ({
       account_id: account.id,
       platform: account.platform,

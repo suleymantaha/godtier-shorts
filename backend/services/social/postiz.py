@@ -422,6 +422,25 @@ class PostizClient:
             raise PostizApiError("Postiz delete requires post id")
         return self._request("DELETE", f"/posts/{post_id_value}", timeout=60)
 
+    def list_posts(
+        self,
+        *,
+        start_date: str,
+        end_date: str,
+    ) -> list[dict[str, Any]]:
+        params = {
+            "startDate": start_date,
+            "endDate": end_date,
+        }
+        raw = self._request("GET", "/posts", params=params, timeout=120)
+        if isinstance(raw, list):
+            return [item for item in raw if isinstance(item, dict)]
+        if isinstance(raw, dict):
+            entries = raw.get("posts") or raw.get("data") or raw.get("items")
+            if isinstance(entries, list):
+                return [item for item in entries if isinstance(item, dict)]
+        return []
+
     def delete_integration(self, integration_id: str) -> Any:
         integration_id_value = str(integration_id).strip()
         if not integration_id_value:
