@@ -557,6 +557,50 @@ function AutoCutJobStatusCard({ controller }: AutoCutEditorLayoutProps) {
           {t('autoCut.status.readyClips', { count: controller.generatedClips.length })}
         </div>
       )}
+      {controller.currentJob?.status === 'review_required' && (
+        <div className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-xs text-amber-100">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="space-y-1">
+              <div className="font-semibold">
+                {t('autoCut.status.reviewRequiredTitle', { defaultValue: 'Manual review required' })}
+              </div>
+              <div>
+                {controller.currentJob.last_message || t('autoCut.status.reviewRequiredBody', { defaultValue: 'Automatic safety checks held this render for manual review.' })}
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                controller.setLayout('single');
+                void controller.handleRender();
+              }}
+              className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[11px] font-mono uppercase tracking-[0.18em] text-amber-50 hover:bg-amber-400/20"
+            >
+              {t('autoCut.status.forceSingle', { defaultValue: 'Force Single' })}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                controller.setLayout('split');
+                void controller.handleRender();
+              }}
+              className="rounded-lg border border-amber-400/30 bg-transparent px-3 py-2 text-[11px] font-mono uppercase tracking-[0.18em] text-amber-50 hover:bg-amber-400/10"
+            >
+              {t('autoCut.status.forceSplit', { defaultValue: 'Force Split' })}
+            </button>
+            <button
+              type="button"
+              onClick={controller.handleOpenLibrary}
+              className="rounded-lg border border-amber-400/30 bg-transparent px-3 py-2 text-[11px] font-mono uppercase tracking-[0.18em] text-amber-50 hover:bg-amber-400/10"
+            >
+              {t('autoCut.status.manualCenter', { defaultValue: 'Manual Center' })}
+            </button>
+          </div>
+        </div>
+      )}
       {controller.errorMessage && (
         <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-3 text-xs text-red-300">
           <AlertCircle className="w-4 h-4 shrink-0" />

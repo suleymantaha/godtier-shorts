@@ -74,6 +74,32 @@ describe('autoCutEditor job helpers', () => {
     expect(state.resultUrl).toBe('/api/projects/proj_1/shorts/clip_1.mp4');
   });
 
+  it('treats review_required as terminal without exposing a direct result url', () => {
+    const state = deriveAutoCutJobState({
+      currentJob: buildJob({
+        status: 'review_required',
+        progress: 100,
+        review_items: [{
+          start_time: 0,
+          end_time: 10,
+          requested_layout: 'auto',
+          attempted_layout: 'split',
+          suggested_layout: 'single',
+          suggested_actions: ['force_single'],
+        }],
+      }),
+      currentJobId: 'job_1',
+      currentJobMissing: false,
+      isSubmitting: false,
+      pendingOutputUrl: '/api/projects/proj_1/shorts/clip_1.mp4',
+      requestError: null,
+    });
+
+    expect(state.hasTerminalJob).toBe(true);
+    expect(state.processing).toBe(false);
+    expect(state.resultUrl).toBeNull();
+  });
+
 });
 
 describe('autoCutEditor payload helpers', () => {

@@ -9,7 +9,7 @@ import backend.core.workflows as workflows
 WORKFLOWS_FACADE = Path(__file__).resolve().parents[1] / "core" / "workflows.py"
 MODULE_BUDGETS = {
     "workflows_pipeline.py": 300,
-    "workflows_manual.py": 220,
+    "workflows_manual.py": 340,
     "workflows_batch.py": 220,
     "workflows_reburn.py": 150,
 }

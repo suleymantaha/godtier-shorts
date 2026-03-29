@@ -296,7 +296,7 @@ interface JobFormStartActionParams {
     message: string;
     progress: number;
     source?: 'api' | 'worker' | 'websocket' | 'clip_ready';
-    status?: 'queued' | 'processing' | 'completed' | 'cancelled' | 'error' | 'empty';
+    status?: 'queued' | 'processing' | 'completed' | 'cancelled' | 'error' | 'empty' | 'review_required';
   }) => void;
   layout: RequestedSubtitleLayout;
   numClips: number;
@@ -331,7 +331,7 @@ async function handleStartResponse({
     message: string;
     progress: number;
     source?: 'api' | 'worker' | 'websocket' | 'clip_ready';
-    status?: 'queued' | 'processing' | 'completed' | 'cancelled' | 'error' | 'empty';
+    status?: 'queued' | 'processing' | 'completed' | 'cancelled' | 'error' | 'empty' | 'review_required';
   }) => void;
   registerQueuedJob: (job: { job_id: string; message?: string; style: string; url: string }) => void;
   requestClipsRefresh: () => void;

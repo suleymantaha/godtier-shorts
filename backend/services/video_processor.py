@@ -41,6 +41,8 @@ CONTROLLED_RETURN_FRAMES = 5
 SINGLE_DEADZONE_RATIO = 0.012
 SINGLE_MAX_STEP_RATIO = 0.012
 SINGLE_EMA_ALPHA = 0.22
+SINGLE_LOCK_SAFE_BAND_RATIO = 0.55
+SINGLE_REFRAME_SUSTAINED_FRAMES = 3
 SPLIT_DEADZONE_RATIO = 0.02
 SPLIT_MAX_STEP_RATIO = 0.006
 SPLIT_EMA_ALPHA = 0.16
@@ -51,8 +53,12 @@ SPLIT_FALLBACK_SUSTAINED_FRAMES = 4
 SAME_ID_REACQUIRE_CENTER_RATIO = 0.08
 DIFF_ID_REACQUIRE_CENTER_RATIO = 0.12
 SPLIT_SAMPLE_WINDOWS = 16
-SPLIT_REQUIRED_POSITIVE_WINDOWS = 10
+SPLIT_REQUIRED_POSITIVE_WINDOWS = 12
 SPLIT_MIN_SEPARATION_RATIO = 0.18
+SPLIT_MIN_VISIBILITY_SCORE = 0.72
+SPLIT_EDGE_MARGIN_RATIO = 0.06
+SPLIT_UNSAFE_SUSTAINED_FRAMES = 4
+LAYOUT_SAFETY_CONTRACT_VERSION = 1
 TRACKER_CONFIG = "bytetrack.yaml"
 DETECTION_LONG_EDGE = 960
 CPU_TRACKING_STRIDE = 3
@@ -81,6 +87,11 @@ def _is_nvenc_error(stderr: str) -> bool:
 
 def _clamp01(value: float) -> float:
     return max(0.0, min(1.0, float(value)))
+
+
+def _read_layout_safety_mode() -> str:
+    raw = os.getenv("LAYOUT_SAFETY_MODE", "shadow").strip().lower()
+    return raw if raw in {"off", "shadow", "enforce"} else "shadow"
 
 
 def _box_iou(box_a: tuple[float, float, float, float], box_b: tuple[float, float, float, float]) -> float:
@@ -112,6 +123,25 @@ class DetectionCandidate:
     mouth_motion_score: float = 0.0
 
 
+@dataclass(frozen=True)
+class LayoutDecisionReport:
+    requested_layout: str
+    resolved_layout: str
+    layout_fallback_reason: str | None = None
+    layout_auto_fix_applied: bool = False
+    layout_auto_fix_reason: str | None = None
+    layout_safety_status: str = "safe"
+    layout_safety_mode: str = "off"
+    layout_safety_contract_version: int = LAYOUT_SAFETY_CONTRACT_VERSION
+    scene_class: str = "single_dynamic"
+    speaker_count_peak: int = 1
+    dominant_speaker_confidence: float | None = None
+
+    def __iter__(self):
+        yield self.resolved_layout
+        yield self.layout_fallback_reason
+
+
 @dataclass
 class TrackSlotState:
     label: str
@@ -128,6 +158,9 @@ class TrackSlotState:
     continuity_multiplier: float = 1.0
     last_mode: str = "fallback"
     sustained_movement_frames: int = 0
+    unsafe_reframe_streak: int = 0
+    last_visibility_score: float | None = None
+    last_identity_confidence: float = 1.0
 
 
 @dataclass
@@ -147,6 +180,7 @@ class TrackingDiagnostics:
     max_track_lost_streak: int = 0
     total_center_jump_px: float = 0.0
     jump_samples: list[float] = field(default_factory=list)
+    identity_confidence_samples: list[float] = field(default_factory=list)
     predict_fallback_active: bool = False
     timeline: list[dict] = field(default_factory=list)
 
@@ -167,6 +201,9 @@ class TrackingDiagnostics:
         jump = max(0.0, float(jump_px))
         self.total_center_jump_px += jump
         self.jump_samples.append(jump)
+
+    def register_identity_confidence(self, value: float) -> None:
+        self.identity_confidence_samples.append(_clamp01(value))
 
     def to_quality(self) -> dict:
         avg_center_jump = self.total_center_jump_px / self.total_frames if self.total_frames > 0 else 0.0
@@ -195,6 +232,11 @@ class TrackingDiagnostics:
             "p95_center_jump_px": round(p95_center_jump, 3),
             "startup_settle_ms": round(startup_settle_ms, 3),
             "predict_fallback_active": bool(self.predict_fallback_active),
+            "speaker_lock_policy": "hold_until_unsafe" if self.layout == "single" else "stable_split",
+            "identity_confidence": round(
+                float(np.mean(self.identity_confidence_samples)) if self.identity_confidence_samples else 1.0,
+                4,
+            ),
             "confirmed_track_frames": self.confirmed_track_frames,
             "grace_hold_frames": self.grace_hold_frames,
             "controlled_return_frames": self.controlled_return_frames,
@@ -245,6 +287,14 @@ class TrackingDiagnostics:
             "panel_swap_count": int(panel_swap_count),
             "predict_fallback_active": bool(quality_a.get("predict_fallback_active")) or bool(quality_b.get("predict_fallback_active")),
             "split_motion_policy": "stable",
+            "speaker_lock_policy": "hold_until_unsafe",
+            "identity_confidence": round(
+                (
+                    float(quality_a.get("identity_confidence", 1.0) or 1.0)
+                    + float(quality_b.get("identity_confidence", 1.0) or 1.0)
+                ) / 2.0,
+                4,
+            ),
             "confirmed_track_frames": int(quality_a.get("confirmed_track_frames", 0)) + int(quality_b.get("confirmed_track_frames", 0)),
             "grace_hold_frames": int(quality_a.get("grace_hold_frames", 0)) + int(quality_b.get("grace_hold_frames", 0)),
             "controlled_return_frames": int(quality_a.get("controlled_return_frames", 0)) + int(quality_b.get("controlled_return_frames", 0)),
@@ -500,6 +550,50 @@ class VideoProcessor:
         return _clamp01(size_score - clipped_penalty)
 
     @staticmethod
+    def _candidate_identity_confidence(
+        candidate: DetectionCandidate,
+        state: TrackSlotState,
+    ) -> float:
+        track_score = 1.0
+        if state.confirmed_track_id is not None and candidate.track_id is not None:
+            track_score = 1.0 if candidate.track_id == state.confirmed_track_id else 0.0
+        elif state.confirmed_track_id is not None or candidate.track_id is not None:
+            track_score = 0.5
+
+        area_score = 1.0
+        if state.last_confirmed_area is not None:
+            area_score = 1.0 - _clamp01(abs(candidate.area - state.last_confirmed_area) / max(state.last_confirmed_area, 1.0))
+
+        aspect_score = 1.0
+        if state.last_confirmed_aspect_ratio is not None:
+            aspect_score = 1.0 - _clamp01(
+                abs(candidate.aspect_ratio - state.last_confirmed_aspect_ratio) / max(state.last_confirmed_aspect_ratio, 0.01)
+            )
+
+        visibility_score = 1.0
+        if state.last_visibility_score is not None:
+            visibility_score = 1.0 - _clamp01(abs(candidate.visibility_score - state.last_visibility_score))
+
+        return _clamp01(
+            (0.40 * track_score)
+            + (0.25 * area_score)
+            + (0.15 * aspect_score)
+            + (0.20 * visibility_score)
+        )
+
+    @staticmethod
+    def _split_crop_margin_ratio(
+        candidate: DetectionCandidate,
+        *,
+        frame_width: int,
+        crop_width: int,
+    ) -> float:
+        crop_x1, crop_x2 = VideoProcessor._compute_crop_bounds(candidate.center_x, crop_width, frame_width)
+        left_margin = max(0.0, candidate.box[0] - crop_x1)
+        right_margin = max(0.0, crop_x2 - candidate.box[2])
+        return min(left_margin, right_margin) / max(float(crop_width), 1.0)
+
+    @staticmethod
     def _compute_motion_scores(
         current_frame: np.ndarray,
         previous_frame: np.ndarray | None,
@@ -716,16 +810,20 @@ class VideoProcessor:
     ) -> float:
         if switched:
             diagnostics.active_track_id_switches += 1
+        identity_confidence = self._candidate_identity_confidence(candidate, state)
         state.confirmed_track_id = candidate.track_id
         state.last_confirmed_box = candidate.box
         state.last_confirmed_center = candidate.center_x
         state.last_confirmed_area = candidate.area
         state.last_confirmed_aspect_ratio = candidate.aspect_ratio
+        state.last_visibility_score = candidate.visibility_score
+        state.last_identity_confidence = identity_confidence
         state.grace_remaining = 0
         state.controlled_return_frames_remaining = 0
         state.reacquire_counts.clear()
         state.lost_streak = 0
         state.last_mode = "tracked"
+        diagnostics.register_identity_confidence(identity_confidence)
         return candidate.center_x
 
     @staticmethod
@@ -777,6 +875,7 @@ class VideoProcessor:
         layout: str,
         mode: str,
         tracker_weak: bool,
+        crop_width: int | None = None,
     ) -> tuple[float, bool, bool, int]:
         deadzone_px, max_step_px, ema_alpha, sustained_required = self._movement_profile(
             layout=layout,
@@ -785,6 +884,21 @@ class VideoProcessor:
             tracker_weak=tracker_weak,
         )
         delta = float(target_cx) - float(state.current_cx)
+        if layout == "single" and mode == "tracked":
+            effective_crop_width = max(1, int(crop_width or frame_width))
+            safe_band_px = max(
+                frame_width * SINGLE_DEADZONE_RATIO,
+                (effective_crop_width * SINGLE_LOCK_SAFE_BAND_RATIO) / 2.0,
+            )
+            if abs(delta) <= safe_band_px:
+                state.unsafe_reframe_streak = 0
+                state.sustained_movement_frames = 0
+                return float(state.current_cx), True, True, 0
+            state.unsafe_reframe_streak += 1
+            if state.unsafe_reframe_streak < SINGLE_REFRAME_SUSTAINED_FRAMES:
+                return float(state.current_cx), True, False, state.unsafe_reframe_streak
+        else:
+            state.unsafe_reframe_streak = 0
         deadzone_hit = abs(delta) <= deadzone_px
         if deadzone_hit:
             state.sustained_movement_frames = 0
@@ -819,6 +933,7 @@ class VideoProcessor:
         layout: str,
         frame_index: int,
         cut_confidence: float,
+        crop_width: int | None = None,
     ) -> float:
         best_candidate: DetectionCandidate | None = None
         best_score = -1.0
@@ -918,6 +1033,7 @@ class VideoProcessor:
             state=state,
             target_cx=target_cx,
             frame_width=frame_width,
+            crop_width=crop_width,
             layout=layout,
             mode=mode,
             tracker_weak=tracker_weak,
@@ -1173,6 +1289,10 @@ class VideoProcessor:
             cached_candidates: list[DetectionCandidate] = []
             debug_status = "complete" if self._debug_artifacts_enabled() else None
             split_panel_swap_count = 0
+            split_unsafe_frames = 0
+            face_edge_violation_frames = 0
+            primary_edge_violation_streak = 0
+            secondary_edge_violation_streak = 0
             last_confirmed_pair: tuple[int | None, int | None] | None = None
 
             try:
@@ -1283,6 +1403,7 @@ class VideoProcessor:
                                 candidates=candidates,
                                 frame_width=orig_w,
                                 frame_height=orig_h,
+                                crop_width=src_crop_w,
                                 panel_center=orig_w * 0.33,
                                 diagnostics=primary_diagnostics,
                                 layout=layout,
@@ -1299,6 +1420,7 @@ class VideoProcessor:
                                 candidates=remaining_candidates,
                                 frame_width=orig_w,
                                 frame_height=orig_h,
+                                crop_width=src_crop_w,
                                 panel_center=orig_w * 0.67,
                                 diagnostics=secondary_diagnostics,
                                 layout=layout,
@@ -1322,6 +1444,7 @@ class VideoProcessor:
                                 candidates=candidates,
                                 frame_width=orig_w,
                                 frame_height=orig_h,
+                                crop_width=src_crop_w,
                                 panel_center=orig_w / 2.0,
                                 diagnostics=primary_diagnostics,
                                 layout=layout,
@@ -1340,6 +1463,26 @@ class VideoProcessor:
 
                     primary_bounds = self._compute_crop_bounds(current_cx1, src_crop_w, orig_w)
                     secondary_bounds = self._compute_crop_bounds(current_cx2, src_crop_w, orig_w)
+
+                    if layout == "split" and manual_center_x is None:
+                        primary_margin_ok = False
+                        secondary_margin_ok = False
+                        if primary_slot.last_confirmed_box is not None:
+                            left_margin = max(0.0, primary_slot.last_confirmed_box[0] - primary_bounds[0])
+                            right_margin = max(0.0, primary_bounds[1] - primary_slot.last_confirmed_box[2])
+                            primary_margin_ok = min(left_margin, right_margin) / max(float(src_crop_w), 1.0) >= SPLIT_EDGE_MARGIN_RATIO
+                        if secondary_slot.last_confirmed_box is not None:
+                            left_margin = max(0.0, secondary_slot.last_confirmed_box[0] - secondary_bounds[0])
+                            right_margin = max(0.0, secondary_bounds[1] - secondary_slot.last_confirmed_box[2])
+                            secondary_margin_ok = min(left_margin, right_margin) / max(float(src_crop_w), 1.0) >= SPLIT_EDGE_MARGIN_RATIO
+                        primary_edge_violation_streak = 0 if primary_margin_ok else primary_edge_violation_streak + 1
+                        secondary_edge_violation_streak = 0 if secondary_margin_ok else secondary_edge_violation_streak + 1
+                        if not primary_margin_ok:
+                            face_edge_violation_frames += 1
+                        if not secondary_margin_ok:
+                            face_edge_violation_frames += 1
+                        if split_panel_swap_count > 0 or primary_edge_violation_streak >= SPLIT_UNSAFE_SUSTAINED_FRAMES or secondary_edge_violation_streak >= SPLIT_UNSAFE_SUSTAINED_FRAMES:
+                            split_unsafe_frames += 1
 
                     if layout == "split" and manual_center_x is None:
                         crop1 = get_crop(current_cx1)
@@ -1498,12 +1641,30 @@ class VideoProcessor:
                     secondary_diagnostics,
                     panel_swap_count=split_panel_swap_count,
                 )
+                tracking_quality.update(
+                    {
+                        "face_edge_violation_frames": int(face_edge_violation_frames),
+                        "unsafe_split_frames": int(split_unsafe_frames),
+                        "layout_safety_status": (
+                            "unsafe"
+                            if split_unsafe_frames > 0 or split_panel_swap_count > 0
+                            else ("degraded" if tracking_quality.get("status") in {"degraded", "fallback"} else "safe")
+                        ),
+                    }
+                )
                 debug_tracking = {
                     "primary": self._build_tracking_debug(primary_diagnostics),
                     "secondary": self._build_tracking_debug(secondary_diagnostics),
                 } if os.getenv("DEBUG_RENDER_ARTIFACTS") == "1" else None
             else:
                 tracking_quality = primary_diagnostics.to_quality()
+                tracking_quality.update(
+                    {
+                        "face_edge_violation_frames": int(face_edge_violation_frames),
+                        "unsafe_split_frames": 0,
+                        "layout_safety_status": "degraded" if tracking_quality.get("status") in {"degraded", "fallback"} else "safe",
+                    }
+                )
                 debug_tracking = self._build_tracking_debug(primary_diagnostics)
             if manual_center_x is not None:
                 tracking_quality.update(
@@ -1512,6 +1673,7 @@ class VideoProcessor:
                         "mode": "manual",
                         "fallback_frames": 0,
                         "avg_center_jump_px": 0.0,
+                        "layout_safety_status": "safe",
                     }
                 )
 
@@ -1573,30 +1735,103 @@ class VideoProcessor:
         end_time: float,
         requested_layout: str,
         manual_center_x: float | None = None,
-    ) -> tuple[str, str | None]:
+    ) -> LayoutDecisionReport:
         normalized_layout = ensure_valid_requested_layout(requested_layout)
         if normalized_layout == "single":
-            return "single", None
+            return LayoutDecisionReport(
+                requested_layout=normalized_layout,
+                resolved_layout="single",
+                layout_safety_status="safe",
+                layout_safety_mode=_read_layout_safety_mode(),
+                scene_class="single_dynamic",
+            )
         if manual_center_x is not None:
-            return "single", "split_not_stable"
+            return LayoutDecisionReport(
+                requested_layout=normalized_layout,
+                resolved_layout="single",
+                layout_fallback_reason="split_not_stable",
+                layout_auto_fix_applied=True,
+                layout_auto_fix_reason="split_face_safety",
+                layout_safety_status="safe",
+                layout_safety_mode=_read_layout_safety_mode(),
+                scene_class="single_dynamic",
+            )
 
         self._ensure_model_loaded()
 
         duration = max(0.2, end_time - start_time)
-        frame_results: list[tuple[int, list[float], int, int]] = []
+        frame_results: list[dict[str, object]] = []
+        speaker_count_peak = 0
         for index in range(SPLIT_SAMPLE_WINDOWS):
             ratio = 0.0 if SPLIT_SAMPLE_WINDOWS == 1 else index / (SPLIT_SAMPLE_WINDOWS - 1)
             sample_time = start_time + (duration * ratio)
             frame = self._extract_probe_frame(input_video, sample_time)
             if frame is None:
                 continue
+            frame_height = int(frame.shape[0]) if frame.ndim >= 2 else 0
             frame_width = int(frame.shape[1]) if frame.ndim >= 2 else 0
             centers = self._detect_person_centers(frame)
-            frame_results.append((frame_width, centers, index, SPLIT_SAMPLE_WINDOWS))
+            candidates = sorted(
+                self._predict_people(frame),
+                key=lambda candidate: (candidate.visibility_score, candidate.area),
+                reverse=True,
+            )
+            speaker_count_peak = max(speaker_count_peak, len(candidates), len(centers))
+            crop_width = min(frame_width, max(1, int(frame_height * (LOGICAL_CANVAS_WIDTH / SPLIT_PANEL_HEIGHT)))) if frame_width > 0 and frame_height > 0 else 0
+            pair = sorted(candidates[:2], key=lambda candidate: candidate.center_x)
+            edge_margin_ratios = [
+                self._split_crop_margin_ratio(candidate, frame_width=frame_width, crop_width=crop_width)
+                for candidate in pair
+            ] if crop_width > 0 else []
+            visibility_scores = [candidate.visibility_score for candidate in pair]
+            if not pair and len(centers) >= 2:
+                visibility_scores = [1.0, 1.0]
+                edge_margin_ratios = [1.0, 1.0]
+            frame_results.append(
+                {
+                    "frame_width": frame_width,
+                    "sample_index": index,
+                    "sample_total": SPLIT_SAMPLE_WINDOWS,
+                    "speaker_count": max(len(candidates), len(centers)),
+                    "candidates": pair,
+                    "centers": [candidate.center_x for candidate in pair] if pair else centers[:2],
+                    "visibility_scores": visibility_scores,
+                    "edge_margin_ratios": edge_margin_ratios,
+                }
+            )
 
-        if self._is_split_layout_stable(frame_results):
-            return "split", None
-        return ("single", "split_not_stable") if normalized_layout == "split" else ("single", None)
+        split_report = self._evaluate_split_layout(frame_results)
+        scene_class = "dual_separated" if split_report["stable"] else "dual_overlap_risky"
+        if speaker_count_peak <= 1:
+            scene_class = "single_dynamic"
+        if speaker_count_peak >= 3:
+            split_report = {"stable": False, "reason": "split_face_safety", "identity_confidence": 0.0}
+            scene_class = "dual_overlap_risky"
+
+        if split_report["stable"]:
+            return LayoutDecisionReport(
+                requested_layout=normalized_layout,
+                resolved_layout="split",
+                layout_safety_status="safe",
+                layout_safety_mode=_read_layout_safety_mode(),
+                scene_class=scene_class,
+                speaker_count_peak=max(2, speaker_count_peak),
+                dominant_speaker_confidence=None,
+            )
+
+        auto_fix_reason = str(split_report["reason"] or "split_face_safety")
+        return LayoutDecisionReport(
+            requested_layout=normalized_layout,
+            resolved_layout="single",
+            layout_fallback_reason="split_not_stable",
+            layout_auto_fix_applied=normalized_layout in {"auto", "split"},
+            layout_auto_fix_reason=auto_fix_reason,
+            layout_safety_status="safe",
+            layout_safety_mode=_read_layout_safety_mode(),
+            scene_class=scene_class,
+            speaker_count_peak=max(1, speaker_count_peak),
+            dominant_speaker_confidence=None,
+        )
 
     def _detect_person_centers(self, frame: np.ndarray) -> list[float]:
         candidates = self._predict_people(frame)
@@ -1679,40 +1914,122 @@ class VideoProcessor:
         }
 
     @staticmethod
-    def _is_split_layout_stable(frame_results: list[tuple]) -> bool:
-        if not frame_results:
-            return False
-
-        stable_positions: list[int] = []
-        sampled_frames = 0
-        total_windows = frame_results[0][3] if len(frame_results[0]) >= 4 else len(frame_results)
-        for index, frame_result in enumerate(frame_results):
+    def _normalize_split_frame_result(frame_result: object, index: int) -> dict[str, object]:
+        if isinstance(frame_result, dict):
+            centers = [float(value) for value in frame_result.get("centers", []) if isinstance(value, (int, float))]
+            return {
+                "frame_width": int(frame_result.get("frame_width", 0) or 0),
+                "sample_index": int(frame_result.get("sample_index", index) or index),
+                "sample_total": int(frame_result.get("sample_total", SPLIT_SAMPLE_WINDOWS) or SPLIT_SAMPLE_WINDOWS),
+                "speaker_count": int(frame_result.get("speaker_count", len(centers)) or len(centers)),
+                "centers": centers,
+                "visibility_scores": [float(value) for value in frame_result.get("visibility_scores", []) if isinstance(value, (int, float))],
+                "edge_margin_ratios": [float(value) for value in frame_result.get("edge_margin_ratios", []) if isinstance(value, (int, float))],
+                "candidates": frame_result.get("candidates") if isinstance(frame_result.get("candidates"), list) else [],
+            }
+        if isinstance(frame_result, tuple):
             if len(frame_result) >= 4:
-                frame_width, centers, sample_index, _sample_total = frame_result
+                frame_width, centers, sample_index, sample_total = frame_result[:4]
             else:
                 frame_width, centers = frame_result[:2]
                 sample_index = index
-            if frame_width <= 0:
+                sample_total = len(frame_result)
+            center_values = [float(value) for value in centers if isinstance(value, (int, float))]
+            return {
+                "frame_width": int(frame_width or 0),
+                "sample_index": int(sample_index),
+                "sample_total": int(sample_total or SPLIT_SAMPLE_WINDOWS),
+                "speaker_count": len(center_values),
+                "centers": center_values,
+                "visibility_scores": [1.0 for _ in center_values],
+                "edge_margin_ratios": [1.0 for _ in center_values],
+                "candidates": [],
+            }
+        return {
+            "frame_width": 0,
+            "sample_index": index,
+            "sample_total": SPLIT_SAMPLE_WINDOWS,
+            "speaker_count": 0,
+            "centers": [],
+            "visibility_scores": [],
+            "edge_margin_ratios": [],
+            "candidates": [],
+        }
+
+    @classmethod
+    def _evaluate_split_layout(cls, frame_results: list[object]) -> dict[str, object]:
+        if not frame_results:
+            return {"stable": False, "reason": "split_face_safety", "identity_confidence": 0.0}
+
+        normalized_results = [
+            cls._normalize_split_frame_result(frame_result, index)
+            for index, frame_result in enumerate(frame_results)
+        ]
+        stable_positions: list[int] = []
+        sampled_frames = 0
+        total_windows = int(normalized_results[0]["sample_total"] or SPLIT_SAMPLE_WINDOWS)
+        previous_pair: list[DetectionCandidate] | None = None
+        identity_scores: list[float] = []
+
+        for frame_result in normalized_results:
+            frame_width = int(frame_result["frame_width"])
+            centers = list(frame_result["centers"])
+            visibility_scores = list(frame_result["visibility_scores"])
+            edge_margin_ratios = list(frame_result["edge_margin_ratios"])
+            sample_index = int(frame_result["sample_index"])
+            sampled_frames += 1 if frame_width > 0 else 0
+            if frame_width <= 0 or len(centers) < 2 or int(frame_result["speaker_count"]) < 2:
+                previous_pair = None
                 continue
-            sampled_frames += 1
-            if len(centers) < 2:
-                continue
-            separation = abs(centers[1] - centers[0])
-            if separation >= frame_width * SPLIT_MIN_SEPARATION_RATIO:
+            separation = abs(float(centers[1]) - float(centers[0]))
+            visibility_ok = len(visibility_scores) >= 2 and all(score >= SPLIT_MIN_VISIBILITY_SCORE for score in visibility_scores[:2])
+            edge_margin_ok = len(edge_margin_ratios) >= 2 and all(margin >= SPLIT_EDGE_MARGIN_RATIO for margin in edge_margin_ratios[:2])
+            if visibility_ok and edge_margin_ok and separation >= frame_width * SPLIT_MIN_SEPARATION_RATIO:
                 stable_positions.append(sample_index)
 
+            candidates = frame_result["candidates"] if isinstance(frame_result["candidates"], list) else []
+            if len(candidates) >= 2 and previous_pair is not None and len(previous_pair) >= 2:
+                slot_scores = []
+                for previous_candidate, candidate in zip(previous_pair[:2], candidates[:2], strict=False):
+                    temp_state = TrackSlotState(
+                        "probe",
+                        candidate.center_x,
+                        confirmed_track_id=previous_candidate.track_id,
+                        last_confirmed_box=previous_candidate.box,
+                        last_confirmed_center=previous_candidate.center_x,
+                        last_confirmed_area=previous_candidate.area,
+                        last_confirmed_aspect_ratio=previous_candidate.aspect_ratio,
+                        last_visibility_score=previous_candidate.visibility_score,
+                    )
+                    slot_scores.append(cls._candidate_identity_confidence(candidate, temp_state))
+                if slot_scores:
+                    identity_scores.append(float(np.mean(slot_scores)))
+            previous_pair = candidates[:2] if len(candidates) >= 2 else None
+
+        identity_confidence = float(np.mean(identity_scores)) if identity_scores else 1.0
         if sampled_frames == 0:
-            return False
+            return {"stable": False, "reason": "split_face_safety", "identity_confidence": identity_confidence}
         if total_windows >= SPLIT_SAMPLE_WINDOWS:
             if len(stable_positions) < SPLIT_REQUIRED_POSITIVE_WINDOWS:
-                return False
+                return {"stable": False, "reason": "split_face_safety", "identity_confidence": identity_confidence}
             region_hits = {
                 "early": any(position <= (total_windows // 3) for position in stable_positions),
                 "mid": any((total_windows // 3) < position < (2 * total_windows // 3) for position in stable_positions),
                 "late": any(position >= (2 * total_windows // 3) for position in stable_positions),
             }
-            return all(region_hits.values())
-        return len(stable_positions) >= math.ceil(sampled_frames * 0.5)
+            if not all(region_hits.values()):
+                return {"stable": False, "reason": "split_face_safety", "identity_confidence": identity_confidence}
+        elif len(stable_positions) < math.ceil(sampled_frames * 0.5):
+            return {"stable": False, "reason": "split_face_safety", "identity_confidence": identity_confidence}
+
+        if identity_confidence < 0.58:
+            return {"stable": False, "reason": "split_identity_unstable", "identity_confidence": identity_confidence}
+
+        return {"stable": True, "reason": None, "identity_confidence": identity_confidence}
+
+    @classmethod
+    def _is_split_layout_stable(cls, frame_results: list[tuple]) -> bool:
+        return bool(cls._evaluate_split_layout(frame_results)["stable"])
 
     def cut_segment_only(
         self,
@@ -1834,6 +2151,11 @@ class VideoProcessor:
                 "total_frames": 0,
                 "fallback_frames": 0,
                 "avg_center_jump_px": 0.0,
+                "speaker_lock_policy": "hold_until_unsafe",
+                "identity_confidence": 1.0,
+                "face_edge_violation_frames": 0,
+                "unsafe_split_frames": 0,
+                "layout_safety_status": "safe",
                 "confirmed_track_frames": 0,
                 "grace_hold_frames": 0,
                 "controlled_return_frames": 0,

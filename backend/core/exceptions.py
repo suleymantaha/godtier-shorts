@@ -100,3 +100,27 @@ class RateLimitError(AppError):
             status_code=429,
             log_level="warning",
         )
+
+
+class RenderReviewRequiredError(AppError):
+    def __init__(
+        self,
+        message: str = "Render sonucu manuel inceleme gerektiriyor.",
+        *,
+        details: Any | None = None,
+        review_items: list[dict[str, Any]] | None = None,
+        output_paths: list[str] | None = None,
+        project_id: str | None = None,
+        num_clips: int | None = None,
+    ) -> None:
+        super().__init__(
+            code="RENDER_REVIEW_REQUIRED",
+            message=message,
+            details=details,
+            status_code=409,
+            log_level="warning",
+        )
+        self.review_items = review_items or []
+        self.output_paths = output_paths or []
+        self.project_id = project_id
+        self.num_clips = num_clips

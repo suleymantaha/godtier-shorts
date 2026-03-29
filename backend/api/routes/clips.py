@@ -67,6 +67,50 @@ def finalize_job_success(job_id: str, last_message: str) -> None:
     invalidate_clips_cache(reason=f"job_success:{job_id}")
 
 
+def finalize_job_review_required(
+    job_id: str,
+    last_message: str,
+    *,
+    review_items: list[dict] | None = None,
+    output_paths: list[str] | None = None,
+    output_url: str | None = None,
+    clip_name: str | None = None,
+    num_clips: int | None = None,
+) -> None:
+    """İşi review_required durumuna taşır ve güvenli çıktıları korur."""
+    if job_id in manager.jobs:
+        manager.jobs[job_id]["status"] = "review_required"
+        manager.jobs[job_id]["progress"] = 100
+        manager.jobs[job_id]["last_message"] = last_message
+        if review_items is not None:
+            manager.jobs[job_id]["review_items"] = review_items
+        if output_paths is not None:
+            manager.jobs[job_id]["output_paths"] = output_paths
+            manager.jobs[job_id]["output_path"] = output_paths[0] if output_paths else None
+        if output_url is not None:
+            manager.jobs[job_id]["output_url"] = output_url
+        if clip_name is not None:
+            manager.jobs[job_id]["clip_name"] = clip_name
+        if num_clips is not None:
+            manager.jobs[job_id]["num_clips"] = num_clips
+    extra: dict[str, object] = {}
+    if review_items is not None:
+        extra["review_items"] = review_items
+    if output_paths is not None:
+        extra["output_paths"] = output_paths
+    if output_url is not None:
+        extra["output_url"] = output_url
+    if clip_name is not None:
+        extra["clip_name"] = clip_name
+    if num_clips is not None:
+        extra["num_clips"] = num_clips
+    thread_safe_broadcast(
+        {"message": last_message, "progress": 100, "status": "review_required", **extra},
+        job_id,
+    )
+    invalidate_clips_cache(reason=f"job_review_required:{job_id}")
+
+
 def finalize_job_error(job_id: str, error: Exception) -> None:
     """İşi hataya düşürür ve standart hata bilgisini yayınlar."""
     message = f"HATA: {error}"

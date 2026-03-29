@@ -32,6 +32,14 @@ class SubtitleRenderPlan:
     requested_layout: str
     resolved_layout: str
     layout_fallback_reason: str | None = None
+    layout_auto_fix_applied: bool = False
+    layout_auto_fix_reason: str | None = None
+    layout_safety_status: str = "safe"
+    layout_safety_mode: str = "off"
+    layout_safety_contract_version: int = 1
+    scene_class: str = "single_dynamic"
+    speaker_count_peak: int = 1
+    dominant_speaker_confidence: float | None = None
     safe_area_profile: str = "default"
     lower_third_collision_detected: bool = False
     lower_third_band_height_ratio: float = 0.0
@@ -72,26 +80,61 @@ def resolve_subtitle_render_plan(
     normalized_layout = ensure_valid_requested_layout(requested_layout)
 
     if cut_as_short:
-        resolved_layout, fallback_reason = video_processor.resolve_layout_for_segment(
+        layout_decision = video_processor.resolve_layout_for_segment(
             input_video=source_video,
             start_time=start_t,
             end_time=end_t,
             requested_layout=normalized_layout,
             manual_center_x=manual_center_x,
         )
+        if isinstance(layout_decision, tuple):
+            resolved_layout, fallback_reason = layout_decision
+            decision_payload = {
+                "resolved_layout": resolved_layout,
+                "layout_fallback_reason": fallback_reason,
+                "layout_auto_fix_applied": bool(fallback_reason),
+                "layout_auto_fix_reason": None,
+                "layout_safety_status": "safe",
+                "layout_safety_mode": "off",
+                "layout_safety_contract_version": 1,
+                "scene_class": "single_dynamic" if resolved_layout == "single" else "dual_separated",
+                "speaker_count_peak": 1 if resolved_layout == "single" else 2,
+                "dominant_speaker_confidence": None,
+            }
+        else:
+            decision_payload = {
+                "resolved_layout": str(getattr(layout_decision, "resolved_layout", "single") or "single"),
+                "layout_fallback_reason": getattr(layout_decision, "layout_fallback_reason", None),
+                "layout_auto_fix_applied": bool(getattr(layout_decision, "layout_auto_fix_applied", False)),
+                "layout_auto_fix_reason": getattr(layout_decision, "layout_auto_fix_reason", None),
+                "layout_safety_status": str(getattr(layout_decision, "layout_safety_status", "safe") or "safe"),
+                "layout_safety_mode": str(getattr(layout_decision, "layout_safety_mode", "off") or "off"),
+                "layout_safety_contract_version": int(getattr(layout_decision, "layout_safety_contract_version", 1) or 1),
+                "scene_class": str(getattr(layout_decision, "scene_class", "single_dynamic") or "single_dynamic"),
+                "speaker_count_peak": int(getattr(layout_decision, "speaker_count_peak", 1) or 1),
+                "dominant_speaker_confidence": getattr(layout_decision, "dominant_speaker_confidence", None),
+            }
         safe_area_detection = _resolve_safe_area_detection(
             video_processor=video_processor,
             source_video=source_video,
             start_t=start_t,
             end_t=end_t,
-            resolved_layout=resolved_layout,
+            resolved_layout=str(decision_payload["resolved_layout"]),
         )
         return SubtitleRenderPlan(
             canvas_width=LOGICAL_CANVAS_WIDTH,
             canvas_height=LOGICAL_CANVAS_HEIGHT,
             requested_layout=normalized_layout,
-            resolved_layout=resolved_layout,
-            layout_fallback_reason=fallback_reason,
+            resolved_layout=str(decision_payload["resolved_layout"]),
+            layout_fallback_reason=decision_payload["layout_fallback_reason"],
+            layout_auto_fix_applied=bool(decision_payload["layout_auto_fix_applied"]),
+            layout_auto_fix_reason=decision_payload["layout_auto_fix_reason"],
+            layout_safety_status=str(decision_payload["layout_safety_status"]),
+            layout_safety_mode=str(decision_payload["layout_safety_mode"]),
+            layout_safety_contract_version=int(decision_payload["layout_safety_contract_version"]),
+            scene_class=str(decision_payload["scene_class"]),
+            speaker_count_peak=int(decision_payload["speaker_count_peak"]),
+            dominant_speaker_confidence=float(decision_payload["dominant_speaker_confidence"]) if isinstance(decision_payload["dominant_speaker_confidence"], (int, float)) else None,
             safe_area_profile=str(safe_area_detection["safe_area_profile"]),
             lower_third_collision_detected=bool(safe_area_detection["lower_third_collision_detected"]),
             lower_third_band_height_ratio=float(safe_area_detection["lower_third_band_height_ratio"]),

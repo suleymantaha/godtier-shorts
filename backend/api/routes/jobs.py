@@ -9,6 +9,7 @@ backend/api/routes/jobs.py
 """
 import asyncio
 import json
+import os
 import threading
 import time
 import uuid
@@ -26,7 +27,8 @@ from backend.api.security import AuthContext, require_policy
 from backend.core.command_runner import CommandRunner
 from backend.core.render_contracts import resolve_duration_range
 from backend.core.orchestrator import GodTierShortsCreator
-from backend.core.exceptions import JobExecutionError, NotFoundError
+from backend.core.exceptions import JobExecutionError, NotFoundError, RenderReviewRequiredError
+from backend.api.routes.clips import finalize_job_review_required
 from backend.core.workflow_helpers import (
     build_pipeline_cache_identity,
     build_segments_signature,
@@ -198,6 +200,26 @@ async def run_gpu_job(job_id: str, request: JobRequest) -> None:
                 )
                 invalidate_clips_cache(reason=f"job_success:{job_id}")
                 logger.success(f"🔓 İşlem tamamlandı: {job_id}")
+            except RenderReviewRequiredError as exc:
+                safe_outputs = list(exc.output_paths or [])
+                first_output = safe_outputs[0] if safe_outputs else None
+                first_name = None
+                if first_output:
+                    first_name = os.path.basename(first_output)
+                output_url = None
+                project_id = exc.project_id or manager.jobs.get(job_id, {}).get("project_id")
+                if first_name and project_id:
+                    output_url = f"/api/projects/{project_id}/shorts/{first_name}"
+                finalize_job_review_required(
+                    job_id,
+                    exc.message,
+                    review_items=exc.review_items,
+                    output_paths=safe_outputs,
+                    output_url=output_url,
+                    clip_name=first_name,
+                    num_clips=exc.num_clips if exc.num_clips is not None else len(safe_outputs),
+                )
+                logger.warning(f"🔶 İşlem review_required olarak tamamlandı: {job_id}")
             except asyncio.CancelledError:
                 _finalize_job(job_id, "cancelled")
                 logger.warning(f"🛑 İptal edildi: {job_id}")
@@ -466,7 +488,7 @@ async def cancel_job(
     job = manager.jobs[job_id]
     if str(job.get("subject") or "") != auth.subject:
         raise HTTPException(status_code=404, detail="İş bulunamadı.")
-    if job["status"] in ("completed", "error", "cancelled"):
+    if job["status"] in ("completed", "error", "cancelled", "review_required"):
         return {"status": "ignored", "message": f"İş zaten {job['status']} durumunda."}
 
     logger.warning(

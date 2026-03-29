@@ -114,7 +114,7 @@ class ConnectionManager:
                     status = job.get("status", "")
                     created_at = job.get("created_at", 0)
                     
-                    if status in ("completed", "error", "cancelled"):
+                    if status in ("completed", "error", "cancelled", "review_required"):
                         # Süresi dolmuş tamamlanmış jobları temizle
                         if current_time - created_at > self.JOB_EXPIRATION_SECONDS:
                             expired_jobs.append(job_id)
@@ -157,7 +157,7 @@ class ConnectionManager:
         if progress < 0:
             return "error"
         if progress >= 100:
-            return current_status if current_status in {"empty", "cancelled"} else "completed"
+            return current_status if current_status in {"empty", "cancelled", "review_required"} else "completed"
         if current_status in {"queued", "processing"}:
             return current_status
         return "processing"
@@ -388,7 +388,7 @@ def _is_priority_broadcast(
     event_type = str((extra or {}).get("event_type") or "")
     resolved_status = str(status.get("status") or "")
     progress = int(status.get("progress", 0))
-    return event_type == "clip_ready" or resolved_status in {"completed", "error"} or progress >= 100
+    return event_type == "clip_ready" or resolved_status in {"completed", "error", "review_required"} or progress >= 100
 
 
 def get_main_loop() -> asyncio.AbstractEventLoop | None:

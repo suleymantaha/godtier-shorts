@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import backend.config as config
-from backend.core.workflow_helpers import extract_youtube_video_id, persist_debug_artifacts
+from backend.core.workflow_helpers import build_pipeline_render_key, extract_youtube_video_id, persist_debug_artifacts
 from backend.services.ownership import build_owner_scoped_project_id
 
 
@@ -85,3 +85,19 @@ def test_extract_youtube_video_id_supports_common_url_shapes() -> None:
 def test_extract_youtube_video_id_returns_none_for_non_youtube_urls() -> None:
     assert extract_youtube_video_id("https://example.com/watch?v=mvYVI3wbY_g") is None
     assert extract_youtube_video_id("https://www.youtube.com/watch?v=short") is None
+
+
+def test_build_pipeline_render_key_includes_layout_safety_contract(monkeypatch) -> None:
+    monkeypatch.setenv("LAYOUT_SAFETY_MODE", "enforce")
+
+    _render_key, payload = build_pipeline_render_key(
+        analysis_key="analysis-key",
+        style_name="HORMOZI",
+        animation_type="default",
+        layout="auto",
+        skip_subtitles=False,
+        video_model_identifier="yolo11x.pt",
+    )
+
+    assert payload["layout_safety_mode"] == "enforce"
+    assert payload["layout_safety_contract_version"] == 1

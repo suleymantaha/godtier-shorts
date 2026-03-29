@@ -2,6 +2,7 @@
 from __future__ import annotations
 import os
 import time
+from pathlib import Path
 from typing import Optional
 
 from backend.config import TEMP_DIR
@@ -12,13 +13,19 @@ from backend.core.render_quality import (
     merge_transcript_quality,
 )
 from backend.core.workflow_context import OrchestratorContext
+from backend.core.exceptions import RenderReviewRequiredError
 from backend.core.workflow_helpers import (
     TempArtifactManager,
+    assess_layout_safety,
+    build_layout_review_item,
+    build_quarantine_output_path,
+    cleanup_render_bundle,
+    commit_render_bundle,
     persist_debug_artifacts,
-    publish_clip_ready_event,
     run_blocking,
     run_cut_points_workflow,
     write_json_atomic,
+    resolve_layout_safety_mode,
 )
 from backend.services.subtitle_renderer import SubtitleRenderer
 class ManualClipWorkflow:
@@ -65,12 +72,15 @@ class ManualClipWorkflow:
 
         if self.ctx.project is None:
             raise RuntimeError("Proje bağlamı bulunamadı.")
-        final_output = str(self.ctx.project.outputs / clip_filename)
+        quarantine_output = str(build_quarantine_output_path(self.ctx.project, clip_filename))
         debug_environment = build_debug_environment(model_identifier=os.path.basename(str(self.ctx.video_processor._model_path)), model_path=str(self.ctx.video_processor._model_path))
+        layout_safety_mode = resolve_layout_safety_mode()
 
         with TempArtifactManager(temp_json, shifted_json, temp_cropped) as artifacts:
             if not skip_subtitles:
                 artifacts.add(ass_file)
+            artifacts.add(quarantine_output)
+            artifacts.add(str(Path(quarantine_output).with_name(f"{Path(quarantine_output).stem}_raw.mp4")))
 
             write_json_atomic(temp_json, normalized_transcript, indent=4)
             shifted_segments, shifted_quality = build_shifted_transcript_segments_with_report(normalized_transcript, start_t, end_t)
@@ -114,7 +124,7 @@ class ManualClipWorkflow:
                     start_t,
                     end_t,
                     temp_cropped,
-                    final_output,
+                    quarantine_output,
                     ass_file,
                     subtitle_engine,
                     render_plan.resolved_layout,
@@ -124,10 +134,73 @@ class ManualClipWorkflow:
                     False,
                 )
             render_payload = render_report if isinstance(render_report, dict) else {}
+            safety_metadata = assess_layout_safety(
+                render_plan=render_plan,
+                requested_layout=layout,
+                tracking_quality=render_payload.get("tracking_quality") if isinstance(render_payload.get("tracking_quality"), dict) else None,
+                manual_center_x=center_x,
+            )
+
+            if (
+                cut_as_short
+                and center_x is None
+                and layout_safety_mode == "enforce"
+                and render_plan.resolved_layout == "split"
+                and safety_metadata["layout_safety_status"] == "unsafe"
+            ):
+                cleanup_render_bundle(quarantine_output)
+                render_plan = resolve_subtitle_render_plan(
+                    video_processor=self.ctx.video_processor,
+                    source_video=master_video,
+                    start_t=start_t,
+                    end_t=end_t,
+                    requested_layout="single",
+                    cut_as_short=cut_as_short,
+                    manual_center_x=None,
+                )
+                subtitle_engine = None
+                if not skip_subtitles:
+                    subtitle_engine = create_subtitle_renderer(
+                        style_name,
+                        animation_type=animation_type,
+                        canvas_width=render_plan.canvas_width,
+                        canvas_height=render_plan.canvas_height,
+                        layout=render_plan.resolved_layout,
+                        safe_area_profile=render_plan.safe_area_profile,
+                        lower_third_detection={
+                            "lower_third_collision_detected": render_plan.lower_third_collision_detected,
+                            "lower_third_band_height_ratio": render_plan.lower_third_band_height_ratio,
+                        },
+                    )
+                    subtitle_engine.generate_ass_file(shifted_json, ass_file, max_words_per_screen=3)
+                render_report = await run_blocking(
+                    self.ctx._cut_and_burn_clip,
+                    master_video,
+                    start_t,
+                    end_t,
+                    temp_cropped,
+                    quarantine_output,
+                    ass_file,
+                    subtitle_engine,
+                    render_plan.resolved_layout,
+                    center_x,
+                    None,
+                    cut_as_short,
+                    False,
+                )
+                render_payload = render_report if isinstance(render_report, dict) else {}
+                safety_metadata = assess_layout_safety(
+                    render_plan=render_plan,
+                    requested_layout=layout,
+                    tracking_quality=render_payload.get("tracking_quality") if isinstance(render_payload.get("tracking_quality"), dict) else None,
+                    manual_center_x=center_x,
+                    layout_auto_fix_reason_override="split_runtime_degraded",
+                    layout_auto_fix_applied_override=True,
+                )
+
             if render_payload:
                 artifacts.add(render_payload.get("debug_overlay_temp_path"))
 
-            meta_path = final_output.replace(".mp4", ".json")
             subtitle_layout_quality = render_payload.get("subtitle_layout_quality")
             transcript_quality = merge_transcript_quality(
                 base_quality=shifted_quality,
@@ -164,6 +237,14 @@ class ManualClipWorkflow:
                     "layout": layout,
                     "resolved_layout": render_plan.resolved_layout,
                     "layout_fallback_reason": render_plan.layout_fallback_reason,
+                    "layout_auto_fix_applied": safety_metadata["layout_auto_fix_applied"],
+                    "layout_auto_fix_reason": safety_metadata["layout_auto_fix_reason"],
+                    "layout_safety_status": safety_metadata["layout_safety_status"],
+                    "layout_safety_mode": safety_metadata["layout_safety_mode"],
+                    "layout_safety_contract_version": safety_metadata["layout_safety_contract_version"],
+                    "scene_class": safety_metadata["scene_class"],
+                    "speaker_count_peak": safety_metadata["speaker_count_peak"],
+                    "dominant_speaker_confidence": safety_metadata["dominant_speaker_confidence"],
                     "style_name": style_name,
                     "animation_type": animation_type,
                     "resolved_animation_type": resolved_style.animation_type,
@@ -179,12 +260,34 @@ class ManualClipWorkflow:
                     **({"debug_artifacts": debug_artifacts} if debug_artifacts else {}),
                 },
             )
-            write_json_atomic(meta_path, clip_metadata, indent=4)
-            publish_clip_ready_event(
+            if layout_safety_mode == "enforce" and safety_metadata["layout_safety_status"] not in {"safe", "degraded"}:
+                cleanup_render_bundle(quarantine_output)
+                raise RenderReviewRequiredError(
+                    "Render sonucu manuel inceleme gerektiriyor.",
+                    review_items=[
+                        build_layout_review_item(
+                            start_time=start_t,
+                            end_time=end_t,
+                            requested_layout=layout,
+                            attempted_layout=render_plan.resolved_layout,
+                            layout_auto_fix_reason=str(safety_metadata["layout_auto_fix_reason"] or "split_runtime_degraded"),
+                            suggested_layout="single",
+                        )
+                    ],
+                    output_paths=[],
+                    project_id=self.ctx.project.root.name,
+                    num_clips=0,
+                )
+
+            final_output = commit_render_bundle(
+                project=self.ctx.project,
+                quarantine_output=quarantine_output,
+                clip_filename=clip_filename,
+                clip_metadata=clip_metadata,
                 subject=self.ctx.subject,
                 job_id=job_id,
                 project_id=self.ctx.project.root.name,
-                clip_name=clip_filename,
+                ui_title=None,
                 message="Manuel klip hazır.",
                 progress=99,
                 clip_event_port=self.ctx.clip_event_port,

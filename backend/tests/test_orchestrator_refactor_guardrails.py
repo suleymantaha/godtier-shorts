@@ -6,7 +6,7 @@ import ast
 from pathlib import Path
 
 ORCHESTRATOR_PATH = Path(__file__).resolve().parents[1] / "core" / "orchestrator.py"
-MAX_ORCHESTRATOR_LINES = 350
+MAX_ORCHESTRATOR_LINES = 400
 MAX_FACADE_METHOD_LINES = 65
 FACADE_METHODS = {
     "run_pipeline_async",

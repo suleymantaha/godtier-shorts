@@ -21,6 +21,8 @@ from backend.core.subtitle_timing import (
     compute_word_coverage_ratio,
     count_normalized_tokens,
     normalize_subtitle_text,
+    normalize_word_payload,
+    resolve_word_overlaps,
 )
 from backend.services.subtitle_renderer import SubtitleRenderer
 from backend.services.video_processor import VideoProcessor
@@ -316,7 +318,18 @@ def build_shifted_transcript_segments_with_report(
     clamped_words_count = 0
     reconstructed_segments_count = 0
     text_word_mismatches = 0
-    for seg in canonicalize_transcript_segments(data):
+    normalized_segments = canonicalize_transcript_segments(data)
+    for raw_segment, normalized_segment in zip(data, normalized_segments):
+        seg = dict(normalized_segment)
+        valid_words = resolve_word_overlaps(
+            [
+                normalized
+                for raw_word in raw_segment.get("words", []) or []
+                if (normalized := normalize_word_payload(dict(raw_word))) is not None
+            ]
+        )
+        if valid_words and len(valid_words) > count_normalized_tokens(seg["text"]):
+            seg["words"] = valid_words
         if seg["end"] > start_time and seg["start"] < end_time:
             new_start = max(0, seg["start"] - start_time)
             new_end = min(seg["end"] - start_time, duration)

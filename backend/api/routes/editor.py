@@ -33,6 +33,7 @@ from backend.api.routes.clips import (
     build_clip_transcript_response,
     ensure_project_transcript,
     finalize_job_error,
+    finalize_job_review_required,
     finalize_job_success,
     find_clip_recovery_job,
     find_project_transcript_job,
@@ -43,7 +44,7 @@ from backend.api.routes.clips import (
 from backend.core.media_ops import build_shifted_transcript_segments
 from backend.core.render_contracts import resolve_duration_range
 from backend.core.orchestrator import GodTierShortsCreator
-from backend.core.exceptions import InvalidInputError, JobExecutionError
+from backend.core.exceptions import InvalidInputError, JobExecutionError, RenderReviewRequiredError
 from backend.models.schemas import (
     BatchJobRequest,
     ClipTranscriptRecoveryRequest,
@@ -357,6 +358,18 @@ async def process_batch_clips(
                     manager.jobs[job_id]["output_path"] = output_paths[0]
                     manager.jobs[job_id]["num_clips"] = len(output_paths)
                 finalize_job_success(job_id, "Toplu klip üretimi tamamlandı.")
+            except RenderReviewRequiredError as exc:
+                safe_outputs = list(exc.output_paths or [])
+                first_name = os.path.basename(safe_outputs[0]) if safe_outputs else None
+                finalize_job_review_required(
+                    job_id,
+                    exc.message,
+                    review_items=exc.review_items,
+                    output_paths=safe_outputs,
+                    output_url=build_secure_clip_url(request.project_id, first_name) if request.project_id and first_name else None,
+                    clip_name=first_name,
+                    num_clips=exc.num_clips if exc.num_clips is not None else len(safe_outputs),
+                )
             except (RuntimeError, ValueError, OSError) as exc:
                 mapped_error = JobExecutionError("Toplu üretim başarısız", details=str(exc))
                 logger.error(f"Toplu üretim hatası ({job_id}): {mapped_error.message}")
@@ -565,6 +578,18 @@ async def manual_cut_upload(
                             manager.jobs[job_id]["num_clips"] = 1
 
                     finalize_job_success(job_id, "Otomatik manual cut işlemi tamamlandı.")
+                except RenderReviewRequiredError as exc:
+                    safe_outputs = list(exc.output_paths or [])
+                    first_name = os.path.basename(safe_outputs[0]) if safe_outputs else None
+                    finalize_job_review_required(
+                        job_id,
+                        exc.message,
+                        review_items=exc.review_items,
+                        output_paths=safe_outputs,
+                        output_url=build_secure_clip_url(project_id, first_name) if first_name else None,
+                        clip_name=first_name,
+                        num_clips=exc.num_clips if exc.num_clips is not None else len(safe_outputs),
+                    )
                 except (RuntimeError, ValueError, OSError) as exc:
                     mapped_error = JobExecutionError("Otomatik manual cut başarısız", details=str(exc))
                     logger.error(f"Otomatik manual cut hatası ({job_id}): {mapped_error.message}")
@@ -856,7 +881,7 @@ async def process_manual_clip(
                 gpu_stage_lock=manager.gpu_lock,
             )
             try:
-                await orchestrator.run_manual_clip_async(
+                output_path = await orchestrator.run_manual_clip_async(
                     start_t=request.start_time,
                     end_t=request.end_time,
                     transcript_data=request.transcript,
@@ -866,7 +891,26 @@ async def process_manual_clip(
                     center_x=request.center_x,
                     layout=request.layout,
                 )
+                if output_path:
+                    final_name = os.path.basename(output_path)
+                    manager.jobs[job_id]["clip_name"] = final_name
+                    manager.jobs[job_id]["output_url"] = build_secure_clip_url(request.project_id, final_name) if request.project_id else None
+                    manager.jobs[job_id]["output_path"] = output_path
+                    manager.jobs[job_id]["output_paths"] = [output_path]
+                    manager.jobs[job_id]["num_clips"] = 1
                 finalize_job_success(job_id, "Manuel render tamamlandı.")
+            except RenderReviewRequiredError as exc:
+                safe_outputs = list(exc.output_paths or [])
+                first_name = os.path.basename(safe_outputs[0]) if safe_outputs else None
+                finalize_job_review_required(
+                    job_id,
+                    exc.message,
+                    review_items=exc.review_items,
+                    output_paths=safe_outputs,
+                    output_url=build_secure_clip_url(request.project_id, first_name) if request.project_id and first_name else None,
+                    clip_name=first_name,
+                    num_clips=exc.num_clips if exc.num_clips is not None else len(safe_outputs),
+                )
             except (RuntimeError, ValueError, OSError) as exc:
                 mapped_error = JobExecutionError("Manuel render başarısız", details=str(exc))
                 logger.error(f"Manuel render hatası ({job_id}): {mapped_error.message}")

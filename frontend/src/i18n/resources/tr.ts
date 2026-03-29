@@ -413,6 +413,11 @@ export const tr: TranslationSchema = {
       processing: 'Auto-cut çalışıyor.',
       completed: 'Auto-cut tamamlandı.',
       failed: 'Auto-cut başarısız oldu.',
+      reviewRequiredTitle: 'Manuel inceleme gerekli',
+      reviewRequiredBody: 'Güvenlik kontrolü bu renderı otomatik olarak incelemeye aldı.',
+      forceSingle: 'Single zorla',
+      forceSplit: 'Split zorla',
+      manualCenter: 'Manual center',
     },
     render: {
       title: 'Render başlat',

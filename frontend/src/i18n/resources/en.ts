@@ -417,6 +417,11 @@ export const en = {
       processing: 'Auto-cut is running.',
       completed: 'Auto-cut completed.',
       failed: 'Auto-cut failed.',
+      reviewRequiredTitle: 'Manual review required',
+      reviewRequiredBody: 'Safety checks held this render for manual review.',
+      forceSingle: 'Force single',
+      forceSplit: 'Force split',
+      manualCenter: 'Manual center',
     },
     render: {
       title: 'Start render',

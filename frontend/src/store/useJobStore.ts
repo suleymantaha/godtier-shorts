@@ -83,7 +83,7 @@ function resolveJobStatus(progress: number, status?: JobStatus, currentStatus: J
         return 'error';
     }
     if (progress >= 100) {
-        return currentStatus === 'empty' || currentStatus === 'cancelled' ? currentStatus : 'completed';
+        return currentStatus === 'empty' || currentStatus === 'cancelled' || currentStatus === 'review_required' ? currentStatus : 'completed';
     }
     if (currentStatus === 'queued' || currentStatus === 'processing') {
         return currentStatus;

@@ -2,7 +2,7 @@ import type { RequestedSubtitleLayout, StyleName, SubtitleAnimationType } from '
 import { tSafe } from '../../i18n';
 import type { Job } from '../../types';
 
-const TERMINAL_JOB_STATUSES = new Set<Job['status']>(['completed', 'cancelled', 'error']);
+const TERMINAL_JOB_STATUSES = new Set<Job['status']>(['completed', 'cancelled', 'error', 'review_required']);
 
 export interface AutoCutJobStateInput {
   currentJob: Job | null;

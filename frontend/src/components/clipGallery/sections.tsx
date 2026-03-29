@@ -688,11 +688,11 @@ export function DeleteClipModal({
   onClose: () => void;
   onConfirm: () => void;
 }) {
+  const { t } = useTranslation();
+
   if (!clip) {
     return null;
   }
-
-  const { t } = useTranslation();
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm p-4 flex items-center justify-center">

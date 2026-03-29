@@ -189,6 +189,22 @@ describe('useJobStore timeline merging', () => {
     expect(logs.filter((entry) => entry.id === 'evt-1')).toHaveLength(1);
   });
 
+  it('preserves review_required as a terminal job status at 100% progress', () => {
+    useJobStore.getState().mergeJobTimelineEvent({
+      at: '2026-03-20T00:00:10.000Z',
+      event_id: 'evt-review-1',
+      job_id: 'job-review',
+      message: 'manual review required',
+      progress: 100,
+      source: 'worker',
+      status: 'review_required',
+    });
+
+    const job = useJobStore.getState().jobs.find((entry) => entry.job_id === 'job-review');
+    expect(job?.status).toBe('review_required');
+    expect(job?.progress).toBe(100);
+  });
+
   it('persists structured download progress across websocket merge and api hydration', async () => {
     useJobStore.getState().mergeJobTimelineEvent({
       at: '2026-03-20T00:00:04.000Z',

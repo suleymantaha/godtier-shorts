@@ -505,7 +505,6 @@ export const HoloTerminal: React.FC<{ compact?: boolean }> = ({ compact = false 
             return undefined;
         }
 
-        setRetentionNow(Date.now());
         const intervalId = window.setInterval(() => {
             setRetentionNow(Date.now());
         }, 1000);

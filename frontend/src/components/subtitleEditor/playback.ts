@@ -184,9 +184,15 @@ export function useStableRangeReady({
   const [rangeReadySelectionKey, setRangeReadySelectionKey] = useState<string | null>(null);
 
   useEffect(() => {
-    if (selectionKey && rangeReadyCandidate) {
-      setRangeReadySelectionKey(selectionKey);
+    if (!selectionKey || !rangeReadyCandidate) {
+      return undefined;
     }
+
+    const timeoutId = window.setTimeout(() => {
+      setRangeReadySelectionKey(selectionKey);
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
   }, [rangeReadyCandidate, selectionKey]);
 
   const clearRangeReadySelection = useCallback(() => {

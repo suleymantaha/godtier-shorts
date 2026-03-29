@@ -5,7 +5,7 @@
  * Hem store hem de component'lar bu dosyadan import eder.
  */
 
-export type JobStatus = 'queued' | 'processing' | 'completed' | 'cancelled' | 'error' | 'empty';
+export type JobStatus = 'queued' | 'processing' | 'completed' | 'cancelled' | 'error' | 'empty' | 'review_required';
 export type JobTimelineSource = 'api' | 'worker' | 'websocket' | 'clip_ready';
 
 export interface DownloadProgress {
@@ -61,8 +61,21 @@ export interface Job {
     output_path?: string;
     error?: string;
     num_clips?: number;
+    review_items?: ReviewItem[];
     download_progress?: DownloadProgress;
     timeline?: JobTimelineEntry[];
+}
+
+export interface ReviewItem {
+    clip_index?: number;
+    ui_title?: string;
+    start_time: number;
+    end_time: number;
+    requested_layout: string;
+    attempted_layout: string;
+    layout_auto_fix_reason?: 'split_face_safety' | 'split_identity_unstable' | 'split_runtime_degraded' | null;
+    suggested_layout: string;
+    suggested_actions: string[];
 }
 
 export interface Clip {
@@ -162,6 +175,14 @@ export interface RenderMetadata {
     layout?: string;
     resolved_layout?: string;
     layout_fallback_reason?: string | null;
+    layout_auto_fix_applied?: boolean;
+    layout_auto_fix_reason?: 'split_face_safety' | 'split_identity_unstable' | 'split_runtime_degraded' | null;
+    layout_safety_status?: 'safe' | 'degraded' | 'unsafe';
+    layout_safety_mode?: 'off' | 'shadow' | 'enforce';
+    layout_safety_contract_version?: number;
+    scene_class?: 'single_static' | 'single_dynamic' | 'dual_separated' | 'dual_overlap_risky';
+    speaker_count_peak?: number;
+    dominant_speaker_confidence?: number | null;
     layout_validation_status?: string;
     opening_visibility_delay_ms?: number;
     style_name?: string;
@@ -177,6 +198,10 @@ export interface RenderMetadata {
         total_frames?: number;
         fallback_frames?: number;
         avg_center_jump_px?: number;
+        speaker_lock_policy?: 'hold_until_unsafe' | 'stable_split';
+        identity_confidence?: number;
+        face_edge_violation_frames?: number;
+        unsafe_split_frames?: number;
         confirmed_track_frames?: number;
         grace_hold_frames?: number;
         controlled_return_frames?: number;

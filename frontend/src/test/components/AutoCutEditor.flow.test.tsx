@@ -70,7 +70,7 @@ describe('AutoCutEditor page flow', () => {
   it('shows the single-render CTA and forwards the click to the controller', () => {
     render(<AutoCutEditor />);
 
-    fireEvent.click(screen.getByRole('button', { name: /otomatik cut uret/i }));
+    fireEvent.click(screen.getByRole('button', { name: /(?:otomatik cut uret|generate automatic cut)/i }));
 
     expect(controllerState.value?.handleRender).toHaveBeenCalledTimes(1);
   });
@@ -80,7 +80,7 @@ describe('AutoCutEditor page flow', () => {
 
     render(<AutoCutEditor />);
 
-    expect(screen.getByRole('button', { name: /ai ile 3 klip uret/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /(?:ai ile 3 klip uret|generate 3 clips with ai)/i })).toBeInTheDocument();
   });
 
   it('passes editor state into the subtitle preview shell', () => {
@@ -121,11 +121,11 @@ describe('AutoCutEditor page flow', () => {
 
     render(<AutoCutEditor onOpenLibrary={controllerState.value?.handleOpenLibrary as () => void} />);
 
-    expect(screen.getByText(/2 klip uretildi/i)).toBeInTheDocument();
+    expect(screen.getByText(/(?:2 klip uretildi|2 clips generated)/i)).toBeInTheDocument();
     expect(screen.getByText('clip-1.mp4')).toBeInTheDocument();
     expect(screen.getByText('clip-2.mp4')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /clip library/i }));
+    fireEvent.click(screen.getByRole('button', { name: /(?:clip library|open library|kutuphaneyi ac)/i }));
     expect(controllerState.value?.handleOpenLibrary).toHaveBeenCalledTimes(1);
   });
 });

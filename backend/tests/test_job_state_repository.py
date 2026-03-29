@@ -75,3 +75,23 @@ def test_connection_manager_uses_explicit_empty_repository_for_persistence(tmp_p
     persisted = _load_jobs_payload(state_path)
 
     assert "job-1" in persisted
+
+
+def test_job_repository_preserves_review_required_terminal_status(tmp_path: Path) -> None:
+    state_path = tmp_path / "jobs.json"
+    repository = JobStateRepository(state_path)
+    repository["job-1"] = {
+        "job_id": "job-1",
+        "status": "review_required",
+        "progress": 100,
+        "last_message": "manual review needed",
+        "review_items": [{"suggested_layout": "single"}],
+        "subject": "subject-a",
+    }
+
+    recovered_manager = ConnectionManager(job_repository=JobStateRepository(state_path))
+    recovered_job = recovered_manager.jobs["job-1"]
+
+    assert recovered_job["status"] == "review_required"
+    assert recovered_job["last_message"] == "manual review needed"
+    assert recovered_job["review_items"] == [{"suggested_layout": "single"}]
