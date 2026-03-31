@@ -37,6 +37,9 @@ Keep backend subtitle presets and frontend preview behavior aligned.
 - `bash -lc "cd frontend && npm run test -- src/test/config/subtitleStyles.test.ts src/test/components/SubtitlePreview.test.tsx --reporter=dot"`
 - `bash -lc "cd frontend && npm run test -- src/test/components/VideoOverlay.test.tsx src/test/components/SubtitleEditor.clip.test.tsx --reporter=dot"`
 - `python scripts/test_subtitle_styles.py [PROJECT_DIR]`
+- `Set-Location frontend; npm run test -- src/test/config/subtitleStyles.test.ts src/test/components/SubtitlePreview.test.tsx --reporter=dot; Set-Location ..`
+- `Set-Location frontend; npm run test -- src/test/components/VideoOverlay.test.tsx src/test/components/SubtitleEditor.clip.test.tsx --reporter=dot; Set-Location ..`
+- `& .\.venv\Scripts\python.exe scripts\test_subtitle_styles.py [PROJECT_DIR]`
 
 ## Notes
 

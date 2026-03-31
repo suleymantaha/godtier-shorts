@@ -27,7 +27,7 @@ function readBooleanEnv(value: string | undefined, fallback: boolean): boolean {
 
 export const API_BASE = envUrl ?? 'http://localhost:8000';
 export const WS_BASE = API_BASE.replace(/^http/, 'ws');
-export const API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? '';
+export const CLERK_PUBLISHABLE_KEY = (import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined) ?? '';
 export const CLERK_JWT_TEMPLATE = (import.meta.env.VITE_CLERK_JWT_TEMPLATE as string | undefined) ?? '';
 
 export const MAX_UPLOAD_BYTES = Number((import.meta.env.VITE_MAX_UPLOAD_BYTES as string | undefined) ?? 5 * 1024 * 1024 * 1024);

@@ -241,42 +241,6 @@ describe('api client auth flow - error and account mapping', () => {
     });
   });
 
-  it('does not pause global protected requests when ownership diagnostics returns unauthorized', async () => {
-    const token = createToken(300);
-    const getToken = vi.fn().mockResolvedValue(token);
-    const pauseProtectedRequests = vi.fn();
-    const setProtectedRequestsFresh = vi.fn();
-    const setProtectedRequestsRefreshing = vi.fn();
-
-    vi.doMock('../../auth/runtime', () => ({
-      useAuthRuntimeStore: {
-        getState: () => ({
-          pauseProtectedRequests,
-          setProtectedRequestsFresh,
-          setProtectedRequestsRefreshing,
-        }),
-      },
-    }));
-
-    (window as Window & { Clerk?: unknown }).Clerk = {
-      session: { getToken },
-    };
-    vi.spyOn(global, 'fetch').mockResolvedValue(
-      createJsonResponse({
-        detail: { error: { code: 'unauthorized', message: 'expired' } },
-      }, 401),
-    );
-
-    const client = await loadClientModule();
-
-    await expect(client.authApi.ownershipDiagnostics()).rejects.toMatchObject({
-      code: 'unauthorized',
-      status: 401,
-    });
-    expect(setProtectedRequestsFresh).toHaveBeenCalled();
-    expect(pauseProtectedRequests).not.toHaveBeenCalled();
-  });
-
   it('sends the account deletion confirmation payload with DELETE', async () => {
     const token = createToken(300);
     const getToken = vi.fn().mockResolvedValue(token);

@@ -17,25 +17,6 @@ let mockClipsResponse: {
   total?: number;
 };
 let mockShouldReject: boolean;
-let mockOwnershipDiagnosticsError: Error | null;
-let mockOwnershipDiagnosticsResponse: {
-  auth_mode: 'clerk_jwt' | 'static_token';
-  current_subject: string;
-  current_subject_hash: string;
-  reclaimable_projects: Array<{
-    clip_count: number;
-    created_at: string;
-    latest_clip_name?: string | null;
-    owner_subject_hash: string;
-    project_id: string;
-    source: string;
-    status: string;
-  }>;
-  token_type: 'jwt' | 'bearer';
-  visible_project_count: number;
-};
-const mockClaimProjectOwnership = vi.fn();
-const mockOwnershipDiagnostics = vi.fn();
 const mockDeleteClip = vi.fn();
 const mockListClips = vi.fn();
 const windowOpenMock = vi.fn();
@@ -56,14 +37,7 @@ async function chooseSelectOption(user: ReturnType<typeof userEvent.setup>, labe
 }
 
 vi.mock('../../api/client', () => ({
-  authApi: {
-    claimProjectOwnership: (...args: unknown[]) => mockClaimProjectOwnership(...args),
-    ownershipDiagnostics: (...args: unknown[]) => {
-      mockOwnershipDiagnostics(...args);
-      if (mockOwnershipDiagnosticsError) return Promise.reject(mockOwnershipDiagnosticsError);
-      return Promise.resolve(mockOwnershipDiagnosticsResponse);
-    },
-  },
+  authApi: {},
   clipsApi: {
     delete: (...args: unknown[]) => mockDeleteClip(...args),
     list: (...args: unknown[]) => {
@@ -125,26 +99,8 @@ beforeEach(() => {
     tokenType: 'jwt',
   };
   authRuntimeState.pauseReason = null;
-  mockOwnershipDiagnosticsError = null;
   mockClipsResponse = { clips: [] };
-  mockOwnershipDiagnosticsResponse = {
-    auth_mode: 'clerk_jwt',
-    current_subject: 'clerk-user-1',
-    current_subject_hash: 'a4069ffa93794396e1a7bf578c6a7b8b',
-    reclaimable_projects: [],
-    token_type: 'jwt',
-    visible_project_count: 0,
-  };
   mockShouldReject = false;
-  mockClaimProjectOwnership.mockReset();
-  mockClaimProjectOwnership.mockResolvedValue({
-    status: 'claimed',
-    clip_count: 1,
-    current_subject_hash: 'a4069ffa93794396e1a7bf578c6a7b8b',
-    metadata_files_updated: 1,
-    new_project_id: 'project-claimed',
-    old_project_id: 'project-legacy',
-  });
   mockDeleteClip.mockReset();
   mockDeleteClip.mockResolvedValue({
     clip_name: 'clip-1.mp4',
@@ -153,7 +109,6 @@ beforeEach(() => {
     status: 'deleted',
   });
   mockListClips.mockReset();
-  mockOwnershipDiagnostics.mockReset();
 });
 
 afterEach(() => {
@@ -271,27 +226,6 @@ describe('ClipGallery loading and empty states', () => {
     expect((await screen.findAllByText('clip-processing.mp4')).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/transcript processing/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/transcript recovery needed/i).length).toBeGreaterThan(0);
-  });
-
-  it('falls back to the last verified backend identity when ownership diagnostics are unavailable', async () => {
-    mockOwnershipDiagnosticsError = new Error('ownership unavailable');
-    mockClipsResponse = {
-      clips: [{
-        name: 'clip-1.mp4',
-        project: 'project-1',
-        url: '/clips/clip-1.mp4',
-        has_transcript: true,
-        created_at: 123,
-      }],
-      total: 1,
-    };
-
-    const { ClipGallery } = await import('../../components/ClipGallery');
-    render(<ClipGallery />);
-
-    expect((await screen.findAllByText('clip-1.mp4')).length).toBeGreaterThan(0);
-    expect(screen.getByText(/account a4069ffa\.\.\.7b8b \| clerk/i)).toBeInTheDocument();
-    expect(screen.queryByText(/account unknown/i)).not.toBeInTheDocument();
   });
 
   it('shows empty state when no clips', async () => {
@@ -538,33 +472,6 @@ describe('ClipGallery interactions - browse and edit', () => {
     expect(screen.queryByRole('button', { name: /advanced edit/i })).not.toBeInTheDocument();
   });
 
-  it('shows reclaimable projects and claims them into the current account', async () => {
-    const user = userEvent.setup();
-    mockOwnershipDiagnosticsResponse = {
-      auth_mode: 'clerk_jwt',
-      current_subject: 'clerk-user-1',
-      current_subject_hash: 'a4069ffa93794396e1a7bf578c6a7b8b',
-      reclaimable_projects: [{
-        clip_count: 1,
-        created_at: '2026-03-21T12:00:18.810686+00:00',
-        latest_clip_name: 'clip.mp4',
-        owner_subject_hash: '28ea82a4a3257f9fa00a1c8f083faa38',
-        project_id: 'project-legacy',
-        source: 'youtube',
-        status: 'active',
-      }],
-      token_type: 'jwt',
-      visible_project_count: 0,
-    };
-
-    const { ClipGallery } = await import('../../components/ClipGallery');
-    render(<ClipGallery />);
-
-    expect(await screen.findByText(/claim it to account a4069ffa\.\.\.7b8b/i)).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /claim project/i }));
-
-    await waitFor(() => expect(mockClaimProjectOwnership).toHaveBeenCalledWith('project-legacy'));
-  });
 });
 
 describe('ClipGallery interactions - delete flows', () => {

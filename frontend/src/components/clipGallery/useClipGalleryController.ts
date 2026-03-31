@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
 
-import { authApi, clipsApi } from '../../api/client';
+import { clipsApi } from '../../api/client';
 import { useAuthRuntimeStore } from '../../auth/runtime';
 import { tSafe } from '../../i18n';
 import { useJobStore } from '../../store/useJobStore';
-import type { Clip, Job, OwnershipDiagnosticsResponse } from '../../types';
+import type { Clip, Job } from '../../types';
 import { isAppError } from '../../api/errors';
 
 export type GalleryState = 'loading' | 'processing' | 'error' | 'auth_blocked' | 'empty' | 'ready';
@@ -26,14 +26,10 @@ function useClipGalleryState() {
   const [clips, setClips] = useState<Clip[]>([]);
   const [shareClip, setShareClip] = useState<Clip | null>(null);
   const [deleteClip, setDeleteClip] = useState<Clip | null>(null);
-  const [ownershipDiagnostics, setOwnershipDiagnostics] = useState<OwnershipDiagnosticsResponse | null>(null);
-  const [ownershipNotice, setOwnershipNotice] = useState<string | null>(null);
-  const [ownershipNoticeTone, setOwnershipNoticeTone] = useState<'danger' | 'info'>('info');
   const [state, setState] = useState<GalleryState>('loading');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
-  const [isClaimingProjectId, setIsClaimingProjectId] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
   const [projectFilter, setProjectFilter] = useState(ALL_PROJECTS_FILTER);
   const [sortOrder, setSortOrder] = useState<ClipSortOrder>('newest');
@@ -47,11 +43,7 @@ function useClipGalleryState() {
     deleteError,
     errorMsg,
     hasMore,
-    isClaimingProjectId,
     isDeleting,
-    ownershipDiagnostics,
-    ownershipNotice,
-    ownershipNoticeTone,
     projectFilter,
     retryTick,
     setClips,
@@ -59,11 +51,7 @@ function useClipGalleryState() {
     setDeleteError,
     setErrorMsg,
     setHasMore,
-    setIsClaimingProjectId,
     setIsDeleting,
-    setOwnershipDiagnostics,
-    setOwnershipNotice,
-    setOwnershipNoticeTone,
     setProjectFilter,
     setRetryTick,
     setShareClip,
@@ -365,109 +353,11 @@ function useClipGalleryRetryAction(
   }, [fetchClips, setDeleteError, setRetryTick, setStaleRefreshWarning, setState]);
 }
 
-function useOwnershipRecovery({
-  canUseProtectedRequests,
-  cancelledRef,
-  clipsState,
-  fetchClips,
-}: {
-  canUseProtectedRequests: boolean;
-  cancelledRef: RefObject<boolean>;
-  clipsState: ReturnType<typeof useClipGalleryState>;
-  fetchClips: (options?: { forceAuthRecovery?: boolean }) => Promise<void>;
-}) {
-  const {
-    isClaimingProjectId,
-    setIsClaimingProjectId,
-    setOwnershipDiagnostics,
-    setOwnershipNotice,
-    setOwnershipNoticeTone,
-  } = clipsState;
-
-  const fetchOwnershipDiagnostics = useCallback(async () => {
-    if (!canUseProtectedRequests) {
-      return;
-    }
-
-    try {
-      const diagnostics = await authApi.ownershipDiagnostics();
-      if (cancelledRef.current) {
-        return;
-      }
-      setOwnershipDiagnostics(diagnostics);
-    } catch (error) {
-      if (cancelledRef.current) {
-        return;
-      }
-      if (isAppError(error) && (error.code === 'forbidden' || AUTH_BLOCKING_CODES.has(error.code))) {
-        return;
-      }
-      setOwnershipNotice(error instanceof Error ? error.message : tSafe('clipGalleryErrors.ownershipUnavailable'));
-      setOwnershipNoticeTone('danger');
-    }
-  }, [canUseProtectedRequests, cancelledRef, setOwnershipDiagnostics, setOwnershipNotice, setOwnershipNoticeTone]);
-
-  useEffect(() => {
-    if (!canUseProtectedRequests) {
-      setOwnershipNotice(null);
-      setIsClaimingProjectId(null);
-      return;
-    }
-
-    void fetchOwnershipDiagnostics();
-  }, [canUseProtectedRequests, fetchOwnershipDiagnostics, setIsClaimingProjectId, setOwnershipNotice]);
-
-  const handleClaimProject = useCallback(async (projectId: string) => {
-    if (!canUseProtectedRequests || isClaimingProjectId) {
-      return;
-    }
-
-    setOwnershipNotice(null);
-    setIsClaimingProjectId(projectId);
-    try {
-      const response = await authApi.claimProjectOwnership(projectId);
-      if (cancelledRef.current) {
-        return;
-      }
-      setOwnershipNotice(tSafe('clipGalleryErrors.projectClaimed', { projectId: response.new_project_id }));
-      setOwnershipNoticeTone('info');
-      await Promise.all([
-        fetchClips(),
-        fetchOwnershipDiagnostics(),
-      ]);
-    } catch (error) {
-      if (cancelledRef.current) {
-        return;
-      }
-      setOwnershipNotice(error instanceof Error ? error.message : tSafe('clipGalleryErrors.projectClaimFailed'));
-      setOwnershipNoticeTone('danger');
-    } finally {
-      if (!cancelledRef.current) {
-        setIsClaimingProjectId(null);
-      }
-    }
-  }, [
-    canUseProtectedRequests,
-    cancelledRef,
-    fetchClips,
-    fetchOwnershipDiagnostics,
-    isClaimingProjectId,
-    setIsClaimingProjectId,
-    setOwnershipNotice,
-    setOwnershipNoticeTone,
-  ]);
-
-  return {
-    handleClaimProject,
-  };
-}
-
 function buildClipGalleryViewModel({
   backendIdentity,
   clipsState,
   deleteActions,
   hasActiveClipProducingJobs,
-  ownershipRecovery,
   projectOptions,
   visibleClips,
 }: {
@@ -475,29 +365,23 @@ function buildClipGalleryViewModel({
   clipsState: ReturnType<typeof useClipGalleryState>;
   deleteActions: ReturnType<typeof useClipGalleryDeleteActions>;
   hasActiveClipProducingJobs: boolean;
-  ownershipRecovery: ReturnType<typeof useOwnershipRecovery>;
   projectOptions: Array<{ label: string; value: string }>;
   visibleClips: Clip[];
 }) {
   return {
-    authMode: clipsState.ownershipDiagnostics?.auth_mode ?? backendIdentity?.authMode ?? null,
+    authMode: backendIdentity?.authMode ?? null,
     clips: visibleClips,
-    currentSubjectHash: clipsState.ownershipDiagnostics?.current_subject_hash ?? backendIdentity?.subjectHash ?? null,
+    currentSubjectHash: backendIdentity?.subjectHash ?? null,
     deleteClip: clipsState.deleteClip,
     deleteError: clipsState.deleteError,
     errorMsg: clipsState.errorMsg,
-    handleClaimProject: ownershipRecovery.handleClaimProject,
     hasMore: clipsState.hasMore,
-    isClaimingProjectId: clipsState.isClaimingProjectId,
     isDeleting: clipsState.isDeleting,
     loadedCount: clipsState.clips.length,
-    ownershipNotice: clipsState.ownershipNotice,
-    ownershipNoticeTone: clipsState.ownershipNoticeTone,
     pageSizeLimit: CLIPS_PAGE_SIZE,
     productionInProgress: hasActiveClipProducingJobs && clipsState.clips.length > 0,
     projectFilter: clipsState.projectFilter,
     projectOptions,
-    reclaimableProjects: clipsState.ownershipDiagnostics?.reclaimable_projects ?? [],
     setProjectFilter: clipsState.setProjectFilter,
     setShareClip: clipsState.setShareClip,
     setSortOrder: clipsState.setSortOrder,
@@ -531,12 +415,6 @@ export function useClipGalleryController() {
     hasActiveClipProducingJobs,
     hasLoadedOnceRef,
     scheduleRetry,
-  });
-  const ownershipRecovery = useOwnershipRecovery({
-    canUseProtectedRequests,
-    cancelledRef,
-    clipsState,
-    fetchClips,
   });
 
   useClipGalleryPolling(cancelledRef, canUseProtectedRequests, clearRetryTimer, fetchClips, clipsState.retryTick);
@@ -583,7 +461,6 @@ export function useClipGalleryController() {
     clipsState,
     deleteActions,
     hasActiveClipProducingJobs,
-    ownershipRecovery,
     projectOptions,
     visibleClips,
   });

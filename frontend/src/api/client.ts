@@ -45,8 +45,6 @@ import type {
     PublishJob,
     AccountDeletionResponse,
     AuthWhoAmIResponse,
-    ClaimProjectOwnershipResponse,
-    OwnershipDiagnosticsResponse,
 } from '../types';
 
 type ProjectsFetchStatus = 'good' | 'degraded' | 'unknown';
@@ -544,13 +542,6 @@ async function apiFetch<T>(path: string, init?: RequestInit, options?: ApiFetchO
 export const authApi = {
     whoami: () =>
         apiFetch<AuthWhoAmIResponse>('/api/auth/whoami'),
-    ownershipDiagnostics: () =>
-        apiFetch<OwnershipDiagnosticsResponse>('/api/auth/ownership-diagnostics', undefined, { suppressAuthPause: true }),
-    claimProjectOwnership: (projectId: string) =>
-        apiFetch<ClaimProjectOwnershipResponse>(
-            '/api/auth/claim-project-ownership',
-            { method: 'POST', body: JSON.stringify({ project_id: projectId }) },
-        ),
 };
 
 // ─── Job endpoint'leri ────────────────────────────────────────────────────────

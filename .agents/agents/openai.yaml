@@ -1,4 +1,4 @@
 interface:
   display_name: "GodTier Shorts"
   short_description: "GodTier Shorts repo workflow"
-  default_prompt: "Use $godtier-shorts for repo-grounded work in /home/arch/godtier-shorts: validate runtime/auth prerequisites, preserve backend/frontend subtitle-style and timing parity, prefer scripts/verify.sh and scripts/check_* gates, respect project ownership/path isolation, and for multi-agent work use a leader-to-specialist delegation flow with explicit scope and validation."
+  default_prompt: "Use $godtier-shorts for repo-grounded work in the current GodTier Shorts workspace on Windows/PowerShell: validate runtime/auth prerequisites, preserve backend/frontend subtitle-style and timing parity, prefer the PowerShell-safe verification commands documented in .agents/references/commands.md (or scripts/verify.sh when bash is available), respect project ownership/path isolation, and for multi-agent work use a leader-to-specialist delegation flow with explicit scope and validation."

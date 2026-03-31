@@ -11,7 +11,7 @@ import {
   X,
 } from 'lucide-react';
 
-import type { Clip, ClipTranscriptStatus, OwnershipRecoveryProject } from '../../types';
+import type { Clip, ClipTranscriptStatus } from '../../types';
 import type { ClipSortOrder } from './useClipGalleryController';
 import { formatDateTime, normalizeLocale } from '../../i18n';
 import { getClipUrl } from '../../utils/url';
@@ -44,13 +44,6 @@ function formatDurationLabel(duration: number | null | undefined) {
   }
 
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
-
-function formatOwnershipCreatedAt(createdAt: string, locale: 'en' | 'tr') {
-  return formatDateTime(createdAt, locale, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
 }
 
 function formatSubjectHash(subjectHash: string | null, unknownLabel: string) {
@@ -90,16 +83,11 @@ export function GalleryHeader({
   authMode,
   currentSubjectHash,
   hasMore,
-  handleClaimProject,
-  isClaimingProjectId,
   loadedCount,
-  ownershipNotice,
-  ownershipNoticeTone,
   pageSizeLimit,
   productionInProgress,
   projectFilter,
   projectOptions,
-  reclaimableProjects,
   setProjectFilter,
   setSortOrder,
   sortOrder,
@@ -110,16 +98,11 @@ export function GalleryHeader({
   authMode: 'clerk_jwt' | 'static_token' | null;
   currentSubjectHash: string | null;
   hasMore: boolean;
-  handleClaimProject: (projectId: string) => void;
-  isClaimingProjectId: string | null;
   loadedCount: number;
-  ownershipNotice: string | null;
-  ownershipNoticeTone: 'danger' | 'info';
   pageSizeLimit: number;
   productionInProgress: boolean;
   projectFilter: string;
   projectOptions: Array<{ label: string; value: string }>;
-  reclaimableProjects: OwnershipRecoveryProject[];
   setProjectFilter: (value: string) => void;
   setSortOrder: (value: ClipSortOrder) => void;
   sortOrder: ClipSortOrder;
@@ -154,14 +137,6 @@ export function GalleryHeader({
           sortOrder={sortOrder}
         />
       </div>
-      <OwnershipRecoveryPanel
-        currentSubjectHash={currentSubjectHash}
-        handleClaimProject={handleClaimProject}
-        isClaimingProjectId={isClaimingProjectId}
-        ownershipNotice={ownershipNotice}
-        ownershipNoticeTone={ownershipNoticeTone}
-        reclaimableProjects={reclaimableProjects}
-      />
     </div>
   );
 }
@@ -212,88 +187,6 @@ function GallerySummary({
         <p className="text-[11px] font-mono uppercase tracking-widest text-red-200/80">
           {staleRefreshWarning}
         </p>
-      )}
-    </div>
-  );
-}
-
-function OwnershipRecoveryPanel({
-  currentSubjectHash,
-  handleClaimProject,
-  isClaimingProjectId,
-  ownershipNotice,
-  ownershipNoticeTone,
-  reclaimableProjects,
-}: {
-  currentSubjectHash: string | null;
-  handleClaimProject: (projectId: string) => void;
-  isClaimingProjectId: string | null;
-  ownershipNotice: string | null;
-  ownershipNoticeTone: 'danger' | 'info';
-  reclaimableProjects: OwnershipRecoveryProject[];
-}) {
-  const { t, i18n } = useTranslation();
-  const locale = normalizeLocale(i18n.language);
-
-  if (!ownershipNotice && reclaimableProjects.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="rounded-2xl border border-amber-300/20 bg-black/20 px-4 py-4 space-y-3">
-      {ownershipNotice && (
-        <p
-          className={`text-[11px] font-mono uppercase tracking-widest ${
-            ownershipNoticeTone === 'danger' ? 'text-red-200/85' : 'text-emerald-200/85'
-          }`}
-        >
-          {ownershipNotice}
-        </p>
-      )}
-      {reclaimableProjects.length > 0 && (
-        <>
-          <p className="text-[11px] font-mono uppercase tracking-widest text-amber-100/85">
-            {t('clipGallery.ownership.projectsBelongToOtherIdentity', {
-              count: reclaimableProjects.length,
-              hash: formatSubjectHash(currentSubjectHash, t('clipGallery.date.unknownSubject')),
-            })}
-          </p>
-          <div className="grid gap-3">
-            {reclaimableProjects.map((project) => {
-              const isClaiming = isClaimingProjectId === project.project_id;
-              return (
-                <div
-                  key={project.project_id}
-                  className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 lg:flex-row lg:items-center lg:justify-between"
-                >
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold text-foreground">{project.project_id}</p>
-                    <p className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground">
-                      {t('clipGallery.ownership.ownerLine', {
-                        count: project.clip_count,
-                        createdAt: formatOwnershipCreatedAt(project.created_at, locale),
-                        owner: formatSubjectHash(project.owner_subject_hash, t('clipGallery.date.unknownSubject')),
-                      })}
-                    </p>
-                    {project.latest_clip_name && (
-                      <p className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground">
-                        {t('clipGallery.ownership.latestClip', { name: project.latest_clip_name })}
-                      </p>
-                    )}
-                  </div>
-                  <button
-                    className="rounded-full border border-primary/30 bg-primary/10 px-4 py-2 text-[11px] font-mono uppercase tracking-widest text-primary transition hover:border-primary/60 hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={Boolean(isClaimingProjectId)}
-                    onClick={() => handleClaimProject(project.project_id)}
-                    type="button"
-                  >
-                    {isClaiming ? t('clipGallery.ownership.claiming') : t('clipGallery.ownership.claim')}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </>
       )}
     </div>
   );

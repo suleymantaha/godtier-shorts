@@ -63,3 +63,4 @@ Keep backend schemas, frontend types, and API client behavior aligned.
 - `pytest backend/tests/test_social_routes.py -q`
 - `pytest backend/tests/test_jobs_api_serialization.py -q`
 - `bash -lc "cd frontend && npm run test -- --reporter=dot"`
+- `Set-Location frontend; npm run test -- --reporter=dot; Set-Location ..`

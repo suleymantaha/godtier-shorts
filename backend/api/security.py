@@ -34,33 +34,31 @@ class AuthContext:
 
 
 POLICY_ROLES: dict[str, set[str]] = {
-    "start_job": {"admin", "producer", "operator"},
-    "upload": {"admin", "uploader", "producer"},
-    "process_manual": {"admin", "editor", "producer"},
-    "process_batch": {"admin", "editor", "producer"},
-    "reburn": {"admin", "editor"},
-    "manual_cut_upload": {"admin", "editor", "producer"},
-    "cancel_job": {"admin", "operator"},
-    "view_projects": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
-    "view_project_media": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
-    "view_clips": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
-    "delete_clip": {"admin", "producer", "editor"},
-    "view_clip_transcript": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
-    "recover_clip_transcript": {"admin", "producer", "editor"},
-    "recover_project_transcript": {"admin", "producer", "editor"},
-    "view_transcript": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
-    "view_jobs": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
-    "view_styles": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
-    "save_transcript": {"admin", "producer", "editor"},
-    "websocket_progress": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
-    "social_connect": {"admin", "producer", "editor"},
-    "social_publish": {"admin", "producer", "editor"},
-    "social_approve": {"admin", "producer"},
-    "social_view_jobs": {"admin", "producer", "editor", "viewer"},
-    "manage_support_grants": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
-    "inspect_project_ownership": {"admin", "producer", "editor", "viewer"},
-    "claim_project_ownership": {"admin", "producer", "editor", "viewer"},
-    "delete_account_data": {"admin", "producer", "editor", "operator", "uploader", "viewer"},
+    "start_job": {"admin", "member", "producer", "operator"},
+    "upload": {"admin", "member", "uploader", "producer"},
+    "process_manual": {"admin", "member", "editor", "producer"},
+    "process_batch": {"admin", "member", "editor", "producer"},
+    "reburn": {"admin", "member", "editor"},
+    "manual_cut_upload": {"admin", "member", "editor", "producer"},
+    "cancel_job": {"admin", "member", "operator"},
+    "view_projects": {"admin", "member", "producer", "editor", "operator", "uploader", "viewer"},
+    "view_project_media": {"admin", "member", "producer", "editor", "operator", "uploader", "viewer"},
+    "view_clips": {"admin", "member", "producer", "editor", "operator", "uploader", "viewer"},
+    "delete_clip": {"admin", "member", "producer", "editor"},
+    "view_clip_transcript": {"admin", "member", "producer", "editor", "operator", "uploader", "viewer"},
+    "recover_clip_transcript": {"admin", "member", "producer", "editor"},
+    "recover_project_transcript": {"admin", "member", "producer", "editor"},
+    "view_transcript": {"admin", "member", "producer", "editor", "operator", "uploader", "viewer"},
+    "view_jobs": {"admin", "member", "producer", "editor", "operator", "uploader", "viewer"},
+    "view_styles": {"admin", "member", "producer", "editor", "operator", "uploader", "viewer"},
+    "save_transcript": {"admin", "member", "producer", "editor"},
+    "websocket_progress": {"admin", "member", "producer", "editor", "operator", "uploader", "viewer"},
+    "social_connect": {"admin", "member", "producer", "editor"},
+    "social_publish": {"admin", "member", "producer", "editor"},
+    "social_approve": {"admin", "member", "producer"},
+    "social_view_jobs": {"admin", "member", "producer", "editor", "viewer"},
+    "manage_support_grants": {"admin"},
+    "delete_account_data": {"admin", "member", "producer", "editor", "operator", "uploader", "viewer"},
 }
 
 WEAK_STATIC_TOKENS = {"test-token", "changeme", "change-me", "default-token", "example-token"}
@@ -142,6 +140,14 @@ def _extract_roles(payload: dict[str, Any]) -> set[str]:
     return set()
 
 
+def _default_clerk_roles() -> set[str]:
+    raw = os.getenv("CLERK_DEFAULT_USER_ROLES", "").strip()
+    if not raw:
+        return {"member"}
+    roles = {role.strip().lower() for role in raw.split(",") if role.strip()}
+    return roles or {"member"}
+
+
 def _read_positive_int_env(name: str, default: int) -> int:
     raw = os.getenv(name, "").strip()
     if not raw:
@@ -202,9 +208,7 @@ def _decode_jwt(token: str, issuer: str, audience: str | list[str]) -> AuthConte
         raise ValueError(f"JWT verification failed: {exc}") from exc
 
     subject = str(payload.get("sub") or "jwt-user")
-    roles = _extract_roles(payload)
-    if not roles:
-        raise ValueError("JWT roles claim eksik veya boş")
+    roles = _extract_roles(payload) or _default_clerk_roles()
     return AuthContext(subject=subject, roles=roles, token_type="jwt", auth_mode="clerk_jwt")
 
 

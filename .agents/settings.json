@@ -7,5 +7,6 @@
       "enabled": true
     }
   },
-  "python.defaultInterpreterPath": "/home/arch/godtier-shorts/.conda/bin/python"
+  "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+  "terminal.integrated.defaultProfile.windows": "PowerShell"
 }

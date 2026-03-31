@@ -2,48 +2,50 @@
 
 This file is the canonical handoff memory for AI work in this repository.
 
-Last Updated: 2026-03-21
+Last Updated: 2026-03-30
 
 ## Current Objective
 
-- Combine memory, test, and documentation requirements into one clear exit checklist so sessions stop ending with stale context.
+- Switch the machine-local auth setup from temporary static tokens to the real Clerk flow.
 
 ## Current State
 
 - The canonical AI instruction set lives under `.agents/`.
-- The repo already uses `.agents/rules/godtier-shorts.mdc` as an always-on project rule.
-- `.agents/rules/godtier-shorts.mdc` now explicitly points agents to `PROJECT_MEMORY.md` at session start and session end.
-- A dedicated always-on testing rule now exists to force relevant checks after code changes.
-- A dedicated always-on documentation rule now exists to force doc updates when behavior or usage changes.
-- A dedicated exit-protocol rule and matching human-readable doc now define the end-of-session checklist.
-- `.cursor/` mirrors the `.agents/` setup for compatibility and should not diverge from it.
-- The working tree already contains many unrelated in-progress changes; new tasks should avoid overwriting or reverting them.
+- Python 3.13.12 is installed at `C:\Users\baba\AppData\Local\Programs\Python\Python313\python.exe`.
+- Node.js 22.22.2 is installed under the local WinGet package directory and frontend dependencies are installed.
+- Repo-local `.venv` exists and backend dependencies from `requirements.txt` are installed into it.
+- Root `.env` now uses Clerk issuer/audience/JWT-template settings for local development.
+- `frontend/.env.local` now uses the real Clerk publishable key plus the `godtier-backend` JWT template.
+- Backend compatibility package `backend/models/schemas.py` now exists again and exposes the request schemas expected by the route modules and tests.
+- The temporary frontend static-dev auth fallback has been removed; the app now expects Clerk again.
+- Backend is responding on `http://127.0.0.1:8000/docs`.
+- Frontend dev server is responding on `http://127.0.0.1:5173`.
 
 ## Decisions In Force
 
-- `PROJECT_MEMORY.md` is the single canonical progress-memory file for ongoing AI work.
-- Every future AI session should read this file before making changes and update it before finishing.
-- The main repo rule should keep an explicit reference to `PROJECT_MEMORY.md` so the memory workflow stays visible.
-- Every non-trivial code or config change should run at least one relevant verification command before the session ends.
-- If verification is blocked, the exact blocker and pending command must be written here.
-- Behavior-changing work should update the relevant docs in the same session, or record why no doc change was needed.
-- Meaningful sessions should follow one combined exit checklist covering memory, tests, docs, and handoff quality.
-- Canonical rule files live under `.agents/rules/`; `.cursor/rules/` should mirror them.
-- Progress entries should stay concise and prioritize exact paths, commands, blockers, and next steps.
+- `PROJECT_MEMORY.md` remains the single canonical progress-memory file for ongoing AI work.
+- `.agents` instructions must stay workspace-relative and must not hardcode machine-specific Linux paths.
+- On Windows hosts without `bash`, `.agents/references/commands.md` is the source of truth for PowerShell verification fallbacks.
+- Canonical rule files live under `.agents/rules/`; `.cursor/rules/` should mirror them when compatibility updates are needed.
+- Local auth on this machine should use Clerk JWTs with template `godtier-backend` and audience `godtier-shorts-api`.
 
 ## Open Work / Next Steps
 
-1. For each new task, replace `Current Objective` with the live goal before editing code.
-2. Update `Validation Status` whenever commands or tests are run, including skipped checks.
-3. Record which docs changed, or why no docs changed, whenever behavior or usage changed.
-4. Use the exit checklist before closing any meaningful session.
-5. Add a new `Session Log` entry after meaningful progress or handoff-worthy discoveries.
-6. Keep unresolved blockers and assumptions visible until they are cleared.
-7. If the team starts repeating an old issue, record the trigger, attempted fix, and next diagnostic step here.
+1. Sign into the frontend once and verify browser-issued Clerk JWTs contain `aud=godtier-shorts-api` and non-empty `roles`.
+2. Remove or rotate any Clerk secrets that were exposed during setup discussion.
+3. If `.cursor/` should stay behaviorally identical to `.agents/`, mirror the same Windows-focused guidance there as a follow-up.
 
 ## Validation Status
 
-- No repo tests were run for this setup-only change.
+- Passed: `& .\.venv\Scripts\python.exe scripts\check_runtime_config.py`
+- Passed: `& .\.venv\Scripts\python.exe -m pytest backend\tests\test_job_request.py -q`
+- Passed: `& .\.venv\Scripts\python.exe -m pytest backend\tests\test_runtime_validation.py -q`
+- Passed: frontend build via Node 22 `npm run build`
+- Passed: `& .\.venv\Scripts\python.exe -c "from backend.api.server import create_app; create_app(); print('app factory ok')"`
+- Passed: `Invoke-WebRequest http://127.0.0.1:8000/docs`
+- Passed: `Invoke-WebRequest http://127.0.0.1:5173`
+- Partial blocker: `scripts/check_toolchain.py` still fails on this shell because its internal subprocess lookup for `npm` does not see the WinGet-installed Node path unless the session PATH is explicitly amended.
+- Pending manual validation: a real browser login is still required to confirm Clerk token issuance and `/api/auth/whoami` over JWT.
 
 ## Key References
 
@@ -57,6 +59,26 @@ Last Updated: 2026-03-21
 - `docs/operations/ai-session-exit-protocol.md`
 
 ## Session Log
+
+### 2026-03-29
+
+- Removed the temporary static bearer token env settings from `.env` and `frontend/.env.local`.
+- Removed the temporary frontend static-dev auth fallback from the codebase and restored mandatory ClerkProvider usage.
+- Configured local Clerk envs around issuer `https://helping-jawfish-35.clerk.accounts.dev`, audience `godtier-shorts-api`, and JWT template `godtier-backend`.
+- Verified runtime config, frontend production build, and backend app factory creation after the Clerk switch.
+- Installed Python 3.13.12 via WinGet and created the repo-local `.venv`.
+- Installed Node.js 22.22.2 via WinGet and installed frontend dependencies with the explicit WinGet Node path on `PATH`.
+- Added root `.env` and `frontend/.env.local` for local static-token development on `localhost`.
+- Recreated `backend.models.schemas` with the request models expected by backend routes/tests.
+- Added a narrow frontend static-dev auth fallback so the app can run without Clerk on this machine when `VITE_API_KEY` is set.
+- Verified backend auth locally through `/api/auth/whoami` using the static bearer token.
+- Verified backend docs at `http://127.0.0.1:8000/docs` and frontend dev server at `http://127.0.0.1:5173`.
+- Updated `.agents/settings.json` to use a workspace-relative Windows virtualenv interpreter path and a PowerShell default terminal profile.
+- Updated `.agents/agents/openai.yaml` to remove the hardcoded Linux repo path and to reference Windows/PowerShell-safe verification guidance.
+- Updated `.agents/references/commands.md` with Windows shell notes plus PowerShell fallback commands for repo validation, frontend checks, and helper scripts.
+- Updated `.agents/references/api-contracts.md` and `.agents/references/subtitle-style-parity.md` with PowerShell frontend test equivalents.
+- Updated `.agents/rules/godtier-shorts.mdc`, `.agents/rules/godtier-shorts-testing.mdc`, and `.agents/rules/godtier-shorts-exit-protocol.mdc` so they no longer assume `bash` is available.
+- Verified by inspection that `.agents` no longer contains the old `/home/arch/godtier-shorts` or `.conda/bin/python` hardcoded paths.
 
 ### 2026-03-21
 

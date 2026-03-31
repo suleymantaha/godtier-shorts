@@ -29,7 +29,7 @@ Use `.agents/SKILL.md` as the repo-specific playbook for this project.
 - Treat clip-level `render_metadata` as the home of quality/debug fields; keep `/api/clips` and `Clip` list payloads lightweight.
 - Treat `workspace/projects/<project_id>/debug/<clip_stem>/` as an optional debug bundle path gated by `DEBUG_RENDER_ARTIFACTS=1`.
 - Preserve additive metadata semantics: prefer omitting unknown/unmeasured quality fields instead of writing `null`.
-- Run the smallest relevant checks first; use `bash scripts/verify.sh` for broad verification.
+- Run the smallest relevant checks first; use `bash scripts/verify.sh` for broad verification when bash is available, otherwise use the PowerShell fallback sequence in `.agents/references/commands.md`.
 - Use `scripts/benchmark_render_stability.py` when debugging determinism, throughput, or render reproducibility.
 - Do not reintroduce legacy subtitle renderer imports or collapse workflow modules back into monoliths.
 - Keep compatibility aliases in workflow modules if tests or stable callers monkeypatch module-level symbols directly.

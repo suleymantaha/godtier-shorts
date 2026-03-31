@@ -11,7 +11,7 @@ Treat verification as mandatory for every code or configuration change.
 - After making changes, run at least the smallest relevant verification command that exercises the edited surface area.
 - Do not end a coding session with untested changes unless verification is blocked by a real environment limitation or missing dependency.
 - If verification is blocked, record the exact blocker, the command that could not be run, and the next recommended check in `PROJECT_MEMORY.md`.
-- If a change touches multiple surfaces, combine targeted checks or escalate to `bash scripts/verify.sh`.
+- If a change touches multiple surfaces, combine targeted checks or escalate to `bash scripts/verify.sh`; on Windows hosts without bash, run the equivalent PowerShell fallback sequence from `.agents/references/commands.md`.
 
 ## Minimum Test Policy
 
@@ -20,8 +20,10 @@ Treat verification as mandatory for every code or configuration change.
 - Frontend-only changes:
   - Run the most relevant `bash -lc "cd frontend && npm run test -- ... --reporter=dot"` target.
   - Run `bash -lc "cd frontend && npm run lint"` when editing frontend application code.
+  - On PowerShell-only machines, use `Set-Location frontend; npm run ...; Set-Location ..` equivalents.
 - Shared contract, config, scripts, build, or cross-surface changes:
   - Prefer `bash scripts/verify.sh`.
+  - If bash is unavailable, run the PowerShell full-verification fallback documented in `.agents/references/commands.md`.
 - Rule, docs, or memory-only changes:
   - No full test suite is required, but note that no tests were run.
 
@@ -40,6 +42,7 @@ Treat verification as mandatory for every code or configuration change.
 ## Canonical Commands
 
 - Broad verification: `bash scripts/verify.sh`
+- Broad verification fallback: PowerShell sequence in `.agents/references/commands.md`
 - Backend sweep: `pytest backend/tests -q`
 - Frontend lint: `bash -lc "cd frontend && npm run lint"`
 - Frontend tests: `bash -lc "cd frontend && npm run test -- --reporter=dot"`

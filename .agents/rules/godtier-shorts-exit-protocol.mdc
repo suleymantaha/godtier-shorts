@@ -12,7 +12,7 @@ Before ending any meaningful work session, complete the full exit checklist.
   - Update `PROJECT_MEMORY.md` with the current objective, current state, decisions in force, open work, validation status, key references, and a fresh session log entry.
 - `Tests`
   - Run the smallest relevant verification for the edited surface area.
-  - If the change spans multiple areas or confidence is low, run broader verification such as `bash scripts/verify.sh`.
+  - If the change spans multiple areas or confidence is low, run broader verification such as `bash scripts/verify.sh`, or the documented PowerShell fallback on Windows hosts without bash.
   - If verification is blocked, record the exact command, blocker, and next check in `PROJECT_MEMORY.md`.
 - `Docs`
   - Update the smallest truthful set of docs affected by the change.

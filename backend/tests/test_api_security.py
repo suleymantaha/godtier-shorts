@@ -46,6 +46,21 @@ def test_policy_rejects_insufficient_role(monkeypatch: pytest.MonkeyPatch):
     assert body["detail"]["error"]["code"] == "forbidden"
 
 
+def test_member_role_can_access_normal_app_policies(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("API_BEARER_TOKENS", "token123:member")
+
+    app = FastAPI()
+
+    @app.get("/start")
+    def start(_: object = Depends(require_policy("start_job"))):
+        return {"ok": True}
+
+    client = TestClient(app)
+    response = client.get("/start", headers={"Authorization": "Bearer token123"})
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+
 def test_missing_bearer_returns_401_json(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("API_BEARER_TOKENS", raising=False)
     monkeypatch.delenv("API_BEARER_TOKEN", raising=False)
@@ -235,3 +250,34 @@ def test_whoami_returns_subject_hash_and_auth_mode(monkeypatch: pytest.MonkeyPat
         "subject_hash": build_subject_hash("user_123"),
         "token_type": "jwt",
     }
+
+
+def test_clerk_jwt_without_roles_falls_back_to_default_member(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("CLERK_ISSUER_URL", "https://example.clerk.accounts.dev")
+    monkeypatch.setenv("CLERK_AUDIENCE", "godtier-shorts-api")
+    monkeypatch.setenv("CLERK_DEFAULT_USER_ROLES", "member")
+
+    class _SigningKey:
+        key = "fake-key"
+
+    class _JwksClient:
+        def get_signing_key_from_jwt(self, _token: str):
+            return _SigningKey()
+
+    monkeypatch.setattr("backend.api.security._get_jwks_client", lambda *_args, **_kwargs: _JwksClient())
+    monkeypatch.setattr(
+        "backend.api.security.jwt.decode",
+        lambda *_args, **_kwargs: {"sub": "user_member"},
+    )
+
+    app = FastAPI()
+    app.include_router(auth_routes.router)
+
+    client = TestClient(app)
+    response = client.get(
+        "/api/auth/whoami",
+        headers={"Authorization": "Bearer jwt-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["roles"] == ["member"]

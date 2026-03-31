@@ -36,7 +36,7 @@ Clerk Dashboard:
 ```json
 {
   "aud": "godtier-shorts-api",
-  "roles": ["viewer"]
+  "roles": "{{user.public_metadata.roles}}"
 }
 ```
 
@@ -44,15 +44,54 @@ Notlar:
 
 - `aud` backend’deki `CLERK_AUDIENCE` ile birebir aynı olmalı.
 - `roles` claim’i zorunlu. Boş veya eksik olursa backend token’ı reddeder.
-- Rolü ihtiyaca göre yükseltebilirsin (`editor`, `producer`, `admin` vb.).
+- Bu repo için önerilen model:
+  - yeni kullanıcılar: `["member"]`
+  - proje sahibi hesabı: `["admin"]`
 
 ## 3.2 Hangi roller neye erişir?
 
 Backend policy map’i `backend/api/security.py` içindedir. Özet:
 
-- `viewer`: okuma endpointleri
-- `editor/producer`: transcript kaydetme, manual/batch/reburn vb.
-- `admin`: tam yetki
+- `member`: UI’daki normal akışların tamamı
+- `admin`: aynı normal akışlar + yönetimsel işlemler
+- ownership transfer endpoint’leri artık kullanılmıyor; kullanıcılar başka projeleri sahiplenemez
+
+## 3.3 Otomatik Varsayılan Rol Atama
+
+Yeni kullanıcıların Clerk Dashboard’dan tek tek metadata düzenlenmeden rol alması için backend webhook kullanılabilir.
+
+Backend route:
+
+```text
+POST /api/clerk/webhooks
+```
+
+Gerekli backend env’leri:
+
+```dotenv
+CLERK_SECRET_KEY=sk_test_xxx
+CLERK_WEBHOOK_SIGNING_SECRET=whsec_xxx
+CLERK_DEFAULT_USER_ROLES=member
+CLERK_ADMIN_EMAILS=suleymantahab@gmail.com
+```
+
+Davranış:
+
+- `user.created` eventi geldiğinde yeni kullanıcıya `public_metadata.roles=["member"]` yazılır.
+- `CLERK_ADMIN_EMAILS` içindeki email’ler otomatik olarak `["admin"]` alır.
+
+Clerk Dashboard:
+
+1. `Webhooks` -> `Add Endpoint`
+2. Endpoint URL olarak deploy ettiğin backend adresini gir:
+   `https://YOUR-DOMAIN/api/clerk/webhooks`
+3. Event olarak `user.created` seç
+4. Oluşan `Signing Secret` değerini `CLERK_WEBHOOK_SIGNING_SECRET` olarak backend’e yaz
+
+Not:
+
+- Lokal makinede Clerk cloud doğrudan `localhost`a erişemez. Bu akışı lokal test etmek için ngrok benzeri bir tunnel gerekir.
+- Webhook kullanmayacaksan kullanıcı rollerini Clerk Dashboard -> Users -> Metadata -> Public metadata alanından manuel girebilirsin.
 
 ## 4) .env Ayarları
 
@@ -64,6 +103,10 @@ CLERK_AUDIENCE=godtier-shorts-api
 VITE_CLERK_JWT_TEMPLATE=godtier-backend
 CLERK_JWKS_CACHE_TTL_SECONDS=3600
 CLERK_JWKS_TIMEOUT_SECONDS=5
+CLERK_SECRET_KEY=sk_test_xxx
+CLERK_WEBHOOK_SIGNING_SECRET=whsec_xxx
+CLERK_DEFAULT_USER_ROLES=member
+CLERK_ADMIN_EMAILS=suleymantahab@gmail.com
 ```
 
 Opsiyonel static fallback (automation/test için):

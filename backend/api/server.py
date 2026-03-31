@@ -17,7 +17,7 @@ from backend.config import (
     CORS_ORIGINS, OUTPUTS_DIR, LOGS_DIR, MASTER_VIDEO, REQUEST_BODY_HARD_LIMIT_BYTES,
 )
 from backend.api.websocket import manager, set_main_loop
-from backend.api.routes import account, auth, jobs, clips, editor, social
+from backend.api.routes import account, auth, clerk, jobs, clips, editor, social
 from backend.api.error_handlers import register_exception_handlers
 from backend.api.security import authenticate_websocket_token, validate_auth_configuration
 from backend.runtime_validation import validate_runtime_configuration
@@ -133,6 +133,7 @@ def create_app() -> FastAPI:
     app.include_router(social.router)
     app.include_router(account.router)
     app.include_router(auth.router)
+    app.include_router(clerk.router)
 
     # --- WebSocket endpoint ---
     @app.websocket("/ws/progress")

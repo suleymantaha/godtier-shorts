@@ -106,34 +106,6 @@ export interface AuthWhoAmIResponse {
     token_type: 'jwt' | 'bearer';
 }
 
-export interface OwnershipRecoveryProject {
-    clip_count: number;
-    created_at: string;
-    latest_clip_name?: string | null;
-    owner_subject_hash: string;
-    project_id: string;
-    source: string;
-    status: string;
-}
-
-export interface OwnershipDiagnosticsResponse {
-    auth_mode: 'clerk_jwt' | 'static_token';
-    current_subject: string;
-    current_subject_hash: string;
-    reclaimable_projects: OwnershipRecoveryProject[];
-    token_type: 'jwt' | 'bearer';
-    visible_project_count: number;
-}
-
-export interface ClaimProjectOwnershipResponse {
-    status: 'claimed';
-    clip_count: number;
-    current_subject_hash: string;
-    metadata_files_updated: number;
-    new_project_id: string;
-    old_project_id: string;
-}
-
 export interface DeleteClipResponse {
     status: 'deleted' | 'not_found';
     deleted: boolean;
