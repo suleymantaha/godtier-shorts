@@ -1,0 +1,3312 @@
+{
+  "environment_baseline": {
+    "api_base": "http://127.0.0.1:8000",
+    "auth_mode": "static_token",
+    "roles": [
+      "admin",
+      "editor",
+      "operator",
+      "producer",
+      "uploader",
+      "viewer"
+    ],
+    "subject_hash": "3462292b60860538b5a07d5d89e1eb94",
+    "system_checks": {
+      "ffmpeg": "verified",
+      "yt_dlp": "verified",
+      "nvidia_smi": "verified",
+      "torch_cuda": "warning"
+    },
+    "preflight": {
+      "whoami": {
+        "name": "whoami",
+        "method": "GET",
+        "path": "/api/auth/whoami",
+        "status_code": 200,
+        "trace_id": "audit-whoami-a55b2cff-a890-4ff9-b150-238487f4443f",
+        "content_type": "application/json",
+        "summary": {
+          "auth_mode": "static_token",
+          "roles": [
+            "admin",
+            "editor",
+            "operator",
+            "producer",
+            "uploader",
+            "viewer"
+          ],
+          "subject_hash": "3462292b60860538b5a07d5d89e1eb94",
+          "token_type": "bearer"
+        }
+      },
+      "projects": {
+        "name": "projects",
+        "method": "GET",
+        "path": "/api/projects",
+        "status_code": 200,
+        "trace_id": "audit-projects-21a1cc63-6d5a-4b0c-a852-30c526b5090f",
+        "content_type": "application/json",
+        "summary": {
+          "count": 0,
+          "ids": []
+        }
+      },
+      "clips": {
+        "name": "clips",
+        "method": "GET",
+        "path": "/api/clips?page=1&page_size=50",
+        "status_code": 200,
+        "trace_id": "audit-clips-f9739fbf-03cc-49af-b01f-d40137487110",
+        "content_type": "application/json",
+        "summary": {
+          "count": 0,
+          "items": []
+        }
+      },
+      "social_providers": {
+        "name": "social_providers",
+        "method": "GET",
+        "path": "/api/social/providers",
+        "status_code": 200,
+        "trace_id": "audit-social_providers-f4509a8b-bf91-464f-87d2-52f488450c4f",
+        "content_type": "application/json",
+        "summary": {
+          "count": 6,
+          "platforms": [
+            "facebook_reels",
+            "instagram_reels",
+            "linkedin",
+            "tiktok",
+            "x",
+            "youtube_shorts"
+          ]
+        }
+      },
+      "social_accounts": {
+        "name": "social_accounts",
+        "method": "GET",
+        "path": "/api/social/accounts",
+        "status_code": 200,
+        "trace_id": "audit-social_accounts-53c6816e-3f0d-45c5-bd18-90898763080c",
+        "content_type": "application/json",
+        "summary": {
+          "connected": false,
+          "connection_mode": "managed",
+          "count": 0,
+          "platforms": [],
+          "requires_reconnect": 0
+        }
+      },
+      "social_connections": {
+        "name": "social_connections",
+        "method": "GET",
+        "path": "/api/social/connections",
+        "status_code": 200,
+        "trace_id": "audit-social_connections-0be7fcbd-703f-4668-aa48-f913d5aa9115",
+        "content_type": "application/json",
+        "summary": {
+          "connected": false,
+          "connection_mode": null,
+          "count": 0,
+          "platforms": [],
+          "requires_reconnect": 0
+        }
+      },
+      "social_publish_jobs": {
+        "name": "social_publish_jobs",
+        "method": "GET",
+        "path": "/api/social/publish-jobs",
+        "status_code": 200,
+        "trace_id": "audit-social_publish_jobs-8bb7111a-8768-4042-b20e-20e279220310",
+        "content_type": "application/json",
+        "summary": {
+          "count": 0,
+          "states": {},
+          "platforms": {}
+        }
+      },
+      "social_queue": {
+        "name": "social_queue",
+        "method": "GET",
+        "path": "/api/social/queue",
+        "status_code": 200,
+        "trace_id": "audit-social_queue-4122f65c-275b-4407-9997-92bd09a98300",
+        "content_type": "application/json",
+        "summary": {
+          "count": 0,
+          "states": {},
+          "platforms": {}
+        }
+      },
+      "social_calendar": {
+        "name": "social_calendar",
+        "method": "GET",
+        "path": "/api/social/calendar",
+        "status_code": 200,
+        "trace_id": "audit-social_calendar-66abc264-e67d-4878-9b34-848c28350829",
+        "content_type": "application/json",
+        "summary": {
+          "count": 0,
+          "states": {},
+          "platforms": {}
+        }
+      },
+      "websocket": {
+        "connected": true,
+        "subprotocol": null
+      }
+    }
+  },
+  "preflight": {
+    "whoami": {
+      "name": "whoami",
+      "method": "GET",
+      "path": "/api/auth/whoami",
+      "status_code": 200,
+      "trace_id": "audit-whoami-a55b2cff-a890-4ff9-b150-238487f4443f",
+      "content_type": "application/json",
+      "summary": {
+        "auth_mode": "static_token",
+        "roles": [
+          "admin",
+          "editor",
+          "operator",
+          "producer",
+          "uploader",
+          "viewer"
+        ],
+        "subject_hash": "3462292b60860538b5a07d5d89e1eb94",
+        "token_type": "bearer"
+      }
+    },
+    "projects": {
+      "name": "projects",
+      "method": "GET",
+      "path": "/api/projects",
+      "status_code": 200,
+      "trace_id": "audit-projects-21a1cc63-6d5a-4b0c-a852-30c526b5090f",
+      "content_type": "application/json",
+      "summary": {
+        "count": 0,
+        "ids": []
+      }
+    },
+    "clips": {
+      "name": "clips",
+      "method": "GET",
+      "path": "/api/clips?page=1&page_size=50",
+      "status_code": 200,
+      "trace_id": "audit-clips-f9739fbf-03cc-49af-b01f-d40137487110",
+      "content_type": "application/json",
+      "summary": {
+        "count": 0,
+        "items": []
+      }
+    },
+    "social_providers": {
+      "name": "social_providers",
+      "method": "GET",
+      "path": "/api/social/providers",
+      "status_code": 200,
+      "trace_id": "audit-social_providers-f4509a8b-bf91-464f-87d2-52f488450c4f",
+      "content_type": "application/json",
+      "summary": {
+        "count": 6,
+        "platforms": [
+          "facebook_reels",
+          "instagram_reels",
+          "linkedin",
+          "tiktok",
+          "x",
+          "youtube_shorts"
+        ]
+      }
+    },
+    "social_accounts": {
+      "name": "social_accounts",
+      "method": "GET",
+      "path": "/api/social/accounts",
+      "status_code": 200,
+      "trace_id": "audit-social_accounts-53c6816e-3f0d-45c5-bd18-90898763080c",
+      "content_type": "application/json",
+      "summary": {
+        "connected": false,
+        "connection_mode": "managed",
+        "count": 0,
+        "platforms": [],
+        "requires_reconnect": 0
+      }
+    },
+    "social_connections": {
+      "name": "social_connections",
+      "method": "GET",
+      "path": "/api/social/connections",
+      "status_code": 200,
+      "trace_id": "audit-social_connections-0be7fcbd-703f-4668-aa48-f913d5aa9115",
+      "content_type": "application/json",
+      "summary": {
+        "connected": false,
+        "connection_mode": null,
+        "count": 0,
+        "platforms": [],
+        "requires_reconnect": 0
+      }
+    },
+    "social_publish_jobs": {
+      "name": "social_publish_jobs",
+      "method": "GET",
+      "path": "/api/social/publish-jobs",
+      "status_code": 200,
+      "trace_id": "audit-social_publish_jobs-8bb7111a-8768-4042-b20e-20e279220310",
+      "content_type": "application/json",
+      "summary": {
+        "count": 0,
+        "states": {},
+        "platforms": {}
+      }
+    },
+    "social_queue": {
+      "name": "social_queue",
+      "method": "GET",
+      "path": "/api/social/queue",
+      "status_code": 200,
+      "trace_id": "audit-social_queue-4122f65c-275b-4407-9997-92bd09a98300",
+      "content_type": "application/json",
+      "summary": {
+        "count": 0,
+        "states": {},
+        "platforms": {}
+      }
+    },
+    "social_calendar": {
+      "name": "social_calendar",
+      "method": "GET",
+      "path": "/api/social/calendar",
+      "status_code": 200,
+      "trace_id": "audit-social_calendar-66abc264-e67d-4878-9b34-848c28350829",
+      "content_type": "application/json",
+      "summary": {
+        "count": 0,
+        "states": {},
+        "platforms": {}
+      }
+    },
+    "websocket": {
+      "connected": true,
+      "subprotocol": null
+    }
+  },
+  "ui_route_checks": [
+    {
+      "app": "frontend",
+      "url": "http://127.0.0.1:5173/",
+      "status_code": 200,
+      "content_type": "text/html",
+      "content_length": 1085,
+      "title": "God-Tier Shorts | AI Video Architect",
+      "has_next_error_marker": false
+    },
+    {
+      "app": "frontend",
+      "url": "http://127.0.0.1:5173/social",
+      "status_code": 200,
+      "content_type": "text/html",
+      "content_length": 1085,
+      "title": "God-Tier Shorts | AI Video Architect",
+      "has_next_error_marker": false
+    },
+    {
+      "app": "frontend",
+      "url": "http://127.0.0.1:5173/social-compose",
+      "status_code": 200,
+      "content_type": "text/html",
+      "content_length": 1085,
+      "title": "God-Tier Shorts | AI Video Architect",
+      "has_next_error_marker": false
+    },
+    {
+      "app": "marketing",
+      "url": "http://127.0.0.1:3000/",
+      "status_code": 200,
+      "content_type": "text/html; charset=utf-8",
+      "content_length": 67290,
+      "title": "AI Shorts Generator",
+      "has_next_error_marker": false
+    },
+    {
+      "app": "marketing",
+      "url": "http://127.0.0.1:3000/features",
+      "status_code": 200,
+      "content_type": "text/html; charset=utf-8",
+      "content_length": 39119,
+      "title": "Video Repurposing Features | God-Tier Shorts",
+      "has_next_error_marker": false
+    },
+    {
+      "app": "marketing",
+      "url": "http://127.0.0.1:3000/features/auto-cut",
+      "status_code": 200,
+      "content_type": "text/html; charset=utf-8",
+      "content_length": 34682,
+      "title": "Auto Clip Generator | God-Tier Shorts",
+      "has_next_error_marker": false
+    },
+    {
+      "app": "marketing",
+      "url": "http://127.0.0.1:3000/compare/opus-clip-alternative",
+      "status_code": 500,
+      "content_type": "text/html; charset=utf-8",
+      "content_length": 26976,
+      "title": "Opus Clip Alternative | God-Tier Shorts",
+      "has_next_error_marker": true
+    },
+    {
+      "app": "marketing",
+      "url": "http://127.0.0.1:3000/compare/captions-alternative",
+      "status_code": 200,
+      "content_type": "text/html; charset=utf-8",
+      "content_length": 39217,
+      "title": "Captions Alternative | God-Tier Shorts",
+      "has_next_error_marker": false
+    },
+    {
+      "app": "marketing",
+      "url": "http://127.0.0.1:3000/blog",
+      "status_code": 200,
+      "content_type": "text/html; charset=utf-8",
+      "content_length": 32041,
+      "title": "Blog | God-Tier Shorts",
+      "has_next_error_marker": false
+    }
+  ],
+  "upload_pipeline": {
+    "steps": [
+      {
+        "step": "styles",
+        "status_code": 200,
+        "trace_id": "audit-styles-ed93a8d8-09fd-4fde-9f83-4814a167e865",
+        "styles": 16,
+        "animations": 7
+      },
+      {
+        "step": "upload",
+        "status_code": 200,
+        "trace_id": "audit-upload-b597dca7-af63-4d7c-84c7-f878f3bb5a85",
+        "response": {
+          "status": "uploaded",
+          "job_id": "upload_1774931248_c32cf9",
+          "message": "Video yüklendi, transkripsiyon başladı.",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905"
+        }
+      },
+      {
+        "step": "upload_job_poll",
+        "polls": [
+          {
+            "trace_id": "audit-jobs-ff098e87-7cc7-4232-941d-a49187dca1ef",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 5,
+            "job_message": "Ses çıkarılıyor..."
+          },
+          {
+            "trace_id": "audit-jobs-66470f63-f41c-4fcd-830a-420e00a3e6d0",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 31,
+            "job_message": "faster-whisper modeli (large-v3) yükleniyor..."
+          },
+          {
+            "trace_id": "audit-jobs-398e9cb5-c735-4d38-bb39-be6ab29401c8",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "completed",
+            "job_progress": 100,
+            "job_message": "Transkripsiyon tamamlandı."
+          }
+        ],
+        "final_status": "completed",
+        "final_progress": 100
+      },
+      {
+        "step": "projects_after_upload",
+        "status_code": 200,
+        "trace_id": "audit-projects-after-upload-fce6b802-1287-4097-9b58-cb0e442d4aab",
+        "project_found": false
+      },
+      {
+        "step": "project_transcript",
+        "status_code": 200,
+        "trace_id": "audit-transcript-7e86b493-b83a-421e-9583-a032293d780c",
+        "transcript_items": 0
+      }
+    ]
+  },
+  "manual_cut_upload": {
+    "steps": [
+      {
+        "step": "manual_cut_upload",
+        "status_code": 200,
+        "trace_id": "audit-manual-upload-8cf2102b-f2db-4146-a938-a800ac0d7d37",
+        "response": {
+          "status": "started",
+          "job_id": "manualcut_1774931293_6a0739",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4",
+          "message": "Otomatik manual cut başlatıldı."
+        }
+      },
+      {
+        "step": "manual_cut_upload_poll",
+        "polls": [
+          {
+            "trace_id": "audit-manual-cut-jobs-e18e037f-cfd5-4d92-b85e-b420b4b295dd",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 45,
+            "job_message": "Manuel klip için GPU render slotu alındı.",
+            "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+          },
+          {
+            "trace_id": "audit-manual-cut-jobs-d92a03af-3f6d-4078-8715-a4e68cf9e15e",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 45,
+            "job_message": "Manuel klip için GPU render slotu alındı.",
+            "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+          },
+          {
+            "trace_id": "audit-manual-cut-jobs-a160959d-b042-4cf6-b092-48728a752f72",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 45,
+            "job_message": "Manuel klip için GPU render slotu alındı.",
+            "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+          },
+          {
+            "trace_id": "audit-manual-cut-jobs-e13ef052-b7eb-4a64-976d-748311b36ad1",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 45,
+            "job_message": "Manuel klip için GPU render slotu alındı.",
+            "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+          },
+          {
+            "trace_id": "audit-manual-cut-jobs-b15a0b8c-c5fc-41d7-b25a-921bbe7b831c",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 45,
+            "job_message": "Manuel klip için GPU render slotu alındı.",
+            "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+          },
+          {
+            "trace_id": "audit-manual-cut-jobs-c853ab19-98a9-44f2-bea2-146c09dc21ac",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 45,
+            "job_message": "Manuel klip için GPU render slotu alındı.",
+            "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+          },
+          {
+            "trace_id": "audit-manual-cut-jobs-94e7065c-51c1-4b9f-8979-d553c6964c7a",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 45,
+            "job_message": "Manuel klip için GPU render slotu alındı.",
+            "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+          },
+          {
+            "trace_id": "audit-manual-cut-jobs-bf6a7a2a-f1ca-415b-9b6f-d46d1c31efc2",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 45,
+            "job_message": "Manuel klip için GPU render slotu alındı.",
+            "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+          },
+          {
+            "trace_id": "audit-manual-cut-jobs-7100e422-26bf-4ebf-8c32-af1cc2e4c28e",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 45,
+            "job_message": "Manuel klip için GPU render slotu alındı.",
+            "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+          },
+          {
+            "trace_id": "audit-manual-cut-jobs-e9e4d409-ac1c-4332-a6c8-c9530321c551",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 45,
+            "job_message": "Manuel klip için GPU render slotu alındı.",
+            "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+          },
+          {
+            "trace_id": "audit-manual-cut-jobs-2eb39789-4aa7-4a96-aad0-91507cbaa24a",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 45,
+            "job_message": "Manuel klip için GPU render slotu alındı.",
+            "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+          },
+          {
+            "trace_id": "audit-manual-cut-jobs-4fbc1830-ea7e-4d13-b4a9-aeba0e46c30d",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 45,
+            "job_message": "Manuel klip için GPU render slotu alındı.",
+            "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+          },
+          {
+            "trace_id": "audit-manual-cut-jobs-25905ccd-b455-4da5-b2f7-3d41ab4e6dc1",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 45,
+            "job_message": "Manuel klip için GPU render slotu alındı.",
+            "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+          },
+          {
+            "trace_id": "audit-manual-cut-jobs-6ba02399-8119-4bfb-912f-9604ab43f871",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 45,
+            "job_message": "Manuel klip için GPU render slotu alındı.",
+            "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+          },
+          {
+            "trace_id": "audit-manual-cut-jobs-a1926053-5ba8-42df-b5d7-94f6a268dea1",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 45,
+            "job_message": "Manuel klip için GPU render slotu alındı.",
+            "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+          },
+          {
+            "trace_id": "audit-manual-cut-jobs-50a6ab66-07f9-47af-9849-aa15f0372b71",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 45,
+            "job_message": "Manuel klip için GPU render slotu alındı.",
+            "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+          },
+          {
+            "trace_id": "audit-manual-cut-jobs-5088f321-8ea4-4b69-bc33-591686659761",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 45,
+            "job_message": "Manuel klip için GPU render slotu alındı.",
+            "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+          },
+          {
+            "trace_id": "audit-manual-cut-jobs-9a960c07-0cad-41e7-8dbd-277fc4887b38",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 45,
+            "job_message": "Manuel klip için GPU render slotu alındı.",
+            "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+          },
+          {
+            "trace_id": "audit-manual-cut-jobs-26c2bb4c-4725-431c-bad2-81fd54e1d82a",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 45,
+            "job_message": "Manuel klip için GPU render slotu alındı.",
+            "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+          },
+          {
+            "trace_id": "audit-manual-cut-jobs-c043f00c-ccfe-4ed4-9ddf-d406ef86e0e3",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "error",
+            "job_progress": -1,
+            "job_message": "HATA: Otomatik manual cut başarısız",
+            "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+          }
+        ],
+        "final_job": {
+          "job_id": "manualcut_1774931293_6a0739",
+          "url": "C:\\Users\\baba\\Documents\\GitHub\\godtier-shorts\\workspace\\projects\\3462292b60860538b5a07d5d89e1eb94\\up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905\\master.mp4",
+          "style": "HORMOZI",
+          "animation_type": "default",
+          "status": "error",
+          "progress": -1,
+          "last_message": "HATA: Otomatik manual cut başarısız",
+          "created_at": 1774931293.1498122,
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4",
+          "num_clips": 1,
+          "layout": "single",
+          "subject": "static-token:0e2f89939727",
+          "timeline": [
+            {
+              "id": "manualcut_1774931293_6a0739:queued",
+              "at": "2026-03-31T04:28:13.151185+00:00",
+              "job_id": "manualcut_1774931293_6a0739",
+              "status": "queued",
+              "progress": 0,
+              "message": "Video alındı, otomatik kesim kuyruğa alındı...",
+              "source": "api"
+            },
+            {
+              "id": "manualcut_1774931293_6a0739:1774931293161432300",
+              "at": "2026-03-31T04:28:13.161420+00:00",
+              "job_id": "manualcut_1774931293_6a0739",
+              "status": "queued",
+              "progress": 0,
+              "message": "İşlem sırası bekleniyor...",
+              "source": "worker"
+            },
+            {
+              "id": "manualcut_1774931293_6a0739:1774931293166152300",
+              "at": "2026-03-31T04:28:13.166144+00:00",
+              "job_id": "manualcut_1774931293_6a0739",
+              "status": "processing",
+              "progress": 1,
+              "message": "Video hazırlanıyor...",
+              "source": "worker"
+            },
+            {
+              "id": "manualcut_1774931293_6a0739:1774931293171084700",
+              "at": "2026-03-31T04:28:13.171076+00:00",
+              "job_id": "manualcut_1774931293_6a0739",
+              "status": "processing",
+              "progress": 35,
+              "message": "Transkript hazır, mevcut kütüphane kullanılıyor...",
+              "source": "worker"
+            },
+            {
+              "id": "manualcut_1774931293_6a0739:1774931294085045300",
+              "at": "2026-03-31T04:28:14.085038+00:00",
+              "job_id": "manualcut_1774931293_6a0739",
+              "status": "processing",
+              "progress": 10,
+              "message": "Manuel klip: 0.0 - 2.5 sn",
+              "source": "worker"
+            },
+            {
+              "id": "manualcut_1774931293_6a0739:1774931294092805200",
+              "at": "2026-03-31T04:28:14.092793+00:00",
+              "job_id": "manualcut_1774931293_6a0739",
+              "status": "processing",
+              "progress": 45,
+              "message": "Manuel klip için GPU render slotu alındı.",
+              "source": "worker"
+            },
+            {
+              "id": "manualcut_1774931293_6a0739:1774931595083029900",
+              "at": "2026-03-31T04:33:15.083022+00:00",
+              "job_id": "manualcut_1774931293_6a0739",
+              "status": "error",
+              "progress": -1,
+              "message": "HATA: Otomatik manual cut başarısız",
+              "source": "worker"
+            }
+          ],
+          "error": "Otomatik manual cut başarısız"
+        }
+      },
+      {
+        "step": "clips_after_manual_upload",
+        "status_code": 200,
+        "trace_id": "audit-clips-after-manual-upload-8d4c1c30-1764-4f5f-ad09-053d8834f6e8",
+        "clip_count": 0
+      }
+    ]
+  },
+  "editor_and_social": [
+    {
+      "step": "projects_before_editor",
+      "status_code": 200,
+      "trace_id": "audit-projects-before-editor-6489a8fc-cbef-4705-8422-35edbc0fbd3f",
+      "summary": {
+        "count": 1,
+        "ids": [
+          "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905"
+        ]
+      }
+    },
+    {
+      "step": "save_transcript",
+      "status_code": 200,
+      "trace_id": "audit-save-transcript-f013abce-60fa-4236-b414-41b2b9faa4b3",
+      "response": {
+        "status": "success"
+      }
+    },
+    {
+      "step": "get_transcript_after_save",
+      "status_code": 200,
+      "trace_id": "audit-get-transcript-after-save-f491c62c-36ff-4281-a744-c87f63b532d9",
+      "summary": {
+        "transcript_items": 1,
+        "transcript_status": "ready",
+        "active_job_id": null,
+        "last_error": null
+      }
+    },
+    {
+      "step": "process_manual",
+      "status_code": 200,
+      "trace_id": "audit-process-manual-3a0e0419-6f27-4d6d-bf43-385c7a8b97c7",
+      "response": {
+        "status": "started",
+        "job_id": "manual_1774932075_7e2045"
+      },
+      "poll": {
+        "polls": [
+          {
+            "trace_id": "audit-jobs-poll-58db3068-6711-4b4d-91e8-0b13d5825d6f",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-83d05aa4-8f6d-42db-b37d-9ff64b9edd79",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-458f2b53-8240-4606-8f99-4be3b13a2b32",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-c4f2baa3-0f40-434e-adbe-49542d0ac07f",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-27b37fe6-e074-49e3-8ab0-b183d50a5859",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-3ab2dd95-a1bf-461a-868a-537c9d155617",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-9c07f16a-e465-4227-96da-d9a7a4c6110e",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-31705051-f02b-4fe4-b548-53639ddb0fb7",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-78e85a0b-2cb0-42cc-b0c7-5e846bd66c1b",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-665b6a11-4675-4f90-99eb-5ba4acd496d7",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-76ed8c31-7656-4c31-9d3b-8177d6d4cfcb",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-92e8c684-ebc9-4862-a0ff-ee88484664ab",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-789ec804-8fdb-4856-9764-fe422199ad53",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-1e9e6629-be1f-4510-80a9-ed564358fe10",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-e23ae364-185c-4904-b910-4f491438813c",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-1f8af091-ad96-4ae3-a3fd-111f5b306d57",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-4662a2c0-04d9-4e63-9bde-2840fb43736c",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-6fe3dde6-4609-487d-9689-5dfd85b4a111",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-7d18fea3-784e-4d7a-b2c6-b4ff61b2eedf",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-c537ec3e-d8e8-46d7-9c09-d70db74d689f",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-2d5fbba7-f054-4bf8-963f-505f98d0358a",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-7aa7ae6c-78f6-4a2f-8ab8-9d055c27b3e5",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-5153a3e0-c4a5-4a5b-9e64-e9f270f2c408",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-03f0019c-89f1-47e7-84c8-4629485a935e",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-d10e4d05-cf99-4672-9164-9c7d63336170",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-ca6fcc87-56f0-4075-961b-1ded984e7fff",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-8a3e5e2a-5583-4470-959c-8915dfbf5244",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-ce1637ca-bb44-4879-8326-21b921e2c6c1",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-ce787272-0896-47af-94c1-8c20144567ce",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-71fbee7d-0287-4f99-b64d-cea3adb6272b",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-3aada0c2-a890-48aa-b76e-05f4bc590216",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-101554f3-2d07-46c9-a4f1-09b582e1664a",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-d447f9a3-2dec-43a8-857c-7404a08569fc",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-7059c2a4-7de1-4f82-ad10-991213eb7154",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-538cf37f-f994-41e7-9c34-d9805cb3546c",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-c6c0afb5-5377-4a42-a144-6e3f746d93a5",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-19ef9df3-646f-47b6-8c8b-5d4daa0c439e",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-8cde1b65-9a8b-4d68-96bd-350a96ea7fe9",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-fa752ab1-0c5d-4399-a9fa-3e26d46d9281",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-aa3483e7-74a3-4011-bb38-2e21c240d014",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-f35f81d0-aa3b-420d-a86c-1294b6325bcf",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-f725f6ca-6478-480c-bcaf-02f095ee490b",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-3daf357b-0278-4c30-928e-edfea8ab58e4",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-548dc695-de1b-46f0-9965-6683f050ae47",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-9f75ae81-b151-460b-b955-eba757577f97",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-4a13228b-6967-4e88-a1ea-68646f864dd2",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-b51a739c-0cff-42eb-8ca7-14b0fa707aca",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-2b9669b0-c85a-4f66-ac34-9d2a58ab77dd",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-f646aff3-c07f-4f4b-8158-ec5d641262b1",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-1cb40f2b-3852-43ff-b82e-94e98ab567fd",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-cf5e9ac6-7aee-4589-ab66-af75912c8b77",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-a53d8fe1-567b-40b6-a5a6-0d3afe23cde8",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-08854615-86c6-462a-9426-54a46943b035",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-55dfbe9c-41d4-4812-a3dd-3c791dbe2aa6",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-82496554-b53f-481d-b989-69fc00828d8c",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-49d3af35-f8b1-4222-978f-3edb3e43835c",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-384faf74-cc24-4cce-a05e-33192765d822",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-86d0d69d-507c-4535-954d-f9b3cce38a68",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-b57d0d36-1837-4d47-8c60-e71f344b509c",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-86248d66-c92e-4441-afa3-bdf870d453c5",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-bb362a4b-9e32-4b9a-ac2d-fdb823d165f7",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-5269f109-e585-4fa0-ada2-145996dc8e00",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-b6952890-8cec-4121-aed7-5f2bdc01c79e",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-ec4c0e30-a859-4d1d-b8cf-4c60f040372e",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-0f14395f-e66f-4147-be27-d775ed25dd90",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-6fd2abe4-f575-4d43-9754-e91cded1ba59",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-36137d57-25b6-4f06-9b7a-2f88f1a162ab",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-391745a8-ac3f-46ed-98f8-b65663aba40e",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-113baab3-f2cf-4a69-965f-7d4f029f5abe",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-60c01ed4-ab01-48d9-8e09-af58d7303d4a",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-19a2a347-ea57-4c6e-af3c-806ee7639bde",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-80efc94e-25d2-451b-a26e-52a2469f3bd5",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-0acf2397-470b-4da6-8785-da63abe0d745",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-c497c6c5-fd7f-4df3-a612-ec8d811b6d06",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-71d648a7-83ad-49d9-a8d6-2fb4ffaa1c3f",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-cc8cd7f5-a79d-49ef-b820-6e4c856b1001",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-304a74d6-7aa7-463a-bbce-906b0f53ce98",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-9e9c03fe-a19d-4f76-8f6d-108d9d5e193d",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-6b2f2869-87a3-44f8-a726-1ca289061c78",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-139bf7d8-c7e5-4d57-927e-519e6d14aded",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-b470a94e-bfcc-47fd-8eb6-9d9cf1dda8d7",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-2fb0cf94-307d-4329-b478-758a5eee5cd5",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-be73f400-5e76-4424-a800-a6d1f40422ee",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-9f382e73-440a-41d8-b77c-5de8fa01739b",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-df7feaf6-5a0e-4350-b498-f403d6c5d258",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-63f02493-a6f0-4731-b11f-fd847c14a0ce",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-90514408-ad9b-48f1-9658-b8c82722e203",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-20fbdf1e-699e-4c89-98e0-0b25068988b6",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-642c30ce-688c-4e3c-9fcf-82abde6df53f",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-6fdfc9e4-8d10-438e-bde2-31b89903eca9",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-895041d2-b458-4fde-919e-bb7ba4358240",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-a3cec0fa-38ae-40c7-8753-203bda34f51b",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-0773672a-1684-4db5-8050-e693fc525e46",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-4dfc3b8f-7b6b-4fd5-a65f-2e7058df8710",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-81d6a4eb-cc99-4555-8c03-089ee15767e8",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-8c1adb6b-f1da-4797-9787-ed2307efe644",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 10,
+            "job_message": "Manuel klip: 0.0 - 2.5 sn",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          }
+        ],
+        "final_job": null,
+        "timed_out": true
+      }
+    },
+    {
+      "step": "clips_after_manual",
+      "status_code": 200,
+      "trace_id": "audit-clips-after-manual-d39c42a4-6765-4583-943d-2333eed4e74e",
+      "summary": {
+        "count": 0,
+        "items": []
+      }
+    },
+    {
+      "step": "process_batch",
+      "status_code": 200,
+      "trace_id": "audit-process-batch-dc2dc2ae-355a-40b7-8180-794a3bf705e2",
+      "response": {
+        "status": "started",
+        "job_id": "batch_1774932556_dbc375"
+      },
+      "poll": {
+        "polls": [
+          {
+            "trace_id": "audit-jobs-poll-741d48f8-717b-410d-8432-b1191afee06c",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-f0917cb9-c10e-4d2d-a038-335236f018fa",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-6bf6ff8e-38ac-4845-9234-1b70af838a87",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-e82e67da-c717-49aa-9e2d-a5a4f9f49292",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-fcac38c5-37aa-4711-b96b-38e88f18b283",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-ea4f4149-52aa-48ab-b38c-5c965e9c340e",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-8d638393-132a-43e9-b905-2bc893fffd27",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-6e8cb821-d5dd-4370-bef0-d81da7fe84d8",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-390c8fa9-b403-4e7a-918b-3e308dd8fa07",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-119c6030-9dff-4732-8903-fee2ccbe1153",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-633ace36-21ef-4b40-85dc-e338cbf70696",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-4e1fae7d-f522-4129-be1c-57ddd4dd81e2",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-860a8dfd-967e-441f-859c-084b46fa2c76",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-60d19797-6637-411f-80c2-5bbe3e4b9453",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-7a85913b-8964-4c70-91cb-61fd32b54d07",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-7a288c06-b195-4c31-a7fe-465a29fd3481",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-6913f8f4-c589-4ded-97ac-5e7671d8d44d",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-42f8ba82-42c3-4db1-aba7-30eb66c3e44c",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-ad4ec41d-ff4d-4ec3-b351-3a9a244fab89",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-c6da90aa-862c-4217-bc1f-51c30d01353c",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-1e12865f-58e1-4330-ba1f-3a0db7c07bb0",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-2816f140-dff1-4609-8413-b9afb4737bdf",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-6c2dcd20-d291-4aa5-9500-e19944d3b097",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-20361c4e-ed9b-4a84-9d96-c61b15cc8f0d",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-a01b9aab-0f50-4f45-90a6-40740a2f1106",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-4f75e276-decf-4a2e-a9cc-16e3068552dd",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-f744cdb8-2e1e-4291-86c8-8ce62c03e1d7",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-79b3f3e6-965b-47b0-bcb4-8d45cf0551fd",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-c7cafbf6-3255-4037-845f-515396d29c02",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-a9638809-653c-4a16-bba3-c425ad82b808",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-5f75cacc-70bf-4aa5-8243-71d65786f262",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-7e86ed48-a488-4ebb-8826-ceb8ae48475b",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-1f411922-95c8-4114-86a1-01f88409909e",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-e56076bb-447e-4fb1-8dfe-c573e3620dd1",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-b80c06ff-db09-46b9-bd8e-ee72cb9873d2",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-067686b0-536d-491c-b568-a88fbf885ee2",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-5a8974e5-12eb-4bef-8e8b-5341901589cc",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-824d10f8-2ad1-4d82-ac34-01234286ad0b",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-42170e54-09ef-4f9a-ace6-70af505b4923",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-443f804d-282e-4475-8c3b-3706d8a6488c",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-3d134c34-9f66-4591-ab43-52e9d0e34c8e",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-2eb8210d-db48-4d7c-823e-635235e880df",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-3485c6fa-3850-4848-a05e-5e3601475d81",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-21564b25-29b8-4cf7-9798-20b003a38cbc",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-24852006-26ec-438c-9869-36cb6a923e53",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-2f4f2186-eddf-49a9-bc4b-87fb53266c5b",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-25d13097-d5cf-46a3-a592-e6af6a0cc79a",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-488f47e1-f073-4d80-b7d1-5ae518348b1f",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-48a556df-aab3-4bfb-b04e-6e170abffee2",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-08b1aed0-0d92-40b7-85d8-326a9714637a",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-2bd04023-9ec8-47bb-82d2-a5bb347a2947",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-c5fc5c9d-ad2b-427d-9cb1-b033a1bc360a",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-63f45b34-f751-4e46-a50b-584580996748",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-496f3f12-19d4-4d9a-8b8b-b0fdb3252d9d",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-2331924d-515d-4e22-88a1-c70e19d6e8ae",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-f79ead52-f52f-4573-87e4-c6de6b98ab5e",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-9a966007-a220-447a-b39f-0cf02441e25b",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-e0b98a15-36d6-4c49-8462-6c10fd684861",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-d3214b1d-226f-4e0a-90c0-d61a719e3d33",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-a4ff1d6c-4ce8-4473-950f-a0e0bba26311",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-3b6ef75a-5072-46e6-8dde-3fe066544de4",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-69782d06-53ec-453d-bb84-76380ad63988",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-e5aa9831-5ba9-4fd3-95cc-8de7e60c8fd3",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-85ee519f-c204-4441-bcf7-f8b77abb4621",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-b1ae3d78-da7f-49e9-a105-742440dfe081",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-18a25b1d-fde9-4539-85f0-7bf6c334abaa",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-8b70dc0e-1d0e-4cba-8641-9d9bc0b870a0",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-18c093eb-dce4-44b8-a339-394cd2d3bb27",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-ac6048f3-393d-4235-8042-e31133992bb4",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-e49a2ef1-4174-4ef2-8737-eb1bdcada74e",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-adc605bb-4cfe-4161-b081-e9371df8ddb1",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-f21e5f3a-2340-4f01-bf3e-203bb16377de",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-d6fc4621-18d0-44c6-84fc-c865bd4a6b90",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-e9960e35-1627-49bb-bd70-d66bbce9c5a6",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-a75a692b-5892-41ef-9b1a-fd5c24f8d9a5",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-d5e8bcb3-b027-489f-b037-5444da065bc3",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-a3fea720-bb32-438f-a8cc-6d22752f0710",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-371b7db1-a7d2-4702-8fc1-3d17ae4af919",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-760a8295-f3bb-4579-b628-67ed2d3a8a58",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-7597e487-f1b0-4645-854d-433dea7c5891",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-64877299-79ec-4154-bb4c-a781a654ce86",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-76156929-34c0-477a-8840-bfbeee3edfe9",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-dff990b4-52dd-40c7-9b69-a064ca9a22e6",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-9193d0e3-532c-45b3-abe5-05b59e86af5b",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-e872b278-7e82-4e36-8402-cde0b4e2fe84",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-9f5cf219-27bf-4f11-9b7c-c21114dec9a6",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-33448b9d-9fb8-4c80-8e4e-d06d3cc3dfa1",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-d59c8658-f3bf-496e-adc2-8eb6afa8d0c9",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-c647bb0e-3cd2-467e-83f1-d27eebd3f305",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-64add39e-55a6-4305-8b0d-e9da8ec70c8b",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-0f092641-9122-4d57-b213-adbb669f6f6b",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-f69bd80c-cd65-4292-981a-373ccb2a2638",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-aec525a5-aad1-440e-a29b-173857604cd8",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-b823e6f0-7355-4ff5-aa6a-3d1c45ba3b71",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-43cad0db-8319-4f70-917a-208753120d2a",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          },
+          {
+            "trace_id": "audit-jobs-poll-633253cb-60ba-42e1-aa75-e8841413bb56",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "processing",
+            "job_progress": 30,
+            "job_message": "AI 1 adet viral an buldu, kurgu başlıyor...",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          }
+        ],
+        "final_job": null,
+        "timed_out": true
+      }
+    },
+    {
+      "step": "recover_project_transcript",
+      "status_code": 200,
+      "trace_id": "audit-recover-project-transcript-60524319-08b4-4477-bb13-d923a79415be",
+      "response": {
+        "status": "started",
+        "job_id": "projecttranscript_1774933036_f40912"
+      },
+      "poll": {
+        "polls": [
+          {
+            "trace_id": "audit-jobs-poll-b6cf8eaa-67ac-4ce1-b802-4bd08deb23aa",
+            "status_code": 200,
+            "job_present": true,
+            "job_status": "completed",
+            "job_progress": 100,
+            "job_message": "Proje transkripti hazır.",
+            "clip_name": null,
+            "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+            "output_url": null
+          }
+        ],
+        "final_job": {
+          "job_id": "projecttranscript_1774933036_f40912",
+          "url": "C:\\Users\\baba\\Documents\\GitHub\\godtier-shorts\\workspace\\projects\\3462292b60860538b5a07d5d89e1eb94\\up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905\\master.mp4",
+          "style": "PROJECT_TRANSCRIPT",
+          "status": "completed",
+          "progress": 100,
+          "last_message": "Proje transkripti hazır.",
+          "created_at": 1774933036.633348,
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "subject": "static-token:0e2f89939727",
+          "timeline": [
+            {
+              "id": "projecttranscript_1774933036_f40912:queued",
+              "at": "2026-03-31T04:57:16.635252+00:00",
+              "job_id": "projecttranscript_1774933036_f40912",
+              "status": "queued",
+              "progress": 0,
+              "message": "Proje transkript kurtarma kuyruğa alındı...",
+              "source": "api"
+            },
+            {
+              "id": "projecttranscript_1774933036_f40912:1774933036651294100",
+              "at": "2026-03-31T04:57:16.651282+00:00",
+              "job_id": "projecttranscript_1774933036_f40912",
+              "status": "queued",
+              "progress": 0,
+              "message": "İşlem sırası bekleniyor...",
+              "source": "worker"
+            },
+            {
+              "id": "projecttranscript_1774933036_f40912:1774933036659211500",
+              "at": "2026-03-31T04:57:16.659198+00:00",
+              "job_id": "projecttranscript_1774933036_f40912",
+              "status": "processing",
+              "progress": 1,
+              "message": "Proje transkripti yeniden çıkarılıyor...",
+              "source": "worker"
+            },
+            {
+              "id": "projecttranscript_1774933036_f40912:1774933036669165700",
+              "at": "2026-03-31T04:57:16.669147+00:00",
+              "job_id": "projecttranscript_1774933036_f40912",
+              "status": "processing",
+              "progress": 35,
+              "message": "Transkript hazır, mevcut kütüphane kullanılıyor...",
+              "source": "worker"
+            },
+            {
+              "id": "projecttranscript_1774933036_f40912:1774933036691486400",
+              "at": "2026-03-31T04:57:16.691475+00:00",
+              "job_id": "projecttranscript_1774933036_f40912",
+              "status": "completed",
+              "progress": 100,
+              "message": "Proje transkripti hazır.",
+              "source": "worker"
+            }
+          ]
+        },
+        "timed_out": false
+      }
+    },
+    {
+      "step": "clips_before_social",
+      "status_code": 200,
+      "trace_id": "audit-clips-before-social-85a28a1f-b5c5-4557-9bf3-b4ac56a7ebed",
+      "summary": {
+        "count": 0,
+        "items": []
+      }
+    },
+    {
+      "step": "social_providers_extended",
+      "status_code": 200,
+      "trace_id": "audit-social-providers-extended-85d9e002-5543-4962-862d-6187ad59fbd3",
+      "summary": {
+        "count": 6,
+        "platforms": [
+          "youtube_shorts",
+          "tiktok",
+          "instagram_reels",
+          "facebook_reels",
+          "x",
+          "linkedin"
+        ],
+        "connection_mode": "managed"
+      }
+    },
+    {
+      "step": "social_sync_connections",
+      "status_code": 200,
+      "trace_id": "audit-social-sync-connections-3c540fc1-ba67-44c8-9bdc-54d5f4360c72",
+      "summary": {
+        "status": "not_connected",
+        "accounts": 0
+      }
+    },
+    {
+      "step": "social_start_connection",
+      "status_code": 200,
+      "trace_id": "audit-social-start-connection-33659c9d-02e6-4f1b-9b61-1465ac0ef5e5",
+      "summary": {
+        "status": "oauth_required",
+        "session_id_present": true,
+        "launch_url_present": true
+      }
+    },
+    {
+      "step": "social_analytics_overview",
+      "status_code": 200,
+      "trace_id": "audit-social-analytics-overview-78c01852-93b3-41a7-ab88-626eeeae92e3",
+      "summary": {
+        "overview_keys": [
+          "active",
+          "approval_required",
+          "connected_accounts",
+          "failed",
+          "generated_at",
+          "platforms_connected",
+          "published",
+          "scheduled",
+          "total_jobs"
+        ],
+        "platform_count": 0
+      }
+    },
+    {
+      "step": "social_analytics_accounts",
+      "status_code": 200,
+      "trace_id": "audit-social-analytics-accounts-822da27f-207d-4a9f-9db8-8f0162cb216b",
+      "summary": {
+        "count": 0
+      }
+    },
+    {
+      "step": "social_analytics_posts",
+      "status_code": 200,
+      "trace_id": "audit-social-analytics-posts-765ed6f7-12e1-464b-92c4-ca6d703f3087",
+      "summary": {
+        "count": 0
+      }
+    },
+    {
+      "step": "social_queue",
+      "status_code": 200,
+      "trace_id": "audit-social-queue-8d647049-5919-43cc-ad79-c8eb64ec3321",
+      "summary": {
+        "count": 0
+      }
+    },
+    {
+      "step": "social_calendar",
+      "status_code": 200,
+      "trace_id": "audit-social-calendar-5ead28c3-fa68-496e-8248-c1f24e912d9e",
+      "summary": {
+        "count": 0
+      }
+    },
+    {
+      "step": "social_accounts",
+      "status_code": 200,
+      "trace_id": "audit-social-accounts-693ea8e8-548e-4261-aa23-e91c5d561ee1",
+      "summary": {
+        "connected": false,
+        "connection_mode": "managed",
+        "count": 0
+      }
+    },
+    {
+      "step": "social_connections",
+      "status_code": 200,
+      "trace_id": "audit-social-connections-b43ec249-24e9-4b6a-a53d-a3279d511e15",
+      "summary": {
+        "connected": false,
+        "count": 0,
+        "provider_count": 6
+      }
+    }
+  ],
+  "destructive_flows_primary": [
+    {
+      "step": "clips_before_delete",
+      "status_code": 200,
+      "trace_id": "audit-clips-before-delete-12714a9a-3cb8-490e-8e9e-fb649598c8fc",
+      "summary": {
+        "count": 0,
+        "items": []
+      }
+    },
+    {
+      "step": "delete_clip",
+      "status": "blocked",
+      "reason": "No subject-scoped clip was available to delete after live editor checks."
+    },
+    {
+      "step": "purge_before_snapshot",
+      "summary": {
+        "projects": {
+          "count": 1,
+          "ids": [
+            "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905"
+          ]
+        },
+        "clips": {
+          "count": 0,
+          "items": []
+        },
+        "connections_count": 0,
+        "publish_jobs_count": 0,
+        "queue_count": 0,
+        "calendar_count": 0
+      }
+    },
+    {
+      "step": "account_purge",
+      "status_code": 200,
+      "trace_id": "audit-account-purge-2a35ad7f-7f84-498d-b13a-67a848b41f14",
+      "response": {
+        "status": "purged",
+        "summary": {
+          "deleted_projects": 1,
+          "deleted_social_rows": 5,
+          "cancelled_jobs": 5,
+          "closed_websockets": 0,
+          "scrubbed_grants": 0
+        }
+      }
+    },
+    {
+      "step": "purge_after_snapshot",
+      "summary": {
+        "projects": {
+          "count": 0,
+          "ids": []
+        },
+        "clips": {
+          "count": 0,
+          "items": []
+        },
+        "connections_count": 0,
+        "publish_jobs_count": 0,
+        "queue_count": 0,
+        "calendar_count": 0,
+        "whoami_subject_hash": "3462292b60860538b5a07d5d89e1eb94"
+      }
+    },
+    {
+      "step": "filesystem_after_purge",
+      "summary": {
+        "project_dir_exists": false,
+        "subject_dir_exists": true
+      }
+    }
+  ],
+  "jobs_controls": {
+    "steps": [
+      {
+        "step": "cache_status",
+        "status_code": 200,
+        "trace_id": "audit-cache-status-live-6d1d837e-5bb8-41af-a0ef-7f359bbf063d",
+        "response": {
+          "project_id": "yt_3462292b60860538b5a07d5d89e1eb94_dQw4w9WgXcQ",
+          "project_cached": false,
+          "analysis_cached": false,
+          "render_cached": false,
+          "cache_scope": "none",
+          "clip_count": 0,
+          "message": "Bu video daha once islenmemis."
+        }
+      },
+      {
+        "step": "start_job",
+        "status_code": 200,
+        "trace_id": "audit-start-job-live-d34e8f5b-524a-4072-a905-1cd846e19c3d",
+        "response": {
+          "status": "queued",
+          "job_id": "79d99cdb",
+          "project_id": "yt_3462292b60860538b5a07d5d89e1eb94_dQw4w9WgXcQ",
+          "cache_hit": false,
+          "cache_scope": "none",
+          "message": "İşlem başlatılıyor. Hazırlık aşamaları yürütülüyor...",
+          "processing_locked": false,
+          "gpu_locked": false
+        }
+      },
+      {
+        "step": "jobs_before_cancel",
+        "status_code": 200,
+        "trace_id": "audit-jobs-before-cancel-8b9b86ad-1ec8-44c7-b666-3c65df7938a6",
+        "summary": {
+          "count": 1,
+          "job_ids": [
+            "79d99cdb"
+          ]
+        }
+      },
+      {
+        "step": "cancel_job",
+        "status_code": 200,
+        "trace_id": "audit-cancel-job-live-0616e169-632f-485a-9dde-d31752467c51",
+        "response": {
+          "status": "success",
+          "message": "İş iptal edildi."
+        }
+      },
+      {
+        "step": "jobs_after_cancel",
+        "status_code": 200,
+        "trace_id": "audit-jobs-after-cancel-48a0042d-a1a9-491d-ae7d-cb53d97a7089",
+        "summary": {
+          "count": 1,
+          "cancelled_job_status": "cancelled",
+          "cancelled_job_message": "İş iptal edildi."
+        }
+      },
+      {
+        "step": "final_purge_after_job_test",
+        "status_code": 200,
+        "trace_id": "audit-final-purge-after-job-test-12480222-5ee0-4d25-b504-ab4126aaea74",
+        "response": {
+          "status": "purged",
+          "summary": {
+            "deleted_projects": 1,
+            "deleted_social_rows": 0,
+            "cancelled_jobs": 1,
+            "closed_websockets": 0,
+            "scrubbed_grants": 0
+          }
+        }
+      }
+    ]
+  }
+}

@@ -5,13 +5,17 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import resource
 import threading
 import time
 import uuid
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
+
+try:
+    import resource
+except ImportError:  # pragma: no cover - Windows fallback
+    resource = None
 
 import cv2
 
@@ -305,6 +309,8 @@ def run_benchmark(
 
 
 def read_peak_rss_mb() -> float:
+    if resource is None:
+        return 0.0
     usage = resource.getrusage(resource.RUSAGE_SELF)
     return float(usage.ru_maxrss) / 1024.0
 

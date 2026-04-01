@@ -1,0 +1,181 @@
+[
+  {
+    "id": "R-001",
+    "severity": "high",
+    "title": "Marketing compare route build ve runtime seviyesinde k?r?k",
+    "status": "open",
+    "layers": [
+      "marketing"
+    ],
+    "affected_files": [
+      "marketing/src/app/compare/opus-clip-alternative/page.tsx"
+    ],
+    "evidence": [
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/tests/marketing_build.log",
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/ui/http_route_checks.json"
+    ],
+    "summary": "Next build `Cannot find name \"Link\"` ile k?r?l?yor ve ilgili route canl?da 500 d?n?yor.",
+    "recommendation": "Sayfaya eksik `Link` importunu ekleyin ve marketing build smoke testini CI zorunlu kap?s?na al?n."
+  },
+  {
+    "id": "R-002",
+    "severity": "critical",
+    "title": "process-manual job accepted olduktan sonra background TypeError ile kilitleniyor",
+    "status": "open",
+    "layers": [
+      "backend",
+      "frontend"
+    ],
+    "affected_files": [
+      "backend/api/routes/editor.py",
+      "backend/core/subtitle_timing.py",
+      "frontend/src/components/editor/useEditorController.ts",
+      "frontend/src/components/subtitleEditor/actions.ts"
+    ],
+    "evidence": [
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/api/live_request_evidence_extended.json",
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/runtime/backend_stderr.log"
+    ],
+    "summary": "Job 200/started d?nd?; ard?ndan `float(NoneType)` exception ile worker d??t? ve job terminal state almad?.",
+    "recommendation": "`normalize_word_payload` i?inde `score=None` tolerans? ekleyin ve route seviyesinde uncaught task exception i?in terminal error yaz?m?n? garanti edin."
+  },
+  {
+    "id": "R-003",
+    "severity": "high",
+    "title": "manual-cut-upload optimistic output_url/clip_name d?nd?r?p terminalde error ile bitiyor",
+    "status": "open",
+    "layers": [
+      "backend",
+      "frontend"
+    ],
+    "affected_files": [
+      "backend/api/routes/editor.py",
+      "frontend/src/components/autoCutEditor/useAutoCutEditorActions.ts"
+    ],
+    "evidence": [
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/api/manual_cut_upload_scenario.json",
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/runtime/backend_stderr.log"
+    ],
+    "summary": "?stek 200 d?n?yor; job 45% seviyesinde yakla??k 5 dakika bekleyip `Otomatik manual cut ba?ar?s?z` ile sonlan?yor.",
+    "recommendation": "Response modelinde optimistic clip/output de?erlerini pending olarak i?aretleyin veya yaln?zca ??kt? ger?ekten olu?tu?unda yay?nlay?n."
+  },
+  {
+    "id": "R-004",
+    "severity": "high",
+    "title": "process-batch 30% seviyesinde tak?l?yor ve makul s?rede terminale ula?m?yor",
+    "status": "open",
+    "layers": [
+      "backend",
+      "frontend"
+    ],
+    "affected_files": [
+      "backend/api/routes/editor.py",
+      "frontend/src/components/editor/useEditorController.ts",
+      "frontend/src/components/autoCutEditor/useAutoCutEditorActions.ts"
+    ],
+    "evidence": [
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/api/live_request_evidence_extended.json",
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/runtime/backend_stderr.log"
+    ],
+    "summary": "Batch job 8 dakika boyunca `AI 1 adet viral an buldu, kurgu ba?l?yor...` mesaj?nda kald?.",
+    "recommendation": "Batch workflow i?in progress timeout/heartbeat ekleyin ve LLM fallback ak??? terminal durum garantisi versin."
+  },
+  {
+    "id": "R-005",
+    "severity": "high",
+    "title": "Social scheduler testleri Windows ortam?nda timezone ba??ml?l??? y?z?nden k?r?l?yor",
+    "status": "open",
+    "layers": [
+      "backend"
+    ],
+    "affected_files": [
+      "backend/api/routes/social.py",
+      "backend/tests/test_social_routes.py",
+      "backend/tests/test_social_connections.py",
+      "requirements.txt"
+    ],
+    "evidence": [
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/tests/backend_target_suite.log"
+    ],
+    "summary": "`ZoneInfo()` ?a?r?lar? `UTC` ve `Europe/Istanbul` de?erlerinde `Ge?ersiz timezone` hatas?na d???yor; bu tipik olarak Windows ?zerinde `tzdata` eksikli?iyle uyumlu.",
+    "recommendation": "Runtime ba??ml?l???na `tzdata` ekleyin veya `UTC` i?in explicit fallback sa?lay?n; test manifest check?ine de bu ba??ml?l??? ekleyin."
+  },
+  {
+    "id": "R-006",
+    "severity": "medium",
+    "title": "Frontend test beklentileri g?ncel ?ngilizce UI kopyas?yla uyumsuz",
+    "status": "open",
+    "layers": [
+      "frontend"
+    ],
+    "affected_files": [
+      "frontend/src/test/components/JobForm.submission.test.tsx",
+      "frontend/src/test/integration/Editor.api-error.test.tsx"
+    ],
+    "evidence": [
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/tests/frontend_feature_suites.log",
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/tests/frontend_integration.log"
+    ],
+    "summary": "Testler T?rk?e label ar?yor (`otomatik mod`, `AI ILE TOPLU ?RET`) ancak UI eri?ilebilir adlar? ?ngilizce.",
+    "recommendation": "Test fixture ve query?leri i18n anahtarlar? veya g?ncel eri?ilebilir label?larla e?itleyin."
+  },
+  {
+    "id": "R-007",
+    "severity": "medium",
+    "title": "Tam frontend suite 20 dakikal?k gate i?inde tamamlanm?yor",
+    "status": "open",
+    "layers": [
+      "frontend"
+    ],
+    "affected_files": [
+      "frontend/package.json",
+      "frontend/src/test/**/*"
+    ],
+    "evidence": [
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/tests/frontend_full_suite.log"
+    ],
+    "summary": "Tam suite timeout oldu ve log i?inde `Not implemented: navigation to another Document` gibi harness kaynakl? k?r?l?mlar var.",
+    "recommendation": "CI i?in suite segmentasyonu yap?n, jsdom navigation ba??ml? testleri izole edin ve 20 dakikal?k gate?e g?re shard/parallel stratejisi uygulay?n."
+  },
+  {
+    "id": "R-008",
+    "severity": "medium",
+    "title": "Upload sonras? proje g?r?n?rl??? ilk okumada tutars?z",
+    "status": "open",
+    "layers": [
+      "backend",
+      "frontend"
+    ],
+    "affected_files": [
+      "backend/api/routes/clips.py",
+      "frontend/src/api/client.ts",
+      "frontend/src/components/autoCutEditor/useAutoCutEditorController.ts"
+    ],
+    "evidence": [
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/api/live_pipeline_scenario.json",
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/api/live_request_evidence_extended.json"
+    ],
+    "summary": "Upload tamamland?ktan hemen sonra `/api/projects` ilgili project_id?yi d?nd?rmedi; birka? ad?m sonra g?r?n?r oldu.",
+    "recommendation": "Upload success sonras? project index invalidation/refresh zincirini netle?tirin ve UI?de eventual consistency mesaj? verin."
+  },
+  {
+    "id": "R-009",
+    "severity": "low",
+    "title": "Frontend kalite uyar?lar? karma??kl?k ve hook dependency borcu biriktiriyor",
+    "status": "open",
+    "layers": [
+      "frontend"
+    ],
+    "affected_files": [
+      "frontend/src/hooks/useWebSocket.ts",
+      "frontend/src/components/SocialWorkspace.tsx",
+      "frontend/src/components/SocialComposePage.tsx",
+      "frontend/src/components/subtitleEditor/transcriptLoader.ts"
+    ],
+    "evidence": [
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/tests/frontend_lint.log"
+    ],
+    "summary": "44 warning i?inde ?zellikle missing hook deps ve a??r? uzun/karma??k fonksiyonlar ?ne ??k?yor.",
+    "recommendation": "Refactor backlog olu?turun; ?zellikle `useWebSocket` effect dependency ve `SocialWorkspace` monolith bile?enini b?l?n."
+  }
+]

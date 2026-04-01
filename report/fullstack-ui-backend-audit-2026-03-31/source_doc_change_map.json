@@ -1,0 +1,142 @@
+[
+  {
+    "doc_path": "README.md",
+    "priority": "high",
+    "change_type": "update",
+    "why": "Upload proje kimli?i/yolu ve canl? do?rulama sonu?lar? mevcut davran??tan sap?yor.",
+    "sections": [
+      "H?zl? Ba?lang??",
+      "??lem Ak??lar?",
+      "API ?zeti",
+      "G?venli dosya eri?imi"
+    ],
+    "evidence": [
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/api/live_pipeline_scenario.json",
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/api/jobs_live_controls.json"
+    ]
+  },
+  {
+    "doc_path": "docs/README.md",
+    "priority": "medium",
+    "change_type": "update",
+    "why": "Ana dok?man giri?inde bu auditin bulgular? ve bilinen k?r?k ak??lar linklenmeli.",
+    "sections": [
+      "Sayfalar (UI)",
+      "?? Ak??lar?",
+      "Kalite ve Tan?"
+    ],
+    "evidence": [
+      "report/FULLSTACK_UI_BACKEND_AUDIT_2026-03-31.md"
+    ]
+  },
+  {
+    "doc_path": "docs/flows/upload-transcribe.md",
+    "priority": "high",
+    "change_type": "update",
+    "why": "Dok?man eski d?z proje dizin d?zenini anlat?yor; ger?ek proje yolu subject-scoped.",
+    "sections": [
+      "Ak??",
+      "Ad?mlar",
+      "Proje Yap?s?"
+    ],
+    "evidence": [
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/api/live_pipeline_scenario.json"
+    ]
+  },
+  {
+    "doc_path": "docs/pages/auto-cut.md",
+    "priority": "high",
+    "change_type": "update",
+    "why": "Happy-path anlat?m? canl?da ba?ar?s?z olan manual-cut-upload ve batch davran???n? yans?tm?yor.",
+    "sections": [
+      "API Endpointleri",
+      "Kullan?c? Ak???"
+    ],
+    "evidence": [
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/api/manual_cut_upload_scenario.json",
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/api/live_request_evidence_extended.json"
+    ]
+  },
+  {
+    "doc_path": "docs/flows/manual-cut.md",
+    "priority": "high",
+    "change_type": "update",
+    "why": "Optimistic response davran??? ve `score=None` crash riski belirtilmeli.",
+    "sections": [
+      "Tek Klip Ak???",
+      "API Parametreleri",
+      "??kt?"
+    ],
+    "evidence": [
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/runtime/backend_stderr.log",
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/api/manual_cut_upload_scenario.json"
+    ]
+  },
+  {
+    "doc_path": "docs/pages/clip-editor.md",
+    "priority": "medium",
+    "change_type": "update",
+    "why": "Render/Reburn ak??? canl?da clip ?retilemedi?i i?in do?rulanamad?; ?nko?ullar netle?tirilmeli.",
+    "sections": [
+      "API Endpointleri",
+      "Kullan?c? Ak???"
+    ],
+    "evidence": [
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/api/live_request_evidence_extended.json"
+    ]
+  },
+  {
+    "doc_path": "docs/pages/subtitle-editor.md",
+    "priority": "medium",
+    "change_type": "update",
+    "why": "Project transcript recovery do?ruland?; clip recovery/reburn ise canl? clip yoklu?u nedeniyle bloklu.",
+    "sections": [
+      "API Endpointleri",
+      "Kullan?c? Ak???"
+    ],
+    "evidence": [
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/api/live_request_evidence_extended.json"
+    ]
+  },
+  {
+    "doc_path": "docs/flows/reburn.md",
+    "priority": "medium",
+    "change_type": "update",
+    "why": "Reburn happy path canl? do?rulanamad?; clip ?retim blokajlar?yla ili?kisi belirtilmeli.",
+    "sections": [
+      "Kullan?m Senaryolar?",
+      "Kalite ?zeti"
+    ],
+    "evidence": [
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/api/live_request_evidence_extended.json"
+    ]
+  },
+  {
+    "doc_path": "docs/operations/postiz-global-oauth-standard.md",
+    "priority": "high",
+    "change_type": "update",
+    "why": "Windows/IANA timezone verisi eksikli?inin publish/calendar testlerini k?rd??? not d???lmeli.",
+    "sections": [
+      "Global Olanlar",
+      "Kesin Kurallar",
+      "Operasyon Ak???"
+    ],
+    "evidence": [
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/tests/backend_target_suite.log"
+    ]
+  },
+  {
+    "doc_path": "marketing/README.md",
+    "priority": "medium",
+    "change_type": "update",
+    "why": "Build smoke ve route health beklentileri eklenmeli; ?u an bir compare sayfas? build k?r?yor.",
+    "sections": [
+      "Commands",
+      "Environment"
+    ],
+    "evidence": [
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/tests/marketing_build.log",
+      "report/fullstack-ui-backend-audit-2026-03-31/evidence/ui/http_route_checks.json"
+    ]
+  }
+]

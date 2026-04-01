@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import os
+import shutil
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -323,3 +324,75 @@ def quarantine_legacy_projects() -> list[str]:
             quarantine_project(project_dir.name)
             quarantined.append(project_dir.name)
     return quarantined
+
+
+def _split_owner_scoped_project_id(project_id: str) -> tuple[str, str]:
+    safe_project_id = config.sanitize_project_name(project_id)
+    subject_hash = config.extract_subject_hash_from_project_id(safe_project_id)
+    marker = f"_{subject_hash}_"
+    if marker not in safe_project_id:
+        raise ValueError("Owner-scoped proje kimligi parse edilemedi")
+    prefix, suffix = safe_project_id.split(marker, 1)
+    if not prefix or not suffix:
+        raise ValueError("Owner-scoped proje kimligi gecersiz")
+    return prefix, suffix
+
+
+def _rewrite_project_id_references(project_root: Path, *, old_project_id: str, new_project_id: str) -> int:
+    updated = 0
+    for json_path in project_root.rglob("*.json"):
+        if json_path.name == PROJECT_MANIFEST_FILENAME:
+            continue
+        try:
+            payload = json.loads(json_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+
+        changed = False
+        if isinstance(payload, dict):
+            render_metadata = payload.get("render_metadata")
+            if isinstance(render_metadata, dict) and render_metadata.get("project_id") == old_project_id:
+                render_metadata["project_id"] = new_project_id
+                changed = True
+
+        if changed:
+            json_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            updated += 1
+    return updated
+
+
+def reassign_project_owner(project_id: str, *, new_owner_subject: str) -> dict[str, Any]:
+    safe_project_id = config.sanitize_project_name(project_id)
+    manifest = read_project_manifest(safe_project_id)
+    if manifest is None:
+        raise FileNotFoundError(f"Project manifest bulunamadi: {safe_project_id}")
+
+    prefix, suffix = _split_owner_scoped_project_id(safe_project_id)
+    new_project_id = build_owner_scoped_project_id(prefix, new_owner_subject, suffix)
+    old_project_root = config.get_project_path(safe_project_id)
+    new_project_root = config.get_project_path(new_project_id)
+
+    if not old_project_root.exists():
+        raise FileNotFoundError(f"Project root bulunamadi: {old_project_root}")
+    if new_project_root.exists():
+        raise FileExistsError(f"Hedef proje zaten var: {new_project_id}")
+
+    new_project_root.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(old_project_root), str(new_project_root))
+
+    metadata_files_updated = _rewrite_project_id_references(
+        new_project_root,
+        old_project_id=safe_project_id,
+        new_project_id=new_project_id,
+    )
+
+    manifest.project_id = new_project_id
+    manifest.owner_subject_hash = build_subject_hash(new_owner_subject)
+    write_project_manifest(new_project_id, manifest)
+
+    return {
+        "old_project_id": safe_project_id,
+        "new_project_id": new_project_id,
+        "metadata_files_updated": metadata_files_updated,
+        "new_owner_subject_hash": manifest.owner_subject_hash,
+    }

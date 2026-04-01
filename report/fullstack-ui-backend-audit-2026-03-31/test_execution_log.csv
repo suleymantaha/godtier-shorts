@@ -1,0 +1,17 @@
+id,category,target,status,duration_s,summary,evidence_file
+runtime_config,baseline,Backend runtime config,pass,,Runtime yap?land?rmas? do?ruland?.,report/fullstack-ui-backend-audit-2026-03-31/evidence/tests/runtime_config.log
+system_deps,baseline,System dependencies,pass_with_warning,,ffmpeg/yt-dlp/nvidia-smi OK; torch.cuda warning.,report/fullstack-ui-backend-audit-2026-03-31/evidence/tests/system_deps.log
+frontend_lint,frontend,Frontend lint,warn,,"0 error, 44 warning.",report/fullstack-ui-backend-audit-2026-03-31/evidence/tests/frontend_lint.log
+frontend_build,frontend,Frontend production build,pass,19.26,Vite build tamamland?.,report/fullstack-ui-backend-audit-2026-03-31/evidence/tests/frontend_build.log
+marketing_build,marketing,Marketing production build,fail,,Missing Link import nedeniyle build fail.,report/fullstack-ui-backend-audit-2026-03-31/evidence/tests/marketing_build.log
+backend_target_suite,backend,Targeted backend pytest suite,fail,11.37,"93 testten 89 pass, 4 fail (social timezone).",report/fullstack-ui-backend-audit-2026-03-31/evidence/tests/backend_target_suite.log
+frontend_smoke,frontend,Frontend smoke suite,pass,24.24,1/1 smoke test ge?ti.,report/fullstack-ui-backend-audit-2026-03-31/evidence/tests/frontend_smoke.log
+frontend_feature_suites,frontend,Selected feature suites,fail,35.95,"45 testten 37 pass, 8 fail; JobForm testleri stale label kullan?yor.",report/fullstack-ui-backend-audit-2026-03-31/evidence/tests/frontend_feature_suites.log
+frontend_integration,frontend,Selected integration suites,fail,26.43,"2 testten 1 pass, 1 fail; Editor.api-error label drift.",report/fullstack-ui-backend-audit-2026-03-31/evidence/tests/frontend_integration.log
+frontend_full_suite,frontend,Full frontend suite,timeout,1200,20 dakika gate a??ld?; log i?inde jsdom navigation limitation ve ek test k?r?l?mlar? var.,report/fullstack-ui-backend-audit-2026-03-31/evidence/tests/frontend_full_suite.log
+ui_route_checks,live_ui,Frontend + marketing route HTTP checks,partial,,Frontend route?lar? 200; marketing 1 route 500.,report/fullstack-ui-backend-audit-2026-03-31/evidence/ui/http_route_checks.json
+upload_pipeline_live,live_api,Upload + transcript live scenario,pass_with_warning,,Upload/transcript ge?ti; proje ilk GET /projects okumada g?r?nmedi.,report/fullstack-ui-backend-audit-2026-03-31/evidence/api/live_pipeline_scenario.json
+manual_cut_upload_live,live_api,manual-cut-upload live scenario,fail,,Optimistic response sonras? 45% error.,report/fullstack-ui-backend-audit-2026-03-31/evidence/api/manual_cut_upload_scenario.json
+editor_social_live,live_api,Editor + social extended scenario,partial,,Transcript save/recover ve social discovery ge?ti; process-manual/process-batch k?r?k.,report/fullstack-ui-backend-audit-2026-03-31/evidence/api/live_request_evidence_extended.json
+jobs_controls_live,live_api,cache-status/start/cancel live controls,pass,4.6,"Cache-status, start-job ve cancel-job canl? do?ruland?.",report/fullstack-ui-backend-audit-2026-03-31/evidence/api/jobs_live_controls.json
+destructive_flows,live_api,Destructive flows audit,partial,,Account purge ge?ti; clip delete i?in canl? clip olu?mad?.,report/fullstack-ui-backend-audit-2026-03-31/destructive_flow_audit.json

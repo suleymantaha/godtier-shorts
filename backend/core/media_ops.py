@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import locale
 import os
 import re
 import shutil
@@ -33,6 +34,7 @@ DOWNLOAD_TOTAL_TIMEOUT_SECONDS = 6 * 60 * 60
 DOWNLOAD_ACTIVITY_TIMEOUT_SECONDS = 30 * 60
 DOWNLOAD_PROGRESS_MIN_EMIT_INTERVAL_MS = 2000
 DOWNLOAD_PROGRESS_RE = re.compile(r"(?P<value>\d+(?:\.\d+)?)")
+JSON_FALLBACK_ENCODINGS = ("utf-8", "utf-8-sig", "cp1254", "latin-1")
 
 
 def _read_positive_int_env(name: str, default: int) -> int:
@@ -44,6 +46,27 @@ def _read_positive_int_env(name: str, default: int) -> int:
     except ValueError:
         return default
     return value if value > 0 else default
+
+
+def _load_json_file(path: str) -> Any:
+    raw = Path(path).read_bytes()
+    encodings: list[str] = ["utf-8", "utf-8-sig"]
+    preferred = locale.getpreferredencoding(False)
+    if preferred and preferred.lower() not in {encoding.lower() for encoding in encodings}:
+        encodings.append(preferred)
+    for fallback in JSON_FALLBACK_ENCODINGS:
+        if fallback.lower() not in {encoding.lower() for encoding in encodings}:
+            encodings.append(fallback)
+
+    last_error: UnicodeDecodeError | json.JSONDecodeError | None = None
+    for encoding in encodings:
+        try:
+            return json.loads(raw.decode(encoding))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            last_error = exc
+
+    assert last_error is not None
+    raise last_error
 
 
 def _format_bytes_human(num_bytes: int | None) -> str:
@@ -266,8 +289,7 @@ def shift_timestamps(
     output_json: str,
 ) -> str:
     """Aligns subtitle timestamps to clip-local timeline."""
-    with open(original_json, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    data = _load_json_file(original_json)
 
     shifted, _report = build_shifted_transcript_segments_with_report(data, start_time, end_time)
 
@@ -284,8 +306,7 @@ def shift_timestamps_with_report(
     output_json: str,
 ) -> dict:
     """Aligns subtitle timestamps and returns transcript quality metrics."""
-    with open(original_json, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    data = _load_json_file(original_json)
 
     shifted, report = build_shifted_transcript_segments_with_report(data, start_time, end_time)
     with open(output_json, "w", encoding="utf-8") as f:

@@ -27,7 +27,7 @@ describe('Editor API error rendering', () => {
       Object.defineProperty(video, 'duration', { configurable: true, value: 120 });
       fireEvent.loadedMetadata(video);
     }
-    const button = screen.getByRole('button', { name: /AI ILE TOPLU ÜRET/i });
+    const button = screen.getByRole('button', { name: /generate in batch with ai/i });
     fireEvent.click(button);
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent('API down');

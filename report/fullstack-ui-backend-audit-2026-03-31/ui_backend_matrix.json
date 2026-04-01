@@ -1,0 +1,666 @@
+{
+  "websocket": {
+    "endpoint": "/ws/progress",
+    "status": "pass",
+    "frontend_files": [
+      "frontend/src/hooks/useWebSocket.ts",
+      "frontend/src/store/useJobStore.ts"
+    ],
+    "backend_files": [
+      "backend/api/server.py",
+      "backend/api/security.py"
+    ]
+  },
+  "features": [
+    {
+      "name": "Auth & App Shell",
+      "status": "pass_with_warning",
+      "docs": [
+        "README.md",
+        "docs/README.md",
+        "docs/clerk-auth-setup.md"
+      ],
+      "tests": [
+        "frontend/src/test/App.test.tsx",
+        "frontend/src/test/unit/useWebSocket.test.tsx",
+        "backend/tests/test_api_security.py",
+        "backend/tests/test_websocket_auth.py"
+      ],
+      "chains": [
+        {
+          "client_method": "authApi.whoami",
+          "endpoint": "GET /api/auth/whoami",
+          "route_file": "backend/api/routes/auth.py",
+          "auth_policy": "authenticate_request",
+          "ui_call_sites": [
+            "frontend/src/auth/useResilientAuth.ts"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "jobsApi.list",
+          "endpoint": "GET /api/jobs",
+          "route_file": "backend/api/routes/jobs.py",
+          "auth_policy": "view_jobs",
+          "ui_call_sites": [
+            "frontend/src/store/useJobStore.ts",
+            "frontend/src/test/api/client.test.ts"
+          ],
+          "live_status": "pass"
+        }
+      ]
+    },
+    {
+      "name": "Configure",
+      "status": "partial",
+      "docs": [
+        "README.md",
+        "docs/pages/configure.md",
+        "docs/flows/youtube-pipeline.md"
+      ],
+      "tests": [
+        "frontend/src/test/components/JobForm.submission.test.tsx",
+        "frontend/src/test/components/JobQueue.test.tsx",
+        "frontend/src/test/components/ClipGallery.test.tsx",
+        "backend/tests/test_jobs_api_serialization.py",
+        "backend/tests/test_job_ownership.py"
+      ],
+      "chains": [
+        {
+          "client_method": "jobsApi.styles",
+          "endpoint": "GET /api/styles",
+          "route_file": "backend/api/routes/jobs.py",
+          "auth_policy": "view_styles",
+          "ui_call_sites": [],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "jobsApi.cacheStatus",
+          "endpoint": "POST /api/cache-status",
+          "route_file": "backend/api/routes/jobs.py",
+          "auth_policy": "start_job",
+          "ui_call_sites": [
+            "frontend/src/components/jobForm/useJobFormController.ts"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "jobsApi.start",
+          "endpoint": "POST /api/start-job",
+          "route_file": "backend/api/routes/jobs.py",
+          "auth_policy": "start_job",
+          "ui_call_sites": [
+            "frontend/src/components/jobForm/useJobFormController.ts"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "jobsApi.list",
+          "endpoint": "GET /api/jobs",
+          "route_file": "backend/api/routes/jobs.py",
+          "auth_policy": "view_jobs",
+          "ui_call_sites": [
+            "frontend/src/store/useJobStore.ts",
+            "frontend/src/test/api/client.test.ts"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "jobsApi.cancel",
+          "endpoint": "POST /api/cancel-job/{job_id}",
+          "route_file": "backend/api/routes/jobs.py",
+          "auth_policy": "cancel_job",
+          "ui_call_sites": [
+            "frontend/src/store/useJobStore.ts"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "clipsApi.list",
+          "endpoint": "GET /api/clips",
+          "route_file": "backend/api/routes/clips.py",
+          "auth_policy": "view_clips",
+          "ui_call_sites": [
+            "frontend/src/components/SocialComposePage.tsx",
+            "frontend/src/components/clipGallery/useClipGalleryController.ts",
+            "frontend/src/components/subtitleEditor/sources.ts"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "clipsApi.delete",
+          "endpoint": "DELETE /api/projects/{project_id}/shorts/{clip_name}",
+          "route_file": "backend/api/routes/clips.py",
+          "auth_policy": "delete_clip",
+          "ui_call_sites": [
+            "frontend/src/components/clipGallery/useClipGalleryController.ts"
+          ],
+          "live_status": "blocked"
+        }
+      ]
+    },
+    {
+      "name": "Upload & Auto Cut",
+      "status": "fail",
+      "docs": [
+        "README.md",
+        "docs/pages/auto-cut.md",
+        "docs/flows/upload-transcribe.md",
+        "docs/flows/manual-cut.md",
+        "docs/flows/batch-clips.md"
+      ],
+      "tests": [
+        "frontend/src/test/components/AutoCutEditor.flow.test.tsx",
+        "frontend/src/test/components/autoCutEditor.actions.test.tsx",
+        "backend/tests/test_manual_crop.py"
+      ],
+      "chains": [
+        {
+          "client_method": "clipsApi.upload",
+          "endpoint": "POST /api/upload",
+          "route_file": "backend/api/routes/clips.py",
+          "auth_policy": "upload",
+          "ui_call_sites": [
+            "frontend/src/components/editor/useEditorController.ts"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "editorApi.manualCutUpload",
+          "endpoint": "POST /api/manual-cut-upload",
+          "route_file": "backend/api/routes/editor.py",
+          "auth_policy": "manual_cut_upload",
+          "ui_call_sites": [
+            "frontend/src/components/autoCutEditor/useAutoCutEditorActions.ts"
+          ],
+          "live_status": "fail"
+        },
+        {
+          "client_method": "editorApi.processBatch",
+          "endpoint": "POST /api/process-batch",
+          "route_file": "backend/api/routes/editor.py",
+          "auth_policy": "process_batch",
+          "ui_call_sites": [
+            "frontend/src/components/editor/useEditorController.ts"
+          ],
+          "live_status": "fail"
+        },
+        {
+          "client_method": "editorApi.getProjects",
+          "endpoint": "GET /api/projects",
+          "route_file": "backend/api/routes/clips.py",
+          "auth_policy": "view_projects",
+          "ui_call_sites": [
+            "frontend/src/test/api/client.test.ts",
+            "frontend/src/components/subtitleEditor/sources.ts"
+          ],
+          "live_status": "warn"
+        },
+        {
+          "client_method": "clipsApi.list",
+          "endpoint": "GET /api/clips",
+          "route_file": "backend/api/routes/clips.py",
+          "auth_policy": "view_clips",
+          "ui_call_sites": [
+            "frontend/src/components/SocialComposePage.tsx",
+            "frontend/src/components/clipGallery/useClipGalleryController.ts",
+            "frontend/src/components/subtitleEditor/sources.ts"
+          ],
+          "live_status": "pass"
+        }
+      ]
+    },
+    {
+      "name": "Clip Editor",
+      "status": "fail",
+      "docs": [
+        "README.md",
+        "docs/pages/clip-editor.md",
+        "docs/flows/manual-cut.md",
+        "docs/flows/reburn.md"
+      ],
+      "tests": [
+        "frontend/src/test/integration/Editor.api-error.test.tsx",
+        "frontend/src/test/integration/Editor.blob-cleanup.test.tsx",
+        "backend/tests/test_manual_crop.py"
+      ],
+      "chains": [
+        {
+          "client_method": "editorApi.getTranscript",
+          "endpoint": "GET /api/transcript",
+          "route_file": "backend/api/routes/editor.py",
+          "auth_policy": "view_transcript",
+          "ui_call_sites": [
+            "frontend/src/components/editor/useEditorController.ts",
+            "frontend/src/components/subtitleEditor/transcriptLoader.ts"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "editorApi.saveTranscript",
+          "endpoint": "POST /api/transcript",
+          "route_file": "backend/api/routes/editor.py",
+          "auth_policy": "save_transcript",
+          "ui_call_sites": [
+            "frontend/src/components/editor/useEditorController.ts",
+            "frontend/src/components/subtitleEditor/actions.ts"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "editorApi.processManual",
+          "endpoint": "POST /api/process-manual",
+          "route_file": "backend/api/routes/editor.py",
+          "auth_policy": "process_manual",
+          "ui_call_sites": [
+            "frontend/src/components/editor/useEditorController.ts",
+            "frontend/src/components/subtitleEditor/actions.ts"
+          ],
+          "live_status": "fail"
+        },
+        {
+          "client_method": "editorApi.processBatch",
+          "endpoint": "POST /api/process-batch",
+          "route_file": "backend/api/routes/editor.py",
+          "auth_policy": "process_batch",
+          "ui_call_sites": [
+            "frontend/src/components/editor/useEditorController.ts"
+          ],
+          "live_status": "fail"
+        },
+        {
+          "client_method": "editorApi.reburn",
+          "endpoint": "POST /api/reburn",
+          "route_file": "backend/api/routes/editor.py",
+          "auth_policy": "reburn",
+          "ui_call_sites": [
+            "frontend/src/components/editor/useEditorController.ts",
+            "frontend/src/components/subtitleEditor/actions.ts"
+          ],
+          "live_status": "blocked"
+        },
+        {
+          "client_method": "clipsApi.getTranscript",
+          "endpoint": "GET /api/clip-transcript/{clip_name}",
+          "route_file": "backend/api/routes/clips.py",
+          "auth_policy": "view_clip_transcript",
+          "ui_call_sites": [
+            "frontend/src/components/editor/useEditorController.ts",
+            "frontend/src/components/subtitleEditor/transcriptLoader.ts"
+          ],
+          "live_status": "blocked"
+        },
+        {
+          "client_method": "clipsApi.upload",
+          "endpoint": "POST /api/upload",
+          "route_file": "backend/api/routes/clips.py",
+          "auth_policy": "upload",
+          "ui_call_sites": [
+            "frontend/src/components/editor/useEditorController.ts"
+          ],
+          "live_status": "pass"
+        }
+      ]
+    },
+    {
+      "name": "Subtitle Editor",
+      "status": "partial",
+      "docs": [
+        "README.md",
+        "docs/pages/subtitle-editor.md",
+        "docs/flows/reburn.md"
+      ],
+      "tests": [
+        "frontend/src/test/components/SubtitleEditor.clip.test.tsx",
+        "frontend/src/test/components/SubtitleEditor.project.test.tsx",
+        "backend/tests/test_clip_transcript_routes.py",
+        "backend/tests/test_clip_transcript_recovery.py"
+      ],
+      "chains": [
+        {
+          "client_method": "editorApi.getProjects",
+          "endpoint": "GET /api/projects",
+          "route_file": "backend/api/routes/clips.py",
+          "auth_policy": "view_projects",
+          "ui_call_sites": [
+            "frontend/src/test/api/client.test.ts",
+            "frontend/src/components/subtitleEditor/sources.ts"
+          ],
+          "live_status": "warn"
+        },
+        {
+          "client_method": "editorApi.getTranscript",
+          "endpoint": "GET /api/transcript",
+          "route_file": "backend/api/routes/editor.py",
+          "auth_policy": "view_transcript",
+          "ui_call_sites": [
+            "frontend/src/components/editor/useEditorController.ts",
+            "frontend/src/components/subtitleEditor/transcriptLoader.ts"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "editorApi.saveTranscript",
+          "endpoint": "POST /api/transcript",
+          "route_file": "backend/api/routes/editor.py",
+          "auth_policy": "save_transcript",
+          "ui_call_sites": [
+            "frontend/src/components/editor/useEditorController.ts",
+            "frontend/src/components/subtitleEditor/actions.ts"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "editorApi.recoverProjectTranscript",
+          "endpoint": "POST /api/transcript/recover",
+          "route_file": "backend/api/routes/editor.py",
+          "auth_policy": "recover_project_transcript",
+          "ui_call_sites": [
+            "frontend/src/components/subtitleEditor/actions.ts"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "editorApi.recoverClipTranscript",
+          "endpoint": "POST /api/clip-transcript/recover",
+          "route_file": "backend/api/routes/editor.py",
+          "auth_policy": "recover_clip_transcript",
+          "ui_call_sites": [
+            "frontend/src/components/subtitleEditor/actions.ts"
+          ],
+          "live_status": "blocked"
+        },
+        {
+          "client_method": "editorApi.processManual",
+          "endpoint": "POST /api/process-manual",
+          "route_file": "backend/api/routes/editor.py",
+          "auth_policy": "process_manual",
+          "ui_call_sites": [
+            "frontend/src/components/editor/useEditorController.ts",
+            "frontend/src/components/subtitleEditor/actions.ts"
+          ],
+          "live_status": "fail"
+        },
+        {
+          "client_method": "editorApi.reburn",
+          "endpoint": "POST /api/reburn",
+          "route_file": "backend/api/routes/editor.py",
+          "auth_policy": "reburn",
+          "ui_call_sites": [
+            "frontend/src/components/editor/useEditorController.ts",
+            "frontend/src/components/subtitleEditor/actions.ts"
+          ],
+          "live_status": "blocked"
+        },
+        {
+          "client_method": "clipsApi.list",
+          "endpoint": "GET /api/clips",
+          "route_file": "backend/api/routes/clips.py",
+          "auth_policy": "view_clips",
+          "ui_call_sites": [
+            "frontend/src/components/SocialComposePage.tsx",
+            "frontend/src/components/clipGallery/useClipGalleryController.ts",
+            "frontend/src/components/subtitleEditor/sources.ts"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "clipsApi.getTranscript",
+          "endpoint": "GET /api/clip-transcript/{clip_name}",
+          "route_file": "backend/api/routes/clips.py",
+          "auth_policy": "view_clip_transcript",
+          "ui_call_sites": [
+            "frontend/src/components/editor/useEditorController.ts",
+            "frontend/src/components/subtitleEditor/transcriptLoader.ts"
+          ],
+          "live_status": "blocked"
+        }
+      ]
+    },
+    {
+      "name": "Social Workspace & Compose",
+      "status": "partial",
+      "docs": [
+        "README.md",
+        "docs/operations/postiz-global-oauth-standard.md"
+      ],
+      "tests": [
+        "frontend/src/test/components/SocialWorkspace.test.tsx",
+        "frontend/src/test/components/SocialComposePage.test.tsx",
+        "backend/tests/test_social_routes.py",
+        "backend/tests/test_social_connections.py"
+      ],
+      "chains": [
+        {
+          "client_method": "socialApi.getProviders",
+          "endpoint": "GET /api/social/providers",
+          "route_file": "backend/api/routes/social.py",
+          "auth_policy": "social_view_jobs",
+          "ui_call_sites": [
+            "frontend/src/components/SocialWorkspace.tsx"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "socialApi.getAccounts",
+          "endpoint": "GET /api/social/accounts",
+          "route_file": "backend/api/routes/social.py",
+          "auth_policy": "social_view_jobs",
+          "ui_call_sites": [
+            "frontend/src/components/shareComposer/useShareComposerController.ts"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "socialApi.getConnections",
+          "endpoint": "GET /api/social/connections",
+          "route_file": "backend/api/routes/social.py",
+          "auth_policy": "social_view_jobs",
+          "ui_call_sites": [
+            "frontend/src/components/SocialWorkspace.tsx"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "socialApi.syncConnections",
+          "endpoint": "POST /api/social/connections/sync",
+          "route_file": "backend/api/routes/social.py",
+          "auth_policy": "social_connect",
+          "ui_call_sites": [
+            "frontend/src/components/SocialWorkspace.tsx"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "socialApi.startConnection",
+          "endpoint": "POST /api/social/connections/start",
+          "route_file": "backend/api/routes/social.py",
+          "auth_policy": "social_connect",
+          "ui_call_sites": [
+            "frontend/src/components/SocialWorkspace.tsx",
+            "frontend/src/components/shareComposer/useShareComposerController.ts"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "socialApi.getQueue",
+          "endpoint": "GET /api/social/queue",
+          "route_file": "backend/api/routes/social.py",
+          "auth_policy": "social_view_jobs",
+          "ui_call_sites": [
+            "frontend/src/components/SocialWorkspace.tsx"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "socialApi.getCalendar",
+          "endpoint": "GET /api/social/calendar",
+          "route_file": "backend/api/routes/social.py",
+          "auth_policy": "social_view_jobs",
+          "ui_call_sites": [
+            "frontend/src/components/SocialWorkspace.tsx"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "socialApi.getAnalyticsOverview",
+          "endpoint": "GET /api/social/analytics/overview",
+          "route_file": "backend/api/routes/social.py",
+          "auth_policy": "social_view_jobs",
+          "ui_call_sites": [
+            "frontend/src/components/SocialWorkspace.tsx"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "socialApi.getAnalyticsAccounts",
+          "endpoint": "GET /api/social/analytics/accounts",
+          "route_file": "backend/api/routes/social.py",
+          "auth_policy": "social_view_jobs",
+          "ui_call_sites": [
+            "frontend/src/components/SocialWorkspace.tsx"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "socialApi.getAnalyticsPosts",
+          "endpoint": "GET /api/social/analytics/posts",
+          "route_file": "backend/api/routes/social.py",
+          "auth_policy": "social_view_jobs",
+          "ui_call_sites": [
+            "frontend/src/components/SocialWorkspace.tsx"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "socialApi.getPrefill",
+          "endpoint": "GET /api/social/prefill",
+          "route_file": "backend/api/routes/social.py",
+          "auth_policy": "social_publish",
+          "ui_call_sites": [
+            "frontend/src/components/shareComposer/useShareComposerController.ts"
+          ],
+          "live_status": "blocked"
+        },
+        {
+          "client_method": "socialApi.saveDrafts",
+          "endpoint": "PUT /api/social/drafts",
+          "route_file": "backend/api/routes/social.py",
+          "auth_policy": "social_publish",
+          "ui_call_sites": [
+            "frontend/src/components/shareComposer/useShareComposerController.ts"
+          ],
+          "live_status": "blocked"
+        },
+        {
+          "client_method": "socialApi.deleteDrafts",
+          "endpoint": "DELETE /api/social/drafts",
+          "route_file": "backend/api/routes/social.py",
+          "auth_policy": "social_publish",
+          "ui_call_sites": [
+            "frontend/src/components/shareComposer/useShareComposerController.ts"
+          ],
+          "live_status": "blocked"
+        },
+        {
+          "client_method": "socialApi.getPublishJobs",
+          "endpoint": "GET /api/social/publish-jobs",
+          "route_file": "backend/api/routes/social.py",
+          "auth_policy": "social_view_jobs",
+          "ui_call_sites": [
+            "frontend/src/components/shareComposer/useShareComposerController.ts"
+          ],
+          "live_status": "pass"
+        },
+        {
+          "client_method": "socialApi.publish",
+          "endpoint": "POST /api/social/publish",
+          "route_file": "backend/api/routes/social.py",
+          "auth_policy": "social_publish",
+          "ui_call_sites": [
+            "frontend/src/components/shareComposer/useShareComposerController.ts"
+          ],
+          "live_status": "blocked"
+        },
+        {
+          "client_method": "socialApi.approveJob",
+          "endpoint": "POST /api/social/publish-jobs/{job_id}/approve",
+          "route_file": "backend/api/routes/social.py",
+          "auth_policy": "social_approve",
+          "ui_call_sites": [
+            "frontend/src/components/SocialWorkspace.tsx",
+            "frontend/src/components/shareComposer/useShareComposerController.ts"
+          ],
+          "live_status": "blocked"
+        },
+        {
+          "client_method": "socialApi.cancelJob",
+          "endpoint": "POST /api/social/publish-jobs/{job_id}/cancel",
+          "route_file": "backend/api/routes/social.py",
+          "auth_policy": "social_approve",
+          "ui_call_sites": [
+            "frontend/src/components/SocialWorkspace.tsx",
+            "frontend/src/components/shareComposer/useShareComposerController.ts"
+          ],
+          "live_status": "blocked"
+        },
+        {
+          "client_method": "socialApi.updateCalendarItem",
+          "endpoint": "PATCH /api/social/calendar/{job_id}",
+          "route_file": "backend/api/routes/social.py",
+          "auth_policy": "social_publish",
+          "ui_call_sites": [
+            "frontend/src/components/SocialWorkspace.tsx"
+          ],
+          "live_status": "fail"
+        },
+        {
+          "client_method": "clipsApi.list",
+          "endpoint": "GET /api/clips",
+          "route_file": "backend/api/routes/clips.py",
+          "auth_policy": "view_clips",
+          "ui_call_sites": [
+            "frontend/src/components/SocialComposePage.tsx",
+            "frontend/src/components/clipGallery/useClipGalleryController.ts",
+            "frontend/src/components/subtitleEditor/sources.ts"
+          ],
+          "live_status": "pass"
+        }
+      ]
+    },
+    {
+      "name": "Account Deletion",
+      "status": "pass",
+      "docs": [
+        "README.md"
+      ],
+      "tests": [
+        "frontend/src/test/accountDeletion.test.tsx",
+        "backend/tests/test_account_deletion_api.py",
+        "backend/tests/test_subject_purge.py"
+      ],
+      "chains": [
+        {
+          "client_method": "accountApi.deleteMyData",
+          "endpoint": "DELETE /api/account/me/data",
+          "route_file": "backend/api/routes/account.py",
+          "auth_policy": "delete_account_data",
+          "ui_call_sites": [
+            "frontend/src/components/AccountDeletionCard.tsx",
+            "frontend/src/test/api/client.test.ts"
+          ],
+          "live_status": "pass"
+        }
+      ]
+    },
+    {
+      "name": "Marketing Site",
+      "status": "fail",
+      "docs": [
+        "marketing/README.md"
+      ],
+      "tests": [],
+      "chains": []
+    }
+  ]
+}

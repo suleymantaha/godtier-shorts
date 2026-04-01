@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 import os
 from typing import Any, Literal
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -137,6 +137,28 @@ class SocialCalendarUpdateRequest(BaseModel):
 
 # --- Helpers -----------------------------------------------------------------
 
+FALLBACK_TIMEZONES: dict[str, tzinfo] = {
+    "UTC": timezone.utc,
+    "Etc/UTC": timezone.utc,
+    "Etc/GMT": timezone.utc,
+    "Europe/Istanbul": timezone(timedelta(hours=3), name="Europe/Istanbul"),
+}
+
+
+def _resolve_timezone(timezone_name: str | None) -> tzinfo:
+    normalized = (timezone_name or "UTC").strip()
+    if not normalized:
+        return timezone.utc
+    if normalized in FALLBACK_TIMEZONES:
+        return FALLBACK_TIMEZONES[normalized]
+    try:
+        return ZoneInfo(normalized)
+    except Exception as exc:
+        uppercase = normalized.upper()
+        if uppercase in FALLBACK_TIMEZONES:
+            return FALLBACK_TIMEZONES[uppercase]
+        raise InvalidInputError("Geçersiz timezone") from exc
+
 
 def _parse_scheduled_at_utc(raw: str | None, timezone_name: str | None) -> str | None:
     if not raw:
@@ -148,11 +170,7 @@ def _parse_scheduled_at_utc(raw: str | None, timezone_name: str | None) -> str |
         raise InvalidInputError("Geçersiz scheduled_at formatı") from exc
 
     if dt.tzinfo is None:
-        tz_name = timezone_name or "UTC"
-        try:
-            dt = dt.replace(tzinfo=ZoneInfo(tz_name))
-        except Exception as exc:
-            raise InvalidInputError("Geçersiz timezone") from exc
+        dt = dt.replace(tzinfo=_resolve_timezone(timezone_name))
 
     return dt.astimezone(timezone.utc).isoformat()
 

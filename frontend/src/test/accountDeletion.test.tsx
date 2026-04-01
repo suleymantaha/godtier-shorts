@@ -85,7 +85,7 @@ describe('AccountDeletionCard', () => {
     fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'App verileri silindi, hesap silme tamamlanamadi.',
+      'App data was deleted, but account deletion could not be completed.',
     );
     expect(clearClientAccountStateMock).toHaveBeenCalledTimes(1);
     expect(hardReloadPageMock).not.toHaveBeenCalled();

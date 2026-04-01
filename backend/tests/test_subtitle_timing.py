@@ -129,3 +129,24 @@ def test_canonicalize_transcript_segments_rebuilds_words_when_token_count_change
     )
 
     assert canonical[0]["words"] == build_words_from_segment_text("fresh new copy", 0.0, 3.0)
+
+
+def test_canonicalize_transcript_segments_defaults_none_score_to_full_confidence() -> None:
+    canonical = canonicalize_transcript_segments(
+        [
+            {
+                "text": "fresh copy",
+                "start": 0.0,
+                "end": 2.0,
+                "words": [
+                    {"word": "fresh", "start": 0.0, "end": 0.8, "score": None},
+                    {"word": "copy", "start": 0.8, "end": 2.0},
+                ],
+            }
+        ]
+    )
+
+    assert canonical[0]["words"] == [
+        {"word": "fresh", "start": 0.0, "end": 0.8, "score": 1.0},
+        {"word": "copy", "start": 0.8, "end": 2.0, "score": 1.0},
+    ]

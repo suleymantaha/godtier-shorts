@@ -5,7 +5,12 @@ import type { AppErrorCode } from '../../api/errors';
 import { tSafe } from '../../i18n';
 import type { Clip } from '../../types';
 import type { SubtitleSelectionState } from './useSubtitleEditorController';
-import { filterSubtitleProjects, reconcileLockedClip, type SubtitleProject } from './helpers';
+import {
+  filterSubtitleProjects,
+  hasSameLockedClipContext,
+  reconcileLockedClip,
+  type SubtitleProject,
+} from './helpers';
 import { AUTH_BOOTSTRAP_RECOVERY_MS, type ProjectsFetchStatus, type SubtitleSourceState } from './shared';
 
 function resolveSubtitleSourceBlockedMessage(pauseReason: AppErrorCode | null): string {
@@ -150,7 +155,14 @@ export function useLockedClipSelectionEffect({
     }
 
     const resolvedClip = reconcileLockedClip(clips, targetClip);
-    if (resolvedClip !== selection.selectedClip) {
+    if (
+      resolvedClip !== selection.selectedClip
+      && !(
+        resolvedClip
+        && selection.selectedClip
+        && hasSameLockedClipContext(resolvedClip, selection.selectedClip)
+      )
+    ) {
       setSelectedClip(resolvedClip);
     }
   }, [clips, lockedToClip, selection.selectedClip, setSelectedClip, targetClip]);

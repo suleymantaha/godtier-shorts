@@ -22,6 +22,15 @@ def clamp01(value: float) -> float:
     return max(0.0, min(1.0, float(value)))
 
 
+def _coerce_float(value: object, *, default: float | None = None) -> float | None:
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def normalize_subtitle_text(text: str) -> str:
     normalized = unicodedata.normalize("NFC", text or "")
     normalized = ZERO_WIDTH_PATTERN.sub("", normalized)
@@ -53,18 +62,21 @@ def normalize_word_payload(word: dict) -> dict | None:
         return None
     if "start" not in word or "end" not in word:
         return None
-    start = float(word["start"])
-    end = float(word["end"])
+    start = _coerce_float(word.get("start"))
+    end = _coerce_float(word.get("end"))
+    if start is None or end is None:
+        return None
     if end <= start:
         return None
     normalized = {
         "word": str(word.get("word", "")).strip(),
         "start": start,
         "end": end,
-        "score": float(word.get("score", 1.0)),
+        "score": _coerce_float(word.get("score"), default=1.0) or 1.0,
     }
-    if "segment_end" in word:
-        normalized["segment_end"] = float(word["segment_end"])
+    segment_end = _coerce_float(word.get("segment_end"))
+    if segment_end is not None:
+        normalized["segment_end"] = segment_end
     return normalized
 
 

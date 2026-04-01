@@ -57,7 +57,7 @@ POLICY_ROLES: dict[str, set[str]] = {
     "social_publish": {"admin", "member", "producer", "editor"},
     "social_approve": {"admin", "member", "producer"},
     "social_view_jobs": {"admin", "member", "producer", "editor", "viewer"},
-    "manage_support_grants": {"admin"},
+    "manage_support_grants": {"admin", "member", "producer", "editor", "operator", "uploader", "viewer"},
     "delete_account_data": {"admin", "member", "producer", "editor", "operator", "uploader", "viewer"},
 }
 

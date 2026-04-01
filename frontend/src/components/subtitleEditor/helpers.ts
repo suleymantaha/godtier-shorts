@@ -144,7 +144,7 @@ function mergeLockedClipContext(matchingClip: Clip, targetClip: Clip): Clip {
   };
 }
 
-function hasSameLockedClipContext(left: Clip, right: Clip): boolean {
+export function hasSameLockedClipContext(left: Clip, right: Clip): boolean {
   return left.name === right.name
     && left.url === right.url
     && left.has_transcript === right.has_transcript

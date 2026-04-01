@@ -1,0 +1,139 @@
+{
+  "whoami": {
+    "name": "whoami",
+    "method": "GET",
+    "path": "/api/auth/whoami",
+    "status_code": 200,
+    "trace_id": "audit-whoami-a55b2cff-a890-4ff9-b150-238487f4443f",
+    "content_type": "application/json",
+    "summary": {
+      "auth_mode": "static_token",
+      "roles": [
+        "admin",
+        "editor",
+        "operator",
+        "producer",
+        "uploader",
+        "viewer"
+      ],
+      "subject_hash": "3462292b60860538b5a07d5d89e1eb94",
+      "token_type": "bearer"
+    }
+  },
+  "projects": {
+    "name": "projects",
+    "method": "GET",
+    "path": "/api/projects",
+    "status_code": 200,
+    "trace_id": "audit-projects-21a1cc63-6d5a-4b0c-a852-30c526b5090f",
+    "content_type": "application/json",
+    "summary": {
+      "count": 0,
+      "ids": []
+    }
+  },
+  "clips": {
+    "name": "clips",
+    "method": "GET",
+    "path": "/api/clips?page=1&page_size=50",
+    "status_code": 200,
+    "trace_id": "audit-clips-f9739fbf-03cc-49af-b01f-d40137487110",
+    "content_type": "application/json",
+    "summary": {
+      "count": 0,
+      "items": []
+    }
+  },
+  "social_providers": {
+    "name": "social_providers",
+    "method": "GET",
+    "path": "/api/social/providers",
+    "status_code": 200,
+    "trace_id": "audit-social_providers-f4509a8b-bf91-464f-87d2-52f488450c4f",
+    "content_type": "application/json",
+    "summary": {
+      "count": 6,
+      "platforms": [
+        "facebook_reels",
+        "instagram_reels",
+        "linkedin",
+        "tiktok",
+        "x",
+        "youtube_shorts"
+      ]
+    }
+  },
+  "social_accounts": {
+    "name": "social_accounts",
+    "method": "GET",
+    "path": "/api/social/accounts",
+    "status_code": 200,
+    "trace_id": "audit-social_accounts-53c6816e-3f0d-45c5-bd18-90898763080c",
+    "content_type": "application/json",
+    "summary": {
+      "connected": false,
+      "connection_mode": "managed",
+      "count": 0,
+      "platforms": [],
+      "requires_reconnect": 0
+    }
+  },
+  "social_connections": {
+    "name": "social_connections",
+    "method": "GET",
+    "path": "/api/social/connections",
+    "status_code": 200,
+    "trace_id": "audit-social_connections-0be7fcbd-703f-4668-aa48-f913d5aa9115",
+    "content_type": "application/json",
+    "summary": {
+      "connected": false,
+      "connection_mode": null,
+      "count": 0,
+      "platforms": [],
+      "requires_reconnect": 0
+    }
+  },
+  "social_publish_jobs": {
+    "name": "social_publish_jobs",
+    "method": "GET",
+    "path": "/api/social/publish-jobs",
+    "status_code": 200,
+    "trace_id": "audit-social_publish_jobs-8bb7111a-8768-4042-b20e-20e279220310",
+    "content_type": "application/json",
+    "summary": {
+      "count": 0,
+      "states": {},
+      "platforms": {}
+    }
+  },
+  "social_queue": {
+    "name": "social_queue",
+    "method": "GET",
+    "path": "/api/social/queue",
+    "status_code": 200,
+    "trace_id": "audit-social_queue-4122f65c-275b-4407-9997-92bd09a98300",
+    "content_type": "application/json",
+    "summary": {
+      "count": 0,
+      "states": {},
+      "platforms": {}
+    }
+  },
+  "social_calendar": {
+    "name": "social_calendar",
+    "method": "GET",
+    "path": "/api/social/calendar",
+    "status_code": 200,
+    "trace_id": "audit-social_calendar-66abc264-e67d-4878-9b34-848c28350829",
+    "content_type": "application/json",
+    "summary": {
+      "count": 0,
+      "states": {},
+      "platforms": {}
+    }
+  },
+  "websocket": {
+    "connected": true,
+    "subprotocol": null
+  }
+}

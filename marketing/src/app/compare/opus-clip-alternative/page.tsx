@@ -1,3 +1,5 @@
+import Link from "next/link"
+
 import { createMetadata } from "@/lib/metadata"
 import { siteConfig } from "@/lib/site"
 

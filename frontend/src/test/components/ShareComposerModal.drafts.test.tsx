@@ -31,9 +31,9 @@ describe('ShareComposerModal drafts', () => {
 
     await renderShareComposerModal();
 
-    expect(await screen.findByText(/kayıtlı paylaşım taslağı yüklendi/i)).toBeInTheDocument();
+    expect(await screen.findByText(/a saved share draft was loaded/i)).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /ai önerisine dön/i }));
+    await user.click(screen.getByRole('button', { name: /return to ai suggestion/i }));
 
     await waitFor(() => {
       expect(mockDeleteDrafts).toHaveBeenCalledWith('proj_1', 'clip_1.mp4');

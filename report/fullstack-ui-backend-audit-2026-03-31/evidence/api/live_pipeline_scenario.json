@@ -1,0 +1,65 @@
+{
+  "steps": [
+    {
+      "step": "styles",
+      "status_code": 200,
+      "trace_id": "audit-styles-ed93a8d8-09fd-4fde-9f83-4814a167e865",
+      "styles": 16,
+      "animations": 7
+    },
+    {
+      "step": "upload",
+      "status_code": 200,
+      "trace_id": "audit-upload-b597dca7-af63-4d7c-84c7-f878f3bb5a85",
+      "response": {
+        "status": "uploaded",
+        "job_id": "upload_1774931248_c32cf9",
+        "message": "Video y\u00fcklendi, transkripsiyon ba\u015flad\u0131.",
+        "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905"
+      }
+    },
+    {
+      "step": "upload_job_poll",
+      "polls": [
+        {
+          "trace_id": "audit-jobs-ff098e87-7cc7-4232-941d-a49187dca1ef",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "processing",
+          "job_progress": 5,
+          "job_message": "Ses \u00e7\u0131kar\u0131l\u0131yor..."
+        },
+        {
+          "trace_id": "audit-jobs-66470f63-f41c-4fcd-830a-420e00a3e6d0",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "processing",
+          "job_progress": 31,
+          "job_message": "faster-whisper modeli (large-v3) y\u00fckleniyor..."
+        },
+        {
+          "trace_id": "audit-jobs-398e9cb5-c735-4d38-bb39-be6ab29401c8",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "completed",
+          "job_progress": 100,
+          "job_message": "Transkripsiyon tamamland\u0131."
+        }
+      ],
+      "final_status": "completed",
+      "final_progress": 100
+    },
+    {
+      "step": "projects_after_upload",
+      "status_code": 200,
+      "trace_id": "audit-projects-after-upload-fce6b802-1287-4097-9b58-cb0e442d4aab",
+      "project_found": false
+    },
+    {
+      "step": "project_transcript",
+      "status_code": 200,
+      "trace_id": "audit-transcript-7e86b493-b83a-421e-9583-a032293d780c",
+      "transcript_items": 0
+    }
+  ]
+}

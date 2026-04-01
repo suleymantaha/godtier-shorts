@@ -44,7 +44,7 @@ from backend.api.routes.clips import (
 from backend.core.media_ops import build_shifted_transcript_segments
 from backend.core.render_contracts import resolve_duration_range
 from backend.core.orchestrator import GodTierShortsCreator
-from backend.core.exceptions import InvalidInputError, JobExecutionError, RenderReviewRequiredError
+from backend.core.exceptions import AppError, InvalidInputError, JobExecutionError, RenderReviewRequiredError
 from backend.models.schemas import (
     BatchJobRequest,
     ClipTranscriptRecoveryRequest,
@@ -61,6 +61,47 @@ router = APIRouter(prefix="/api", tags=["editor"])
 DEFAULT_MANUAL_CUT_STYLE = "HORMOZI"
 DEFAULT_MANUAL_CUT_LAYOUT = "auto"
 CLIP_RECOVERY_JOB_PREFIX = "cliprecover"
+
+
+def _read_job_timeout_seconds(env_var: str, default: float) -> float:
+    raw = os.getenv(env_var)
+    if raw is None:
+        return default
+    try:
+        parsed = float(raw)
+    except ValueError:
+        return default
+    return parsed if parsed > 0 else 0.0
+
+
+PROCESS_BATCH_TIMEOUT_SECONDS = _read_job_timeout_seconds("PROCESS_BATCH_TIMEOUT_SECONDS", 900.0)
+MANUAL_CUT_UPLOAD_TIMEOUT_SECONDS = _read_job_timeout_seconds("MANUAL_CUT_UPLOAD_TIMEOUT_SECONDS", 900.0)
+PROCESS_MANUAL_TIMEOUT_SECONDS = _read_job_timeout_seconds("PROCESS_MANUAL_TIMEOUT_SECONDS", 900.0)
+
+
+async def _await_with_job_timeout(awaitable, *, timeout_seconds: float, timeout_message: str):
+    if timeout_seconds <= 0:
+        return await awaitable
+    try:
+        return await asyncio.wait_for(awaitable, timeout=timeout_seconds)
+    except asyncio.TimeoutError as exc:
+        raise JobExecutionError(timeout_message, details=f"{timeout_seconds:.0f}s timeout") from exc
+
+
+def _map_background_job_error(default_message: str, exc: Exception) -> JobExecutionError:
+    if isinstance(exc, JobExecutionError):
+        return exc
+    if isinstance(exc, AppError):
+        return JobExecutionError(exc.message, details=exc.details)
+    if isinstance(exc, ValidationError):
+        return JobExecutionError(default_message, details=json.loads(exc.json()))
+    return JobExecutionError(default_message, details=str(exc))
+
+
+def _finalize_background_job_error(job_id: str, default_message: str, exc: Exception) -> None:
+    mapped_error = _map_background_job_error(default_message, exc)
+    logger.exception("{} ({}): {}", default_message, job_id, mapped_error.message)
+    finalize_job_error(job_id, mapped_error)
 
 
 def _write_clip_metadata(metadata_path: Path, payload: dict, transcript_data: list[dict]) -> None:
@@ -313,69 +354,78 @@ async def process_batch_clips(
 
     async def _run() -> None:
         thread_safe_broadcast({"message": "İşlem sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
-        async with manager.processing_lock:
-            manager.jobs[job_id]["status"] = "processing"
-            manager.jobs[job_id]["last_message"] = "Toplu üretim başladı..."
-            thread_safe_broadcast({"message": "Toplu üretim başladı...", "progress": 1, "status": "processing"}, job_id)
-            cb = lambda s: thread_safe_broadcast(s, job_id)
-            orchestrator = GodTierShortsCreator(
-                ui_callback=cb,
-                subject=auth.subject,
-                clip_event_port=build_api_clip_event_port(),
-                gpu_stage_lock=manager.gpu_lock,
-            )
-            try:
-                resolved_duration_min, resolved_duration_max = resolve_duration_range(
-                    request.duration_min,
-                    request.duration_max,
+        try:
+            async with manager.processing_lock:
+                manager.jobs[job_id]["status"] = "processing"
+                manager.jobs[job_id]["last_message"] = "Toplu üretim başladı..."
+                thread_safe_broadcast({"message": "Toplu üretim başladı...", "progress": 1, "status": "processing"}, job_id)
+                cb = lambda s: thread_safe_broadcast(s, job_id)
+                orchestrator = GodTierShortsCreator(
+                    ui_callback=cb,
+                    subject=auth.subject,
+                    clip_event_port=build_api_clip_event_port(),
+                    gpu_stage_lock=manager.gpu_lock,
                 )
-                path = get_project_path(request.project_id, "transcript.json") if request.project_id else VIDEO_METADATA
-                if path.exists():
-                    with open(path, "r", encoding="utf-8") as f:
-                        transcript_data = json.load(f)
-                else:
-                    transcript_data = []
+                try:
+                    resolved_duration_min, resolved_duration_max = resolve_duration_range(
+                        request.duration_min,
+                        request.duration_max,
+                    )
+                    path = get_project_path(request.project_id, "transcript.json") if request.project_id else VIDEO_METADATA
+                    if path.exists():
+                        with open(path, "r", encoding="utf-8") as f:
+                            transcript_data = json.load(f)
+                    else:
+                        transcript_data = []
 
-                output_paths = await asyncio.to_thread(
-                    orchestrator.run_batch_manual_clips,
-                    start_t=request.start_time,
-                    end_t=request.end_time,
-                    num_clips=request.num_clips,
-                    transcript_data=transcript_data,
-                    job_id=job_id,
-                    duration_min=resolved_duration_min,
-                    duration_max=resolved_duration_max,
-                    style_name=request.style_name,
-                    animation_type=request.animation_type,
-                    project_id=request.project_id,
-                    layout=request.layout,
-                )
-                if output_paths:
-                    first_name = os.path.basename(output_paths[0])
-                    manager.jobs[job_id]["clip_name"] = first_name
-                    manager.jobs[job_id]["output_url"] = build_secure_clip_url(request.project_id, first_name) if request.project_id else None
-                    manager.jobs[job_id]["output_paths"] = output_paths
-                    manager.jobs[job_id]["output_path"] = output_paths[0]
-                    manager.jobs[job_id]["num_clips"] = len(output_paths)
-                finalize_job_success(job_id, "Toplu klip üretimi tamamlandı.")
-            except RenderReviewRequiredError as exc:
-                safe_outputs = list(exc.output_paths or [])
-                first_name = os.path.basename(safe_outputs[0]) if safe_outputs else None
-                finalize_job_review_required(
-                    job_id,
-                    exc.message,
-                    review_items=exc.review_items,
-                    output_paths=safe_outputs,
-                    output_url=build_secure_clip_url(request.project_id, first_name) if request.project_id and first_name else None,
-                    clip_name=first_name,
-                    num_clips=exc.num_clips if exc.num_clips is not None else len(safe_outputs),
-                )
-            except (RuntimeError, ValueError, OSError) as exc:
-                mapped_error = JobExecutionError("Toplu üretim başarısız", details=str(exc))
-                logger.error(f"Toplu üretim hatası ({job_id}): {mapped_error.message}")
-                finalize_job_error(job_id, mapped_error)
-            finally:
-                await asyncio.to_thread(orchestrator.cleanup_gpu)
+                    output_paths = await _await_with_job_timeout(
+                        asyncio.to_thread(
+                            orchestrator.run_batch_manual_clips,
+                            start_t=request.start_time,
+                            end_t=request.end_time,
+                            num_clips=request.num_clips,
+                            transcript_data=transcript_data,
+                            job_id=job_id,
+                            duration_min=resolved_duration_min,
+                            duration_max=resolved_duration_max,
+                            style_name=request.style_name,
+                            animation_type=request.animation_type,
+                            project_id=request.project_id,
+                            layout=request.layout,
+                        ),
+                        timeout_seconds=PROCESS_BATCH_TIMEOUT_SECONDS,
+                        timeout_message="Toplu üretim zaman aşımına uğradı",
+                    )
+                    if output_paths:
+                        first_name = os.path.basename(output_paths[0])
+                        manager.jobs[job_id]["clip_name"] = first_name
+                        manager.jobs[job_id]["output_url"] = build_secure_clip_url(request.project_id, first_name) if request.project_id else None
+                        manager.jobs[job_id]["output_paths"] = output_paths
+                        manager.jobs[job_id]["output_path"] = output_paths[0]
+                        manager.jobs[job_id]["num_clips"] = len(output_paths)
+                    finalize_job_success(job_id, "Toplu klip üretimi tamamlandı.")
+                except RenderReviewRequiredError as exc:
+                    safe_outputs = list(exc.output_paths or [])
+                    first_name = os.path.basename(safe_outputs[0]) if safe_outputs else None
+                    finalize_job_review_required(
+                        job_id,
+                        exc.message,
+                        review_items=exc.review_items,
+                        output_paths=safe_outputs,
+                        output_url=build_secure_clip_url(request.project_id, first_name) if request.project_id and first_name else None,
+                        clip_name=first_name,
+                        num_clips=exc.num_clips if exc.num_clips is not None else len(safe_outputs),
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    _finalize_background_job_error(job_id, "Toplu üretim başarısız", exc)
+                finally:
+                    await asyncio.to_thread(orchestrator.cleanup_gpu)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            _finalize_background_job_error(job_id, "Toplu üretim başarısız", exc)
 
     task = asyncio.create_task(_run())
     manager.jobs[job_id]["task"] = task
@@ -443,8 +493,7 @@ async def manual_cut_upload(
     project, project_id, _is_cached = prepare_uploaded_project(file, owner_subject=auth.subject)
     manager.assert_subject_can_enqueue(auth.subject)
     job_id = f"manualcut_{int(time.time())}_{uuid.uuid4().hex[:6]}"
-    clip_name = f"manual_{job_id}.mp4" if not is_batch else None
-    output_url = build_secure_clip_url(project_id, clip_name) if clip_name else None
+    planned_clip_name = f"manual_{job_id}.mp4" if not is_batch else None
 
     manager.jobs[job_id] = {
         "job_id": job_id,
@@ -456,8 +505,8 @@ async def manual_cut_upload(
         "last_message": "Video alındı, otomatik kesim kuyruğa alındı...",
         "created_at": time.time(),
         "project_id": project_id,
-        "clip_name": clip_name,
-        "output_url": output_url,
+        "clip_name": None,
+        "output_url": None,
         "num_clips": num_clips,
         "layout": layout,
         "subject": auth.subject,
@@ -497,16 +546,20 @@ async def manual_cut_upload(
                 try:
                     if use_cut_points:
                         assert pts is not None  # use_cut_points implies pts is not None
-                        output_paths = await orchestrator.run_manual_clips_from_cut_points_async(
-                            cut_points=pts,
-                            transcript_data=transcript_data,
-                            job_id=job_id,
-                            style_name=style_name,
-                            animation_type=animation_type,
-                            project_id=project_id,
-                            layout=layout,
-                            skip_subtitles=skip_subtitles,
-                            cut_as_short=cut_as_short,
+                        output_paths = await _await_with_job_timeout(
+                            orchestrator.run_manual_clips_from_cut_points_async(
+                                cut_points=pts,
+                                transcript_data=transcript_data,
+                                job_id=job_id,
+                                style_name=style_name,
+                                animation_type=animation_type,
+                                project_id=project_id,
+                                layout=layout,
+                                skip_subtitles=skip_subtitles,
+                                cut_as_short=cut_as_short,
+                            ),
+                            timeout_seconds=MANUAL_CUT_UPLOAD_TIMEOUT_SECONDS,
+                            timeout_message="Otomatik manual cut zaman aşımına uğradı",
                         )
                         if not output_paths:
                             manager.jobs[job_id]["status"] = "empty"
@@ -524,20 +577,24 @@ async def manual_cut_upload(
                         manager.jobs[job_id]["output_path"] = output_paths[0]
                         manager.jobs[job_id]["num_clips"] = len(output_paths)
                     elif is_batch:
-                        output_paths = await orchestrator.run_batch_manual_clips_async(
-                            start_t=request.start_time,
-                            end_t=request.end_time,
-                            num_clips=num_clips,
-                            transcript_data=transcript_data,
-                            job_id=job_id,
-                            duration_min=resolved_duration_min,
-                            duration_max=resolved_duration_max,
-                            style_name=style_name,
-                            animation_type=animation_type,
-                            project_id=project_id,
-                            layout=layout,
-                            skip_subtitles=skip_subtitles,
-                            cut_as_short=cut_as_short,
+                        output_paths = await _await_with_job_timeout(
+                            orchestrator.run_batch_manual_clips_async(
+                                start_t=request.start_time,
+                                end_t=request.end_time,
+                                num_clips=num_clips,
+                                transcript_data=transcript_data,
+                                job_id=job_id,
+                                duration_min=resolved_duration_min,
+                                duration_max=resolved_duration_max,
+                                style_name=style_name,
+                                animation_type=animation_type,
+                                project_id=project_id,
+                                layout=layout,
+                                skip_subtitles=skip_subtitles,
+                                cut_as_short=cut_as_short,
+                            ),
+                            timeout_seconds=MANUAL_CUT_UPLOAD_TIMEOUT_SECONDS,
+                            timeout_message="Otomatik manual cut zaman aşımına uğradı",
                         )
                         if not output_paths:
                             manager.jobs[job_id]["status"] = "empty"
@@ -555,19 +612,23 @@ async def manual_cut_upload(
                         manager.jobs[job_id]["output_path"] = output_paths[0]
                         manager.jobs[job_id]["num_clips"] = len(output_paths)
                     else:
-                        output_path = await orchestrator.run_manual_clip_async(
-                            start_t=request.start_time,
-                            end_t=request.end_time,
-                            transcript_data=None,
-                            job_id=job_id,
-                            style_name=style_name,
-                            animation_type=animation_type,
-                            project_id=project_id,
-                            center_x=None,
-                            layout=layout,
-                            output_name=clip_name,
-                            skip_subtitles=skip_subtitles,
-                            cut_as_short=cut_as_short,
+                        output_path = await _await_with_job_timeout(
+                            orchestrator.run_manual_clip_async(
+                                start_t=request.start_time,
+                                end_t=request.end_time,
+                                transcript_data=transcript_data,
+                                job_id=job_id,
+                                style_name=style_name,
+                                animation_type=animation_type,
+                                project_id=project_id,
+                                center_x=None,
+                                layout=layout,
+                                output_name=planned_clip_name,
+                                skip_subtitles=skip_subtitles,
+                                cut_as_short=cut_as_short,
+                            ),
+                            timeout_seconds=MANUAL_CUT_UPLOAD_TIMEOUT_SECONDS,
+                            timeout_message="Otomatik manual cut zaman aşımına uğradı",
                         )
                         manager.jobs[job_id]["output_path"] = output_path
                         if output_path:
@@ -590,16 +651,16 @@ async def manual_cut_upload(
                         clip_name=first_name,
                         num_clips=exc.num_clips if exc.num_clips is not None else len(safe_outputs),
                     )
-                except (RuntimeError, ValueError, OSError) as exc:
-                    mapped_error = JobExecutionError("Otomatik manual cut başarısız", details=str(exc))
-                    logger.error(f"Otomatik manual cut hatası ({job_id}): {mapped_error.message}")
-                    finalize_job_error(job_id, mapped_error)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    _finalize_background_job_error(job_id, "Otomatik manual cut başarısız", exc)
                 finally:
                     await asyncio.to_thread(orchestrator.cleanup_gpu)
-        except (RuntimeError, ValueError, OSError) as exc:
-            mapped_error = JobExecutionError("Otomatik manual cut başarısız", details=str(exc))
-            logger.error(f"Otomatik manual cut hatası ({job_id}): {mapped_error.message}")
-            finalize_job_error(job_id, mapped_error)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            _finalize_background_job_error(job_id, "Otomatik manual cut başarısız", exc)
 
     task = asyncio.create_task(_run())
     manager.jobs[job_id]["task"] = task
@@ -607,8 +668,8 @@ async def manual_cut_upload(
         "status": "started",
         "job_id": job_id,
         "project_id": project_id,
-        "clip_name": clip_name,
-        "output_url": output_url,
+        "clip_name": None,
+        "output_url": None,
         "message": f"Otomatik manual cut başlatıldı ({num_clips} klip)." if is_batch else "Otomatik manual cut başlatıldı.",
     }
 
@@ -869,54 +930,63 @@ async def process_manual_clip(
 
     async def _run() -> None:
         thread_safe_broadcast({"message": "İşlem sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
-        async with manager.processing_lock:
-            manager.jobs[job_id]["status"] = "processing"
-            manager.jobs[job_id]["last_message"] = "Manuel render başladı..."
-            thread_safe_broadcast({"message": "Manuel render başladı...", "progress": 1, "status": "processing"}, job_id)
-            cb = lambda s: thread_safe_broadcast(s, job_id)
-            orchestrator = GodTierShortsCreator(
-                ui_callback=cb,
-                subject=auth.subject,
-                clip_event_port=build_api_clip_event_port(),
-                gpu_stage_lock=manager.gpu_lock,
-            )
-            try:
-                output_path = await orchestrator.run_manual_clip_async(
-                    start_t=request.start_time,
-                    end_t=request.end_time,
-                    transcript_data=request.transcript,
-                    style_name=request.style_name,
-                    animation_type=request.animation_type,
-                    project_id=request.project_id,
-                    center_x=request.center_x,
-                    layout=request.layout,
+        try:
+            async with manager.processing_lock:
+                manager.jobs[job_id]["status"] = "processing"
+                manager.jobs[job_id]["last_message"] = "Manuel render başladı..."
+                thread_safe_broadcast({"message": "Manuel render başladı...", "progress": 1, "status": "processing"}, job_id)
+                cb = lambda s: thread_safe_broadcast(s, job_id)
+                orchestrator = GodTierShortsCreator(
+                    ui_callback=cb,
+                    subject=auth.subject,
+                    clip_event_port=build_api_clip_event_port(),
+                    gpu_stage_lock=manager.gpu_lock,
                 )
-                if output_path:
-                    final_name = os.path.basename(output_path)
-                    manager.jobs[job_id]["clip_name"] = final_name
-                    manager.jobs[job_id]["output_url"] = build_secure_clip_url(request.project_id, final_name) if request.project_id else None
-                    manager.jobs[job_id]["output_path"] = output_path
-                    manager.jobs[job_id]["output_paths"] = [output_path]
-                    manager.jobs[job_id]["num_clips"] = 1
-                finalize_job_success(job_id, "Manuel render tamamlandı.")
-            except RenderReviewRequiredError as exc:
-                safe_outputs = list(exc.output_paths or [])
-                first_name = os.path.basename(safe_outputs[0]) if safe_outputs else None
-                finalize_job_review_required(
-                    job_id,
-                    exc.message,
-                    review_items=exc.review_items,
-                    output_paths=safe_outputs,
-                    output_url=build_secure_clip_url(request.project_id, first_name) if request.project_id and first_name else None,
-                    clip_name=first_name,
-                    num_clips=exc.num_clips if exc.num_clips is not None else len(safe_outputs),
-                )
-            except (RuntimeError, ValueError, OSError) as exc:
-                mapped_error = JobExecutionError("Manuel render başarısız", details=str(exc))
-                logger.error(f"Manuel render hatası ({job_id}): {mapped_error.message}")
-                finalize_job_error(job_id, mapped_error)
-            finally:
-                await asyncio.to_thread(orchestrator.cleanup_gpu)
+                try:
+                    output_path = await _await_with_job_timeout(
+                        orchestrator.run_manual_clip_async(
+                            start_t=request.start_time,
+                            end_t=request.end_time,
+                            transcript_data=request.transcript,
+                            style_name=request.style_name,
+                            animation_type=request.animation_type,
+                            project_id=request.project_id,
+                            center_x=request.center_x,
+                            layout=request.layout,
+                        ),
+                        timeout_seconds=PROCESS_MANUAL_TIMEOUT_SECONDS,
+                        timeout_message="Manuel render zaman aşımına uğradı",
+                    )
+                    if output_path:
+                        final_name = os.path.basename(output_path)
+                        manager.jobs[job_id]["clip_name"] = final_name
+                        manager.jobs[job_id]["output_url"] = build_secure_clip_url(request.project_id, final_name) if request.project_id else None
+                        manager.jobs[job_id]["output_path"] = output_path
+                        manager.jobs[job_id]["output_paths"] = [output_path]
+                        manager.jobs[job_id]["num_clips"] = 1
+                    finalize_job_success(job_id, "Manuel render tamamlandı.")
+                except RenderReviewRequiredError as exc:
+                    safe_outputs = list(exc.output_paths or [])
+                    first_name = os.path.basename(safe_outputs[0]) if safe_outputs else None
+                    finalize_job_review_required(
+                        job_id,
+                        exc.message,
+                        review_items=exc.review_items,
+                        output_paths=safe_outputs,
+                        output_url=build_secure_clip_url(request.project_id, first_name) if request.project_id and first_name else None,
+                        clip_name=first_name,
+                        num_clips=exc.num_clips if exc.num_clips is not None else len(safe_outputs),
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    _finalize_background_job_error(job_id, "Manuel render başarısız", exc)
+                finally:
+                    await asyncio.to_thread(orchestrator.cleanup_gpu)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            _finalize_background_job_error(job_id, "Manuel render başarısız", exc)
 
     task = asyncio.create_task(_run())
     manager.jobs[job_id]["task"] = task

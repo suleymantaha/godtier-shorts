@@ -1,0 +1,330 @@
+{
+  "steps": [
+    {
+      "step": "manual_cut_upload",
+      "status_code": 200,
+      "trace_id": "audit-manual-upload-8cf2102b-f2db-4146-a938-a800ac0d7d37",
+      "response": {
+        "status": "started",
+        "job_id": "manualcut_1774931293_6a0739",
+        "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+        "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+        "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4",
+        "message": "Otomatik manual cut ba\u015flat\u0131ld\u0131."
+      }
+    },
+    {
+      "step": "manual_cut_upload_poll",
+      "polls": [
+        {
+          "trace_id": "audit-manual-cut-jobs-e18e037f-cfd5-4d92-b85e-b420b4b295dd",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "processing",
+          "job_progress": 45,
+          "job_message": "Manuel klip i\u00e7in GPU render slotu al\u0131nd\u0131.",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+        },
+        {
+          "trace_id": "audit-manual-cut-jobs-d92a03af-3f6d-4078-8715-a4e68cf9e15e",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "processing",
+          "job_progress": 45,
+          "job_message": "Manuel klip i\u00e7in GPU render slotu al\u0131nd\u0131.",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+        },
+        {
+          "trace_id": "audit-manual-cut-jobs-a160959d-b042-4cf6-b092-48728a752f72",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "processing",
+          "job_progress": 45,
+          "job_message": "Manuel klip i\u00e7in GPU render slotu al\u0131nd\u0131.",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+        },
+        {
+          "trace_id": "audit-manual-cut-jobs-e13ef052-b7eb-4a64-976d-748311b36ad1",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "processing",
+          "job_progress": 45,
+          "job_message": "Manuel klip i\u00e7in GPU render slotu al\u0131nd\u0131.",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+        },
+        {
+          "trace_id": "audit-manual-cut-jobs-b15a0b8c-c5fc-41d7-b25a-921bbe7b831c",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "processing",
+          "job_progress": 45,
+          "job_message": "Manuel klip i\u00e7in GPU render slotu al\u0131nd\u0131.",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+        },
+        {
+          "trace_id": "audit-manual-cut-jobs-c853ab19-98a9-44f2-bea2-146c09dc21ac",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "processing",
+          "job_progress": 45,
+          "job_message": "Manuel klip i\u00e7in GPU render slotu al\u0131nd\u0131.",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+        },
+        {
+          "trace_id": "audit-manual-cut-jobs-94e7065c-51c1-4b9f-8979-d553c6964c7a",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "processing",
+          "job_progress": 45,
+          "job_message": "Manuel klip i\u00e7in GPU render slotu al\u0131nd\u0131.",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+        },
+        {
+          "trace_id": "audit-manual-cut-jobs-bf6a7a2a-f1ca-415b-9b6f-d46d1c31efc2",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "processing",
+          "job_progress": 45,
+          "job_message": "Manuel klip i\u00e7in GPU render slotu al\u0131nd\u0131.",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+        },
+        {
+          "trace_id": "audit-manual-cut-jobs-7100e422-26bf-4ebf-8c32-af1cc2e4c28e",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "processing",
+          "job_progress": 45,
+          "job_message": "Manuel klip i\u00e7in GPU render slotu al\u0131nd\u0131.",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+        },
+        {
+          "trace_id": "audit-manual-cut-jobs-e9e4d409-ac1c-4332-a6c8-c9530321c551",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "processing",
+          "job_progress": 45,
+          "job_message": "Manuel klip i\u00e7in GPU render slotu al\u0131nd\u0131.",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+        },
+        {
+          "trace_id": "audit-manual-cut-jobs-2eb39789-4aa7-4a96-aad0-91507cbaa24a",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "processing",
+          "job_progress": 45,
+          "job_message": "Manuel klip i\u00e7in GPU render slotu al\u0131nd\u0131.",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+        },
+        {
+          "trace_id": "audit-manual-cut-jobs-4fbc1830-ea7e-4d13-b4a9-aeba0e46c30d",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "processing",
+          "job_progress": 45,
+          "job_message": "Manuel klip i\u00e7in GPU render slotu al\u0131nd\u0131.",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+        },
+        {
+          "trace_id": "audit-manual-cut-jobs-25905ccd-b455-4da5-b2f7-3d41ab4e6dc1",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "processing",
+          "job_progress": 45,
+          "job_message": "Manuel klip i\u00e7in GPU render slotu al\u0131nd\u0131.",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+        },
+        {
+          "trace_id": "audit-manual-cut-jobs-6ba02399-8119-4bfb-912f-9604ab43f871",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "processing",
+          "job_progress": 45,
+          "job_message": "Manuel klip i\u00e7in GPU render slotu al\u0131nd\u0131.",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+        },
+        {
+          "trace_id": "audit-manual-cut-jobs-a1926053-5ba8-42df-b5d7-94f6a268dea1",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "processing",
+          "job_progress": 45,
+          "job_message": "Manuel klip i\u00e7in GPU render slotu al\u0131nd\u0131.",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+        },
+        {
+          "trace_id": "audit-manual-cut-jobs-50a6ab66-07f9-47af-9849-aa15f0372b71",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "processing",
+          "job_progress": 45,
+          "job_message": "Manuel klip i\u00e7in GPU render slotu al\u0131nd\u0131.",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+        },
+        {
+          "trace_id": "audit-manual-cut-jobs-5088f321-8ea4-4b69-bc33-591686659761",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "processing",
+          "job_progress": 45,
+          "job_message": "Manuel klip i\u00e7in GPU render slotu al\u0131nd\u0131.",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+        },
+        {
+          "trace_id": "audit-manual-cut-jobs-9a960c07-0cad-41e7-8dbd-277fc4887b38",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "processing",
+          "job_progress": 45,
+          "job_message": "Manuel klip i\u00e7in GPU render slotu al\u0131nd\u0131.",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+        },
+        {
+          "trace_id": "audit-manual-cut-jobs-26c2bb4c-4725-431c-bad2-81fd54e1d82a",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "processing",
+          "job_progress": 45,
+          "job_message": "Manuel klip i\u00e7in GPU render slotu al\u0131nd\u0131.",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+        },
+        {
+          "trace_id": "audit-manual-cut-jobs-c043f00c-ccfe-4ed4-9ddf-d406ef86e0e3",
+          "status_code": 200,
+          "job_present": true,
+          "job_status": "error",
+          "job_progress": -1,
+          "job_message": "HATA: Otomatik manual cut ba\u015far\u0131s\u0131z",
+          "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+          "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+          "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4"
+        }
+      ],
+      "final_job": {
+        "job_id": "manualcut_1774931293_6a0739",
+        "url": "C:\\Users\\baba\\Documents\\GitHub\\godtier-shorts\\workspace\\projects\\3462292b60860538b5a07d5d89e1eb94\\up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905\\master.mp4",
+        "style": "HORMOZI",
+        "animation_type": "default",
+        "status": "error",
+        "progress": -1,
+        "last_message": "HATA: Otomatik manual cut ba\u015far\u0131s\u0131z",
+        "created_at": 1774931293.1498122,
+        "project_id": "up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905",
+        "clip_name": "manual_manualcut_1774931293_6a0739.mp4",
+        "output_url": "/api/projects/up_3462292b60860538b5a07d5d89e1eb94_7f75d0e7a905/shorts/manual_manualcut_1774931293_6a0739.mp4",
+        "num_clips": 1,
+        "layout": "single",
+        "subject": "static-token:0e2f89939727",
+        "timeline": [
+          {
+            "id": "manualcut_1774931293_6a0739:queued",
+            "at": "2026-03-31T04:28:13.151185+00:00",
+            "job_id": "manualcut_1774931293_6a0739",
+            "status": "queued",
+            "progress": 0,
+            "message": "Video al\u0131nd\u0131, otomatik kesim kuyru\u011fa al\u0131nd\u0131...",
+            "source": "api"
+          },
+          {
+            "id": "manualcut_1774931293_6a0739:1774931293161432300",
+            "at": "2026-03-31T04:28:13.161420+00:00",
+            "job_id": "manualcut_1774931293_6a0739",
+            "status": "queued",
+            "progress": 0,
+            "message": "\u0130\u015flem s\u0131ras\u0131 bekleniyor...",
+            "source": "worker"
+          },
+          {
+            "id": "manualcut_1774931293_6a0739:1774931293166152300",
+            "at": "2026-03-31T04:28:13.166144+00:00",
+            "job_id": "manualcut_1774931293_6a0739",
+            "status": "processing",
+            "progress": 1,
+            "message": "Video haz\u0131rlan\u0131yor...",
+            "source": "worker"
+          },
+          {
+            "id": "manualcut_1774931293_6a0739:1774931293171084700",
+            "at": "2026-03-31T04:28:13.171076+00:00",
+            "job_id": "manualcut_1774931293_6a0739",
+            "status": "processing",
+            "progress": 35,
+            "message": "Transkript haz\u0131r, mevcut k\u00fct\u00fcphane kullan\u0131l\u0131yor...",
+            "source": "worker"
+          },
+          {
+            "id": "manualcut_1774931293_6a0739:1774931294085045300",
+            "at": "2026-03-31T04:28:14.085038+00:00",
+            "job_id": "manualcut_1774931293_6a0739",
+            "status": "processing",
+            "progress": 10,
+            "message": "Manuel klip: 0.0 - 2.5 sn",
+            "source": "worker"
+          },
+          {
+            "id": "manualcut_1774931293_6a0739:1774931294092805200",
+            "at": "2026-03-31T04:28:14.092793+00:00",
+            "job_id": "manualcut_1774931293_6a0739",
+            "status": "processing",
+            "progress": 45,
+            "message": "Manuel klip i\u00e7in GPU render slotu al\u0131nd\u0131.",
+            "source": "worker"
+          },
+          {
+            "id": "manualcut_1774931293_6a0739:1774931595083029900",
+            "at": "2026-03-31T04:33:15.083022+00:00",
+            "job_id": "manualcut_1774931293_6a0739",
+            "status": "error",
+            "progress": -1,
+            "message": "HATA: Otomatik manual cut ba\u015far\u0131s\u0131z",
+            "source": "worker"
+          }
+        ],
+        "error": "Otomatik manual cut ba\u015far\u0131s\u0131z"
+      }
+    },
+    {
+      "step": "clips_after_manual_upload",
+      "status_code": 200,
+      "trace_id": "audit-clips-after-manual-upload-8d4c1c30-1764-4f5f-ad09-053d8834f6e8",
+      "clip_count": 0
+    }
+  ]
+}

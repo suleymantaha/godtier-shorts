@@ -1,0 +1,78 @@
+{
+  "steps": [
+    {
+      "step": "cache_status",
+      "status_code": 200,
+      "trace_id": "audit-cache-status-live-6d1d837e-5bb8-41af-a0ef-7f359bbf063d",
+      "response": {
+        "project_id": "yt_3462292b60860538b5a07d5d89e1eb94_dQw4w9WgXcQ",
+        "project_cached": false,
+        "analysis_cached": false,
+        "render_cached": false,
+        "cache_scope": "none",
+        "clip_count": 0,
+        "message": "Bu video daha once islenmemis."
+      }
+    },
+    {
+      "step": "start_job",
+      "status_code": 200,
+      "trace_id": "audit-start-job-live-d34e8f5b-524a-4072-a905-1cd846e19c3d",
+      "response": {
+        "status": "queued",
+        "job_id": "79d99cdb",
+        "project_id": "yt_3462292b60860538b5a07d5d89e1eb94_dQw4w9WgXcQ",
+        "cache_hit": false,
+        "cache_scope": "none",
+        "message": "İşlem başlatılıyor. Hazırlık aşamaları yürütülüyor...",
+        "processing_locked": false,
+        "gpu_locked": false
+      }
+    },
+    {
+      "step": "jobs_before_cancel",
+      "status_code": 200,
+      "trace_id": "audit-jobs-before-cancel-8b9b86ad-1ec8-44c7-b666-3c65df7938a6",
+      "summary": {
+        "count": 1,
+        "job_ids": [
+          "79d99cdb"
+        ]
+      }
+    },
+    {
+      "step": "cancel_job",
+      "status_code": 200,
+      "trace_id": "audit-cancel-job-live-0616e169-632f-485a-9dde-d31752467c51",
+      "response": {
+        "status": "success",
+        "message": "İş iptal edildi."
+      }
+    },
+    {
+      "step": "jobs_after_cancel",
+      "status_code": 200,
+      "trace_id": "audit-jobs-after-cancel-48a0042d-a1a9-491d-ae7d-cb53d97a7089",
+      "summary": {
+        "count": 1,
+        "cancelled_job_status": "cancelled",
+        "cancelled_job_message": "İş iptal edildi."
+      }
+    },
+    {
+      "step": "final_purge_after_job_test",
+      "status_code": 200,
+      "trace_id": "audit-final-purge-after-job-test-12480222-5ee0-4d25-b504-ab4126aaea74",
+      "response": {
+        "status": "purged",
+        "summary": {
+          "deleted_projects": 1,
+          "deleted_social_rows": 0,
+          "cancelled_jobs": 1,
+          "closed_websockets": 0,
+          "scrubbed_grants": 0
+        }
+      }
+    }
+  ]
+}

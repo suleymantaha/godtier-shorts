@@ -18,7 +18,7 @@ describe('JobForm submission flow - submit states', () => {
     await renderJobForm();
 
     await user.type(screen.getByLabelText(/source feed url/i), 'https://youtube.com/watch?v=test123');
-    await user.click(screen.getByRole('button', { name: /initialize sequence/i }));
+    await user.click(screen.getByRole('button', { name: /launch pipeline/i }));
 
     expect(await screen.findByRole('alert')).toBeInTheDocument();
   });
@@ -28,13 +28,13 @@ describe('JobForm submission flow - submit states', () => {
     const user = userEvent.setup();
     await renderJobForm();
 
-    const toggle = screen.getByRole('switch', { name: /altyaz/i });
+    const toggle = screen.getByRole('switch', { name: /skip subtitle processing/i });
     await user.click(toggle);
     expect(toggle).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByLabelText(/visual style/i)).toBeDisabled();
 
     await user.type(screen.getByLabelText(/source feed url/i), 'https://youtube.com/watch?v=test123');
-    await user.click(screen.getByRole('button', { name: /initialize sequence/i }));
+    await user.click(screen.getByRole('button', { name: /launch pipeline/i }));
 
     expect(mockStart).toHaveBeenCalledWith(expect.objectContaining({ skip_subtitles: true }));
   });
@@ -51,7 +51,7 @@ describe('JobForm submission flow - submit states', () => {
     await renderJobForm();
 
     await user.type(screen.getByLabelText(/source feed url/i), 'https://youtube.com/watch?v=test123');
-    await user.click(screen.getByRole('button', { name: /initialize sequence/i }));
+    await user.click(screen.getByRole('button', { name: /launch pipeline/i }));
 
     await waitFor(() => expect(mockFetchJobs).toHaveBeenCalledTimes(1));
     expect(mockRegisterQueuedJob).toHaveBeenCalledWith({
@@ -81,7 +81,7 @@ describe('JobForm submission flow - submit states', () => {
     await renderJobForm();
 
     await user.type(screen.getByLabelText(/source feed url/i), 'https://youtube.com/watch?v=test123');
-    await user.click(screen.getByRole('button', { name: /initialize sequence/i }));
+    await user.click(screen.getByRole('button', { name: /launch pipeline/i }));
 
     await waitFor(() => expect(mockFetchJobs).toHaveBeenCalledTimes(1));
     expect(mockRegisterQueuedJob).not.toHaveBeenCalled();
@@ -103,7 +103,7 @@ describe('JobForm submission flow - submit states', () => {
     await renderJobForm();
 
     await user.type(screen.getByLabelText(/source feed url/i), 'https://youtube.com/watch?v=test123');
-    await user.click(screen.getByRole('button', { name: /initialize sequence/i }));
+    await user.click(screen.getByRole('button', { name: /launch pipeline/i }));
 
     await waitFor(() => expect(mockRequestClipsRefresh).toHaveBeenCalledTimes(1));
     expect(mockRegisterQueuedJob).not.toHaveBeenCalled();
@@ -126,14 +126,14 @@ describe('JobForm submission flow - cache and duration controls', () => {
     const user = userEvent.setup();
     await renderJobForm();
 
-    expect(screen.queryByText(/bu video daha once islendi/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/cache intelligence/i)).not.toBeInTheDocument();
 
     await user.type(screen.getByLabelText(/source feed url/i), 'https://youtube.com/watch?v=test123');
 
     await waitFor(() => expect(mockCacheStatus).toHaveBeenCalled());
-    expect(await screen.findByText(/bu video daha once islendi/i)).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: /viral klip secimini yenile/i })).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: /videolari yeniden olustur/i })).toBeInTheDocument();
+    expect(await screen.findByText(/cache intelligence/i)).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: /refresh viral clip selection/i })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: /regenerate videos/i })).toBeInTheDocument();
   });
 
   it('submits force flags from cache controls and keeps rerender enabled when reanalyze is selected', async () => {
@@ -157,12 +157,12 @@ describe('JobForm submission flow - cache and duration controls', () => {
     await renderJobForm();
 
     await user.type(screen.getByLabelText(/source feed url/i), 'https://youtube.com/watch?v=test123');
-    await screen.findByText(/bu video daha once islendi/i);
-    await user.click(screen.getByRole('switch', { name: /viral klip secimini yenile/i }));
-    expect(screen.getByRole('switch', { name: /videolari yeniden olustur/i })).toHaveAttribute('aria-checked', 'true');
-    expect(screen.getByRole('switch', { name: /videolari yeniden olustur/i })).toBeDisabled();
+    await screen.findByText(/cache intelligence/i);
+    await user.click(screen.getByRole('switch', { name: /refresh viral clip selection/i }));
+    expect(screen.getByRole('switch', { name: /regenerate videos/i })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('switch', { name: /regenerate videos/i })).toBeDisabled();
 
-    await user.click(screen.getByRole('button', { name: /initialize sequence/i }));
+    await user.click(screen.getByRole('button', { name: /launch pipeline/i }));
 
     expect(mockStart).toHaveBeenCalledWith(expect.objectContaining({
       force_reanalyze: true,
@@ -175,11 +175,11 @@ describe('JobForm submission flow - cache and duration controls', () => {
     const user = userEvent.setup();
     await renderJobForm();
 
-    await user.click(screen.getByRole('switch', { name: /otomatik mod/i }));
-    fireEvent.change(screen.getByLabelText(/min sure/i), { target: { value: '45' } });
-    fireEvent.change(screen.getByLabelText(/max sure/i), { target: { value: '90' } });
+    await user.click(screen.getByRole('switch', { name: /automatic mode/i }));
+    fireEvent.change(screen.getByLabelText(/min duration/i), { target: { value: '45' } });
+    fireEvent.change(screen.getByLabelText(/max duration/i), { target: { value: '90' } });
     await user.type(screen.getByLabelText(/source feed url/i), 'https://youtube.com/watch?v=test123');
-    await user.click(screen.getByRole('button', { name: /initialize sequence/i }));
+    await user.click(screen.getByRole('button', { name: /launch pipeline/i }));
 
     expect(mockStart).toHaveBeenCalledWith(expect.objectContaining({
       auto_mode: false,

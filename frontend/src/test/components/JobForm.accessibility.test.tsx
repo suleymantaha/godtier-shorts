@@ -59,8 +59,8 @@ describe('JobForm accessibility and layout', () => {
     await renderJobForm();
 
     expect(screen.getByRole('switch', { name: /automatic mode/i })).toHaveAttribute('aria-checked', 'true');
-    expect(screen.queryByLabelText(/min sure/i)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/max sure/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/min duration/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/max duration/i)).not.toBeInTheDocument();
   });
 
   it('renders Turkish labels in tr locale', async () => {

@@ -1,0 +1,83 @@
+[
+  {
+    "app": "frontend",
+    "url": "http://127.0.0.1:5173/",
+    "status_code": 200,
+    "content_type": "text/html",
+    "content_length": 1085,
+    "title": "God-Tier Shorts | AI Video Architect",
+    "has_next_error_marker": false
+  },
+  {
+    "app": "frontend",
+    "url": "http://127.0.0.1:5173/social",
+    "status_code": 200,
+    "content_type": "text/html",
+    "content_length": 1085,
+    "title": "God-Tier Shorts | AI Video Architect",
+    "has_next_error_marker": false
+  },
+  {
+    "app": "frontend",
+    "url": "http://127.0.0.1:5173/social-compose",
+    "status_code": 200,
+    "content_type": "text/html",
+    "content_length": 1085,
+    "title": "God-Tier Shorts | AI Video Architect",
+    "has_next_error_marker": false
+  },
+  {
+    "app": "marketing",
+    "url": "http://127.0.0.1:3000/",
+    "status_code": 200,
+    "content_type": "text/html; charset=utf-8",
+    "content_length": 67290,
+    "title": "AI Shorts Generator",
+    "has_next_error_marker": false
+  },
+  {
+    "app": "marketing",
+    "url": "http://127.0.0.1:3000/features",
+    "status_code": 200,
+    "content_type": "text/html; charset=utf-8",
+    "content_length": 39119,
+    "title": "Video Repurposing Features | God-Tier Shorts",
+    "has_next_error_marker": false
+  },
+  {
+    "app": "marketing",
+    "url": "http://127.0.0.1:3000/features/auto-cut",
+    "status_code": 200,
+    "content_type": "text/html; charset=utf-8",
+    "content_length": 34682,
+    "title": "Auto Clip Generator | God-Tier Shorts",
+    "has_next_error_marker": false
+  },
+  {
+    "app": "marketing",
+    "url": "http://127.0.0.1:3000/compare/opus-clip-alternative",
+    "status_code": 500,
+    "content_type": "text/html; charset=utf-8",
+    "content_length": 26976,
+    "title": "Opus Clip Alternative | God-Tier Shorts",
+    "has_next_error_marker": true
+  },
+  {
+    "app": "marketing",
+    "url": "http://127.0.0.1:3000/compare/captions-alternative",
+    "status_code": 200,
+    "content_type": "text/html; charset=utf-8",
+    "content_length": 39217,
+    "title": "Captions Alternative | God-Tier Shorts",
+    "has_next_error_marker": false
+  },
+  {
+    "app": "marketing",
+    "url": "http://127.0.0.1:3000/blog",
+    "status_code": 200,
+    "content_type": "text/html; charset=utf-8",
+    "content_length": 32041,
+    "title": "Blog | God-Tier Shorts",
+    "has_next_error_marker": false
+  }
+]

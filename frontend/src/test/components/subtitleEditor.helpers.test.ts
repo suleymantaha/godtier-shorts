@@ -124,7 +124,7 @@ describe('subtitleEditor helpers', () => {
   });
 
   it('derives completion messages', () => {
-    expect(resolveCompletionSuccessMessage('project')).toBe('Klip üretildi.');
-    expect(resolveCompletionSuccessMessage('clip')).toBe('Video render edildi. Altyazılar güncellendi.');
+    expect(resolveCompletionSuccessMessage('project')).toBe('Clip rendered.');
+    expect(resolveCompletionSuccessMessage('clip')).toBe('Transcript saved.');
   });
 });
