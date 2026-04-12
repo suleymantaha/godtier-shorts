@@ -39,8 +39,8 @@ Tek bir klip üzerinde manuel düzenleme: kadraj, stil, zaman aralığı, reburn
 
 | Method | Endpoint | Açıklama |
 |--------|----------|----------|
-| POST | `/api/process-manual` | Manuel klip render (start, end, center_x, style) |
-| POST | `/api/reburn` | Altyazı yeniden basma |
+| POST | `/api/process-manual` | Async manuel klip render (start, end, center_x, style) |
+| POST | `/api/reburn` | Async altyazı yeniden basma |
 | POST | `/api/upload` | Video yükleme (master modu) |
 | GET | `/api/transcript` | Proje transkripti |
 | GET | `/api/clip-transcript/{clip_name}` | Klip transkripti |
@@ -52,10 +52,16 @@ Tek bir klip üzerinde manuel düzenleme: kadraj, stil, zaman aralığı, reburn
 3. RangeSlider ile zaman aralığını belirle
 4. Stil seç
 5. "Render" veya "Reburn" butonuna bas
-6. Job tamamlanınca yeni klip üretilir
+6. İlk response sadece `job_id` döndürür; ilerleme `GET /api/jobs` veya WebSocket üzerinden izlenir
+7. Job tamamlanınca yeni klip üretilir veya mevcut klip metadata'sı güncellenir
 
 ## İlgili Dokümantasyon
 
 - [Manual Cut](../flows/manual-cut.md)
 - [Reburn](../flows/reburn.md)
 - [Video Processor](../architecture/video-processor.md)
+
+## Verification Note 2026-04-01
+
+- `process-manual` ve `reburn` backend full suite ile tekrar geçti.
+- Editor akışları frontend full suite içinde tekrar geçti; clip session kilidi ve subtitle-reburn geçişleri korunuyor.

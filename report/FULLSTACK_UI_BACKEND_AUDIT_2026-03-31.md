@@ -3,7 +3,16 @@
 - Tarih: `2026-03-31`
 - Repo: `godtier-shorts`
 - Kapsam: `frontend/`, `marketing/`, backend API yuzeyleri, ilgili testler, ilgili dokumantasyon referanslari
-- Bu fazin kural seti: Kaynak kod ve kaynak dokumantasyon degistirilmedi; yalnizca `report/` altinda audit ciktilari uretildi.
+- Bu raporun ilk fazi yalnizca `report/` ciktilari uretmek icin yazilmisti. `2026-04-01` tarihinde remediation ve kaynak dokumantasyon guncellemeleri uygulanmistir; guncel durum asagidaki addendum'da ozetlenir.
+
+## Remediation Addendum (2026-04-01)
+
+- `process-manual`, `manual-cut-upload`, `process-batch`, marketing build, ve social timezone odaklari kod seviyesinde duzeltildi.
+- Frontend suite yeniden kosuldu: `302 passed, 4 skipped`
+- Backend suite yeniden kosuldu: `321 passed, 2 skipped`
+- Frontend build ve marketing build yeniden gecti.
+- Frontend lint durumu: `0 error, 35 warning`
+- Kaynak dokumanlar remediated davranis ve guncel test sonucu ile hizalandi.
 
 ## Executive Summary
 

@@ -214,5 +214,11 @@ export const useWebSocket = (enabled = true) => {
     void connect();
 
     return () => closeSocket(ws, reconnectTimeoutId, isUnmounted);
-  }, [canConnect]);
+  }, [
+    canConnect,
+    fetchJobsRef,
+    markClipReadyRef,
+    mergeJobTimelineEventRef,
+    setWsStatusRef,
+  ]);
 };

@@ -1,12 +1,34 @@
 # Documentation Update Draft
 
-Bu fazda kaynak dokumantasyon dosyalari degistirilmedi. Bu dosya, bir sonraki fazda uygulanacak guncelleme taslagidir.
+## Status Update 2026-04-01
+
+Bu taslak uygulanmistir. Kaynak kod ve ilgili kaynak dokumantasyon dosyalari guncellenmis, dogrulama tekrar alinmistir.
+
+- Backend full suite: `321 passed, 2 skipped`
+- Frontend full suite: `302 passed, 4 skipped`
+- Frontend build: pass
+- Frontend lint: `0 error, 35 warning`
+- Marketing build: pass
+
+Uygulanan hedefler:
+
+- `README.md`
+- `docs/README.md`
+- `docs/flows/upload-transcribe.md`
+- `docs/pages/auto-cut.md`
+- `docs/flows/manual-cut.md`
+- `docs/pages/clip-editor.md`
+- `docs/pages/subtitle-editor.md`
+- `docs/flows/reburn.md`
+- `docs/operations/postiz-global-oauth-standard.md`
+- `marketing/README.md`
+
+Asagidaki bolumler, `2026-03-31` tarihli orijinal draft icerigini iz kaydi icin korur.
 
 ## Durum
 
-- Kaynak kod degistirilmedi.
-- Kaynak dokumantasyon degistirilmedi.
-- Yalnizca `report/` altinda audit raporu, ekler ve kanit kayitlari uretildi.
+- Bu satirlar orijinal audit fazinin draft notlaridir.
+- Guncel uygulama durumu bu dosyanin ustundeki `Status Update 2026-04-01` bolumundedir.
 
 ## Onerilen Dokumantasyon Guncellemeleri
 

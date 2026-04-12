@@ -23,6 +23,12 @@ Mevcut klip → Transkript (mevcut veya güncel) → Yeni ASS → burn-in → ka
 | transcript | Segment listesi (opsiyonel, yoksa mevcut metadata'dan) |
 | style_name | Yeni altyazı stili |
 
+Response contract:
+
+- `POST /api/reburn` ilk response'ta yalnız `status` ve `job_id` döndürür.
+- Final sonuç `GET /api/jobs`, WebSocket ilerlemesi veya güncellenmiş clip metadata üzerinden okunur.
+- Runtime hata olursa job terminal `error` durumuna düşürülür.
+
 ## Orchestrator: reburn_subtitles()
 
 1. Klip yolunu çöz (project_id ile `shorts/` veya legacy `outputs/`)
@@ -59,6 +65,11 @@ Reburn öncesi transkript düzenlemesi yapıldığında `POST /api/transcript` i
 
 - Reburn yeni tracking üretmez; varsa mevcut tracking/audio metriklerini metadata'dan korur.
 - Clip modunda SubtitleEditor bu metadata içinden read-only kalite kartı gösterir.
+
+## Verification Note 2026-04-01
+
+- Reburn backend kontratı ve hata terminalizasyonu backend full suite ile tekrar geçti.
+- SubtitleEditor ve Clip Editor reburn tetikleme yolları frontend full suite içinde tekrar geçti.
 
 ## İlgili
 

@@ -292,6 +292,20 @@ scripts/run_pyre.sh
 
 **Scripts:** `scripts/README.md` – reburn_clip, test_subtitle_styles vb.
 
+## 2026-04-01 Verification Snapshot
+
+- Backend full suite: `321 passed, 2 skipped`
+- Frontend full suite: `302 passed, 4 skipped`
+- Frontend build: pass
+- Frontend lint: `0 error, 35 warning`
+- Marketing build: pass
+
+Operational notes:
+
+- Project assets are owner-scoped under `workspace/projects/<subject_hash>/<project_id>/`.
+- `POST /api/process-manual`, `POST /api/manual-cut-upload`, `POST /api/process-batch`, and `POST /api/reburn` are async job endpoints. Treat the first response as accepted work and resolve final `clip_name` or `output_url` from `GET /api/jobs`, WebSocket progress, or the terminal job payload.
+- Manual transcript normalization now tolerates word payloads with `score: null` and coerces them to `1.0`.
+
 ## Katkı
 
 Pull Request göndererek destek olabilirsiniz.

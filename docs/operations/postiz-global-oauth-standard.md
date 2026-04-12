@@ -59,6 +59,13 @@ Sadece tek kullanicili lokal gelistirme icin:
 
 gecici fallback olarak kullanilabilir.
 
+## Timezone ve Windows Uyum Kurali
+
+- Social scheduler payload'lari icin canonical IANA timezone adlari kullanin.
+- Backend, `UTC`, `Etc/UTC`, `Etc/GMT`, ve `Europe/Istanbul` icin fallback cozumleme saglar.
+- Bunun disindaki timezone'lar icin host tzdata/zoneinfo verisinin kurulu olmasi operasyon onkosuludur.
+- Windows operator ortamlari scheduler rollout oncesi timezone parse davranisini dogrulamalidir.
+
 ## Operasyon Akisi
 
 1. Operator global Postiz stack'i ayaga kaldirir.
@@ -67,6 +74,11 @@ gecici fallback olarak kullanilabilir.
 4. Son kullanici uygulamaya normal auth ile girer.
 5. Son kullanici Google/YouTube hesabini bir kez baglar.
 6. Sonraki publish isleri otomatik olarak kendi bagli hesabi uzerinden ilerler.
+
+Preflight:
+
+- `python -m pytest backend/tests/test_social_routes.py backend/tests/test_social_connections.py backend/tests/test_social_postiz.py backend/tests/test_social_crypto.py`
+- En az bir scheduled publish akisi `scheduled_at + timezone` ile staging ortaminda denenmelidir.
 
 ## Bakim Kurali
 

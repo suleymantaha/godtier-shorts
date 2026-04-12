@@ -36,7 +36,7 @@ Proje veya klip transkriptini düzenleme. SubtitleEditor bileşeni bu sayfayı o
 |--------|----------|----------|
 | GET | `/api/transcript?project_id=` | Proje transkripti |
 | POST | `/api/transcript` | Transkript kaydetme |
-| POST | `/api/reburn` | Altyazı yeniden basma |
+| POST | `/api/reburn` | Async altyazı yeniden basma |
 | GET | `/api/clip-transcript/{clip_name}` | Klip transkripti |
 | GET | `/api/projects` | Proje listesi |
 | GET | `/api/clips` | Klip listesi |
@@ -50,6 +50,7 @@ Proje veya klip transkriptini düzenleme. SubtitleEditor bileşeni bu sayfayı o
 5. "Kaydet" → proje/klip transkript güncellenir
 6. Clip modundaysa mevcut render kalite özeti gösterilir
 7. İsteğe bağlı: stil değiştir → "Reburn" ile yeni altyazı bas
+8. Recovery ve reburn job'ları `job_id` ile izlenir; terminal durum UI store ve WebSocket üzerinden senkronize olur
 
 ## Kalite Kartı
 
@@ -63,3 +64,9 @@ Proje veya klip transkriptini düzenleme. SubtitleEditor bileşeni bu sayfayı o
 
 - [Reburn](../flows/reburn.md) – Transkript kaydetme dahil
 - [Subtitle Styles](../architecture/subtitle-styles.md)
+
+## Verification Note 2026-04-01
+
+- Project ve clip transcript akışları frontend full suite içinde tekrar geçti.
+- Locked clip seçimi, clip reload senkronizasyonu ve recovery takip akışları testlerle doğrulandı.
+- Reburn butonu ve transcript kaydetme akışı async job kontratıyla çalışır.

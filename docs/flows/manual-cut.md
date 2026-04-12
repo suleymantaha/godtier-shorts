@@ -15,6 +15,7 @@ Tek veya çoklu manuel kesim. Zaman aralığı veya cut_points ile belirlenir.
 1. Proje/master video belirleme
 2. Transkript yükleme (proje veya isteğe gönderilen)
 3. `_shift_timestamps`: Aralık dışı segmentleri filtrele, zamanları 0'a hizala
+   - Kelime payload'ında `score: null` gelirse normalizasyon aşamasında `1.0` kabul edilir
 4. ASS altyazı üretimi (skip_subtitles=False ise)
 5. Video işleme:
    - `cut_as_short=True`: YOLO + SteadyCam crop
@@ -44,6 +45,12 @@ Her aralık için `run_manual_clip()` çağrılır.
 | cut_points     | str        | JSON array [t0,t1,...] |
 | cut_as_short   | bool       | YOLO crop kullan       |
 
+Response contract:
+
+- `POST /api/manual-cut-upload` ilk response'ta `status`, `job_id`, `project_id` döndürür.
+- `clip_name` ve `output_url` alanları terminal `completed` olana kadar `null` kalır.
+- Arka plan exception'ları job'u sessizce bırakmaz; terminal `error` durumuna yazılır.
+
 ### process-manual (JSON)
 
 | Parametre            | Açıklama                    |
@@ -61,8 +68,18 @@ Her aralık için `run_manual_clip()` çağrılır.
 - Public erişim: `/api/projects/{project_id}/shorts/{clip_name}`
 - Her klip için `.json` metadata; `render_quality_score`, `tracking_quality`, `transcript_quality`, `audio_validation`, `debug_artifacts` alanlarını içerebilir
 
+Owner-scoped path note:
+
+- Diskte gerçek proje yolu `workspace/projects/<subject_hash>/<project_id>/...` olarak tutulur.
+- API public path'i değişmez; owner scope route seviyesinde korunur.
+
 ## İlgili
 
 - [Editor routes](../../backend/api/routes/editor.py)
 - [Orchestrator](../../backend/core/orchestrator.py) – `run_manual_clip`, `run_manual_clips_from_cut_points`
 - [Video Processor](../architecture/video-processor.md)
+
+## Verification Note 2026-04-01
+
+- `process-manual`, `manual-cut-upload`, ve batch manual varyantları backend full suite içinde tekrar geçti.
+- Background failure'lar artık terminal job state'e düşürülüyor; job izleme tarafında sessiz asılı kalma beklenmez.

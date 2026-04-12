@@ -1,7 +1,0 @@
-[POST] https://helping-jawfish-35.clerk.accounts.dev/v1/environment?__clerk_api_version=2025-11-10&_clerk_js_version=5.125.7&_method=PATCH&__clerk_db_jwt=dvb_3BGyOz8rKYPgDkXdJoxwwyyt40B => [200] 
-[GET] https://helping-jawfish-35.clerk.accounts.dev/v1/client?__clerk_api_version=2025-11-10&_clerk_js_version=5.125.7&__clerk_db_jwt=dvb_3BGyOz8rKYPgDkXdJoxwwyyt40B => [200] 
-[POST] https://helping-jawfish-35.clerk.accounts.dev/v1/client/sessions/sess_3BGyXubdP6eU8yQgMcRAYdOnqI4/tokens/godtier-backend?__clerk_api_version=2025-11-10&_clerk_js_version=5.125.7&__clerk_db_jwt=dvb_3BGyOz8rKYPgDkXdJoxwwyyt40B => [200] 
-[GET] http://localhost:8000/api/auth/whoami => [200] OK
-[GET] http://localhost:8000/api/clips?page=1&page_size=200 => [200] OK
-[POST] https://helping-jawfish-35.clerk.accounts.dev/v1/client/sessions/sess_3BGyXubdP6eU8yQgMcRAYdOnqI4/tokens?__clerk_api_version=2025-11-10&_clerk_js_version=5.125.7&__clerk_db_jwt=dvb_3BGyOz8rKYPgDkXdJoxwwyyt40B => [200] 
-[POST] https://helping-jawfish-35.clerk.accounts.dev/v1/client/sessions/sess_3BGyXubdP6eU8yQgMcRAYdOnqI4/tokens?__clerk_api_version=2025-11-10&_clerk_js_version=5.125.7&__clerk_db_jwt=dvb_3BGyOz8rKYPgDkXdJoxwwyyt40B => [200] 

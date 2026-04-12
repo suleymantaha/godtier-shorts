@@ -49,3 +49,13 @@ Ana proje: [README.md](../README.md)
 - Determinism ve throughput raporu için `scripts/benchmark_render_stability.py` kullanılır.
 - v2.1 kapanış özeti ve doğrulama sonuçları:
   [report/V2_1_STABILIZASYON_SONUC_RAPORU_2026-03-15.md](../report/V2_1_STABILIZASYON_SONUC_RAPORU_2026-03-15.md)
+
+## Guncel Dogrulama Durumu
+
+- Son tam backend dogrulamasi: `321 passed, 2 skipped`
+- Son tam frontend dogrulamasi: `302 passed, 4 skipped`
+- Frontend build ve marketing build geciyor.
+- Frontend lint sirasinda sadece warning kaldi: `0 error, 35 warning`
+
+Bu dokuman seti, `2026-03-31` audit bulgulari sonrasinda uygulanan duzeltmeleri yansitir.
+Audit ozeti: [report/FULLSTACK_UI_BACKEND_AUDIT_2026-03-31.md](../report/FULLSTACK_UI_BACKEND_AUDIT_2026-03-31.md)

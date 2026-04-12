@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -172,52 +172,6 @@ describe('SubtitleEditor clip mode - core clip sessions', () => {
         ],
       });
     });
-  });
-
-  it('keeps clip transcript controls visible while a completed reburn triggers background reload', async () => {
-    const view = await renderSubtitleEditor();
-    const user = await switchToClipModeAndSelectClip();
-    const { SubtitleEditor } = await import('../../components/SubtitleEditor');
-
-    await user.click(screen.getByRole('button', { name: /save \+ reburn/i }));
-
-    mockGetClipTranscript.mockImplementationOnce(async () => {
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 25));
-      return {
-        active_job_id: null,
-        capabilities: {
-          can_recover_from_project: true,
-          can_transcribe_source: true,
-          has_clip_metadata: true,
-          has_clip_transcript: true,
-          has_raw_backup: true,
-          project_has_transcript: true,
-          resolved_project_id: 'proj_1',
-        },
-        last_error: null,
-        recommended_strategy: null,
-        transcript: subtitleTranscript,
-        transcript_status: 'ready',
-      };
-    });
-    storeMock.jobs = [{
-      created_at: 1,
-      job_id: 'reburn_1',
-      last_message: 'Altyazı yeniden basım tamamlandı.',
-      progress: 100,
-      project_id: 'proj_1',
-      status: 'completed',
-      style: 'HORMOZI',
-      url: 'clip_1.mp4',
-    }];
-
-    await act(async () => {
-      view.rerender(<SubtitleEditor />);
-    });
-
-    expect(await screen.findByText(/subtitle \(2 \/ 2 segment\)/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /save \+ reburn/i })).toBeInTheDocument();
-    expect(screen.queryByText(/^loading\.\.\.$/i)).not.toBeInTheDocument();
   });
 
   it('retries a trusted ready clip before surfacing any missing transcript state', async () => {

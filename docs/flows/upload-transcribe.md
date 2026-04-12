@@ -49,3 +49,9 @@ Transkripsiyon sırasında ilerleme mesajları WebSocket ile broadcast edilir:
 
 - [clips.py](../../backend/api/routes/clips.py) – `prepare_uploaded_project`, `ensure_project_transcript`
 - [Transcription](../architecture/transcription.md)
+
+## Verification Note 2026-04-01
+
+- `POST /api/upload` akisi backend full suite ve canli upload dogrulamasi ile tekrar gecti.
+- Gercek proje dizini owner-scoped olarak `workspace/projects/<subject_hash>/<project_id>/` altinda tutulur.
+- Upload cache reuse davranisi ayni owner altinda korunur; public API path'i degismez.

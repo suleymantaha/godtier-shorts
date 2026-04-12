@@ -328,95 +328,91 @@ function useTranscriptSelectionSyncEffect({
   ]);
 }
 
-export function useTranscriptLoader({
-  canUseProtectedRequests,
+function setTranscriptAccessPendingState(
+  workspace: TranscriptLoaderMutationWorkspace,
+  pauseReason: AppErrorCode | null,
+) {
+  workspace.setTranscriptAccessState(pauseReason ? 'auth_blocked' : 'loading');
+  workspace.setTranscriptAccessMessage(
+    pauseReason ? resolveTranscriptAccessBlockedMessage(pauseReason) : null,
+  );
+}
+
+function beginTranscriptLoad(workspace: TranscriptLoaderMutationWorkspace) {
+  workspace.setError(null);
+  workspace.setLoading(true);
+  workspace.setTranscriptAccessMessage(null);
+  workspace.setTranscriptAccessState('loading');
+}
+
+async function loadClipTranscriptSelectionWithRetry(
+  fetchJobs: () => Promise<void>,
+  selectedClip: Clip,
+  workspace: TranscriptLoaderMutationWorkspace,
+) {
+  const maxAttempts = isTrustedReadyClip(selectedClip) ? TRUSTED_CLIP_TRANSCRIPT_RETRY_ATTEMPTS : 1;
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await loadClipTranscriptSelection(fetchJobs, selectedClip, workspace);
+      workspace.setTranscriptAccessState('ready');
+      return;
+    } catch (error) {
+      if (isAppError(error) && AUTH_BLOCKING_CODES.has(error.code)) {
+        throw error;
+      }
+      lastError = error;
+    }
+  }
+
+  handleTranscriptLoadFailure(workspace, lastError, { selectedClip });
+}
+
+async function loadSelectedTranscript({
   fetchJobs,
   mode,
-  pauseReason,
-  selectionKey,
   selectedClip,
   selectedProjectId,
   workspace,
-}: TranscriptLoaderParams) {
-  const {
-    setError,
-    setLoading,
-    setTranscriptAccessMessage,
-    setTranscriptAccessState,
-    transcriptAccessState,
-  } = workspace;
-  const loaderWorkspace = useTranscriptLoaderWorkspace(workspace);
+}: {
+  fetchJobs: () => Promise<void>;
+  mode: 'project' | 'clip';
+  selectedClip: Clip | null;
+  selectedProjectId: string | null;
+  workspace: TranscriptLoaderMutationWorkspace;
+}) {
+  if (mode === 'project' && selectedProjectId) {
+    await loadProjectTranscriptSelection(fetchJobs, selectedProjectId, workspace);
+    workspace.setTranscriptAccessState('ready');
+    return;
+  }
 
-  const loadTranscript = useCallback(async (options?: { forceAuthRecovery?: boolean }) => {
-    if (!canUseProtectedRequests && !options?.forceAuthRecovery) {
-      setTranscriptAccessState(pauseReason ? 'auth_blocked' : 'loading');
-      setTranscriptAccessMessage(pauseReason ? resolveTranscriptAccessBlockedMessage(pauseReason) : null);
-      return;
-    }
+  if (mode === 'clip' && selectedClip) {
+    await loadClipTranscriptSelectionWithRetry(fetchJobs, selectedClip, workspace);
+    return;
+  }
 
-    setError(null);
-    setLoading(true);
-    setTranscriptAccessMessage(null);
-    setTranscriptAccessState('loading');
-    try {
-      if (mode === 'project' && selectedProjectId) {
-        await loadProjectTranscriptSelection(fetchJobs, selectedProjectId, loaderWorkspace);
-        setTranscriptAccessState('ready');
-        return;
-      }
+  clearTranscriptWorkspace(workspace);
+}
 
-      if (mode === 'clip' && selectedClip) {
-        const maxAttempts = isTrustedReadyClip(selectedClip) ? TRUSTED_CLIP_TRANSCRIPT_RETRY_ATTEMPTS : 1;
-        let lastError: unknown = null;
-
-        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-          try {
-            await loadClipTranscriptSelection(fetchJobs, selectedClip, loaderWorkspace);
-            setTranscriptAccessState('ready');
-            return;
-          } catch (error) {
-            if (isAppError(error) && AUTH_BLOCKING_CODES.has(error.code)) {
-              throw error;
-            }
-            lastError = error;
-          }
-        }
-
-        handleTranscriptLoadFailure(loaderWorkspace, lastError, { selectedClip });
-        return;
-      }
-
-      clearTranscriptWorkspace(loaderWorkspace);
-    } catch (error) {
-      handleTranscriptLoadFailure(loaderWorkspace, error, { selectedClip });
-    } finally {
-      setLoading(false);
-    }
-  }, [
-    canUseProtectedRequests,
-    fetchJobs,
-    mode,
-    pauseReason,
-    selectedClip,
-    selectedProjectId,
-    loaderWorkspace,
-    setError,
-    setLoading,
-    setTranscriptAccessMessage,
-    setTranscriptAccessState,
-  ]);
-
-  useTranscriptSelectionSyncEffect({
-    canUseProtectedRequests,
-    loadTranscript,
-    mode,
-    pauseReason,
-    selectionKey,
-    selectedClip,
-    selectedProjectId,
-    loaderWorkspace,
-  });
-
+function useTranscriptAuthBootstrapRecoveryEffect({
+  canUseProtectedRequests,
+  loadTranscript,
+  mode,
+  pauseReason,
+  selectedClip,
+  selectedProjectId,
+  transcriptAccessState,
+}: {
+  canUseProtectedRequests: boolean;
+  loadTranscript: (options?: { forceAuthRecovery?: boolean }) => Promise<void>;
+  mode: 'project' | 'clip';
+  pauseReason: AppErrorCode | null;
+  selectedClip: Clip | null;
+  selectedProjectId: string | null;
+  transcriptAccessState: TranscriptLoaderWorkspace['transcriptAccessState'];
+}) {
   useEffect(() => {
     if (
       canUseProtectedRequests
@@ -441,6 +437,71 @@ export function useTranscriptLoader({
     selectedProjectId,
     transcriptAccessState,
   ]);
+}
+
+export function useTranscriptLoader({
+  canUseProtectedRequests,
+  fetchJobs,
+  mode,
+  pauseReason,
+  selectionKey,
+  selectedClip,
+  selectedProjectId,
+  workspace,
+}: TranscriptLoaderParams) {
+  const { transcriptAccessState } = workspace;
+  const loaderWorkspace = useTranscriptLoaderWorkspace(workspace);
+
+  const loadTranscript = useCallback(async (options?: { forceAuthRecovery?: boolean }) => {
+    if (!canUseProtectedRequests && !options?.forceAuthRecovery) {
+      setTranscriptAccessPendingState(loaderWorkspace, pauseReason);
+      return;
+    }
+
+    beginTranscriptLoad(loaderWorkspace);
+    try {
+      await loadSelectedTranscript({
+        fetchJobs,
+        mode,
+        selectedClip,
+        selectedProjectId,
+        workspace: loaderWorkspace,
+      });
+    } catch (error) {
+      handleTranscriptLoadFailure(loaderWorkspace, error, { selectedClip });
+    } finally {
+      loaderWorkspace.setLoading(false);
+    }
+  }, [
+    canUseProtectedRequests,
+    fetchJobs,
+    mode,
+    pauseReason,
+    selectedClip,
+    selectedProjectId,
+    loaderWorkspace,
+  ]);
+
+  useTranscriptSelectionSyncEffect({
+    canUseProtectedRequests,
+    loadTranscript,
+    mode,
+    pauseReason,
+    selectionKey,
+    selectedClip,
+    selectedProjectId,
+    loaderWorkspace,
+  });
+
+  useTranscriptAuthBootstrapRecoveryEffect({
+    canUseProtectedRequests,
+    loadTranscript,
+    mode,
+    pauseReason,
+    selectedClip,
+    selectedProjectId,
+    transcriptAccessState,
+  });
 
   return loadTranscript;
 }

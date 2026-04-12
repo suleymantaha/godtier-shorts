@@ -144,14 +144,32 @@ function mergeLockedClipContext(matchingClip: Clip, targetClip: Clip): Clip {
   };
 }
 
+const LOCKED_CLIP_CONTEXT_KEYS = [
+  'name',
+  'url',
+  'has_transcript',
+  'project',
+  'resolved_project_id',
+  'transcript_status',
+  'ui_title',
+] as const;
+
+function normalizeLockedClipContext(clip: Clip) {
+  return {
+    has_transcript: clip.has_transcript,
+    name: clip.name,
+    project: clip.project ?? null,
+    resolved_project_id: clip.resolved_project_id ?? null,
+    transcript_status: clip.transcript_status ?? null,
+    ui_title: clip.ui_title ?? null,
+    url: clip.url,
+  };
+}
+
 export function hasSameLockedClipContext(left: Clip, right: Clip): boolean {
-  return left.name === right.name
-    && left.url === right.url
-    && left.has_transcript === right.has_transcript
-    && (left.project ?? null) === (right.project ?? null)
-    && (left.resolved_project_id ?? null) === (right.resolved_project_id ?? null)
-    && (left.transcript_status ?? null) === (right.transcript_status ?? null)
-    && (left.ui_title ?? null) === (right.ui_title ?? null);
+  const leftContext = normalizeLockedClipContext(left);
+  const rightContext = normalizeLockedClipContext(right);
+  return LOCKED_CLIP_CONTEXT_KEYS.every((key) => leftContext[key] === rightContext[key]);
 }
 
 export function reconcileLockedClip(clips: Clip[], targetClip: Clip | null): Clip | null {

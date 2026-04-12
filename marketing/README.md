@@ -23,3 +23,14 @@ npm run build
 
 - `NEXT_PUBLIC_SITE_URL`: canonical origin for the marketing site
 - `NEXT_PUBLIC_APP_URL`: product app URL used by CTA buttons
+
+## Release Gate
+
+- `npm run build` release-oncesi zorunlu kontroldur.
+- Compare sayfalari dahil tum app routes build sirasinda type-check ve prerender dogrulamasindan gecmelidir.
+- `2026-04-01` itibariyla marketing build tekrar gecti.
+
+## Route Health
+
+- CTA button hedefleri `NEXT_PUBLIC_APP_URL` ile tutarli olmali.
+- Compare ve feature pages build-time smoke kapsaminda tutulmali.

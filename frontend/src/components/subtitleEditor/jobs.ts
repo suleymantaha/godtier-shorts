@@ -160,6 +160,86 @@ function resolveJobSuccessMessage({
   return resolveCompletionSuccessMessage(mode);
 }
 
+function clearTrackedSubtitleSession(selectionKey: string | null) {
+  if (selectionKey) {
+    clearSubtitleSessionSnapshot();
+  }
+}
+
+function resolveTerminalJobKey(job: Job): string | null {
+  if (job.status !== 'completed' && job.status !== 'error' && job.status !== 'cancelled') {
+    return null;
+  }
+  return `${job.job_id}:${job.status}`;
+}
+
+function handleCompletedTrackedJob({
+  fetchJobs,
+  flags,
+  loadTranscript,
+  mode,
+  selectedClip,
+  selectionKey,
+  setCacheBust,
+  setError,
+  setSaving,
+  setSuccessMessage,
+}: {
+  fetchJobs: () => Promise<void>;
+  flags: ReturnType<typeof resolveJobTrackingFlags>;
+  loadTranscript: (options?: TranscriptLoadOptions) => Promise<void>;
+  mode: SubtitleEditorMode;
+  selectedClip: Clip | null;
+  selectionKey: string | null;
+  setCacheBust: Dispatch<SetStateAction<number>>;
+  setError: Dispatch<SetStateAction<string | null>>;
+  setSaving: Dispatch<SetStateAction<boolean>>;
+  setSuccessMessage: Dispatch<SetStateAction<string | null>>;
+}) {
+  setSaving(false);
+  setSuccessMessage(resolveJobSuccessMessage({ ...flags, mode }));
+  setError(null);
+  clearTrackedSubtitleSession(selectionKey);
+
+  if (flags.isReburnJob) {
+    setCacheBust((value) => value + 1);
+  }
+
+  if (shouldReloadTranscriptAfterCompletion({ ...flags, mode, selectedClip })) {
+    void loadTranscript();
+  }
+
+  void fetchJobs();
+}
+
+function handleFailedTrackedJob({
+  currentJob,
+  fetchJobs,
+  flags,
+  loadTranscript,
+  selectionKey,
+  setError,
+  setSaving,
+}: {
+  currentJob: Job;
+  fetchJobs: () => Promise<void>;
+  flags: ReturnType<typeof resolveJobTrackingFlags>;
+  loadTranscript: (options?: TranscriptLoadOptions) => Promise<void>;
+  selectionKey: string | null;
+  setError: Dispatch<SetStateAction<string | null>>;
+  setSaving: Dispatch<SetStateAction<boolean>>;
+}) {
+  setSaving(false);
+  setError(currentJob.error ?? currentJob.last_message ?? tSafe('subtitleEditor.transcript.processingFailed'));
+  clearTrackedSubtitleSession(selectionKey);
+
+  if (flags.isRecoveryJob || flags.isProjectTranscriptRecoveryJob) {
+    void loadTranscript();
+  }
+
+  void fetchJobs();
+}
+
 export function useSubtitleJobTrackingEffect({
   currentJob,
   fetchJobs,
@@ -192,10 +272,9 @@ export function useSubtitleJobTrackingEffect({
     }
 
     const flags = resolveJobTrackingFlags(currentJob);
-    const isTerminal = currentJob.status === 'completed' || currentJob.status === 'error' || currentJob.status === 'cancelled';
-    const terminalKey = isTerminal ? `${currentJob.job_id}:${currentJob.status}` : null;
+    const terminalKey = resolveTerminalJobKey(currentJob);
 
-    if (!isTerminal) {
+    if (!terminalKey) {
       handledTerminalJobRef.current = null;
       return;
     }
@@ -207,34 +286,31 @@ export function useSubtitleJobTrackingEffect({
     handledTerminalJobRef.current = terminalKey;
 
     if (currentJob.status === 'completed') {
-      setSaving(false);
-      setSuccessMessage(resolveJobSuccessMessage({ ...flags, mode }));
-      setError(null);
-      if (selectionKey) {
-        clearSubtitleSessionSnapshot();
-      }
-
-      if (flags.isReburnJob) {
-        setCacheBust((value) => value + 1);
-      }
-
-      if (shouldReloadTranscriptAfterCompletion({ ...flags, mode, selectedClip })) {
-        void loadTranscript();
-      }
-      void fetchJobs();
+      handleCompletedTrackedJob({
+        fetchJobs,
+        flags,
+        loadTranscript,
+        mode,
+        selectedClip,
+        selectionKey,
+        setCacheBust,
+        setError,
+        setSaving,
+        setSuccessMessage,
+      });
       return;
     }
 
     if (currentJob.status === 'error' || currentJob.status === 'cancelled') {
-      setSaving(false);
-      setError(currentJob.error ?? currentJob.last_message ?? tSafe('subtitleEditor.transcript.processingFailed'));
-      if (selectionKey) {
-        clearSubtitleSessionSnapshot();
-      }
-      if (flags.isRecoveryJob || flags.isProjectTranscriptRecoveryJob) {
-        void loadTranscript();
-      }
-      void fetchJobs();
+      handleFailedTrackedJob({
+        currentJob,
+        fetchJobs,
+        flags,
+        loadTranscript,
+        selectionKey,
+        setError,
+        setSaving,
+      });
     }
   }, [
     currentJob,
