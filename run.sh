@@ -74,6 +74,11 @@ activate_runtime_env() {
         return
     fi
 
+    if activate_virtualenv "$PROJECT_ROOT/.venv/Scripts/activate"; then
+        echo "🐍 Local virtualenv aktif edildi: .venv (Windows)"
+        return
+    fi
+
     if activate_virtualenv "$PROJECT_ROOT/venv/bin/activate"; then
         echo "🐍 Local virtualenv aktif edildi: venv"
         return

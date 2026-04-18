@@ -11,9 +11,21 @@ veya doğrudan:
 """
 import os
 
+# Windows CTranslate2/CUDA DLL Deadlock (Donma) Cözümleri
+try:
+    import torch
+    torch_lib = os.path.join(os.path.dirname(torch.__file__), "lib")
+    if os.path.exists(torch_lib):
+        os.environ["PATH"] = torch_lib + os.pathsep + os.environ.get("PATH", "")
+except ImportError:
+    pass
+
 # GPU probe davranisini tum calistirma yollarinda hizala.
 os.environ.setdefault("PYTORCH_NVML_BASED_CUDA_CHECK", "1")
 os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
+# Windows VAD/OpenMP Deadlock (Donma) Cözümleri
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
 
 import uvicorn
 from loguru import logger

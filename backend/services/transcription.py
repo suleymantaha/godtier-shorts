@@ -183,7 +183,7 @@ def run_transcription(
                 language=language,
                 beam_size=5,
                 word_timestamps=True,
-                vad_filter=True,
+                vad_filter=False,  # WINDOWS DEADLOCK FIX
                 vad_parameters=dict(min_silence_duration_ms=500)
             )
         except (RuntimeError, ValueError, OSError) as exc:
@@ -191,7 +191,11 @@ def run_transcription(
 
         logger.info(f"✅ Transkript tamamlandı. Dil: {info.language}, {info.language_probability:.2f}")
 
+        logger.success(f"🎉 İlk analiz başarılı, segmentler ayrıştırılıyor...")
+
         segment_list = []
+        total_seg_count = 0
+        
         for seg in segments:
             _check_cancelled()
             words = []
@@ -217,6 +221,12 @@ def run_transcription(
                 "speaker": "Unknown",
                 "words": words,
             })
+            
+            # Dinamik UI İlerleme Bildirimi (34% ile 40% arasında sanal ilerleme)
+            total_seg_count += 1
+            if total_seg_count % 5 == 0:
+                fake_prog = min(40, 33 + (total_seg_count // 5))
+                _status(f"Kelimeler işleniyor ({total_seg_count} cümle tamamlandı)...", fake_prog)
 
         logger.success(f"✅ {len(segment_list)} segment işlendi.")
 
