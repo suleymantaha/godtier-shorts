@@ -9,6 +9,8 @@ import tempfile
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
+from backend.core.external_tools import resolve_tool
+
 
 Probe = Callable[[], tuple[bool, str]]
 NVENC_SMOKE_DIMENSIONS = "256x256"
@@ -81,7 +83,8 @@ def validate_accelerator_support_configuration() -> None:
 
 def _run_cli_check(name: str, cmd: list[str], *, required: bool) -> SystemCheckResult:
     binary = cmd[0]
-    path = shutil.which(binary)
+    resolved = resolve_tool(binary)
+    path = resolved if os.path.isabs(resolved) and os.path.isfile(resolved) else shutil.which(resolved)
     if path is None:
         return SystemCheckResult(
             name=name,
@@ -90,9 +93,10 @@ def _run_cli_check(name: str, cmd: list[str], *, required: bool) -> SystemCheckR
             detail=f"binary bulunamadi: {binary}",
         )
 
+    resolved_cmd = [path, *cmd[1:]]
     try:
         completed = subprocess.run(
-            cmd,
+            resolved_cmd,
             check=True,
             capture_output=True,
             text=True,
@@ -130,7 +134,8 @@ def _probe_torch_cuda() -> tuple[bool, str]:
 
 
 def _probe_ffmpeg_nvenc() -> tuple[bool, str]:
-    ffmpeg_path = shutil.which("ffmpeg")
+    resolved = resolve_tool("ffmpeg")
+    ffmpeg_path = resolved if os.path.isabs(resolved) and os.path.isfile(resolved) else shutil.which(resolved)
     if ffmpeg_path is None:
         return False, "binary bulunamadi: ffmpeg"
 

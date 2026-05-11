@@ -12,6 +12,7 @@ import numpy as np
 from loguru import logger
 
 from backend.config import MASTER_VIDEO, OUTPUTS_DIR, ProjectPaths
+from backend.core.external_tools import ffprobe as resolve_ffprobe
 from backend.core.render_contracts import ensure_valid_requested_layout
 from backend.services.ownership import build_owner_scoped_project_id
 from backend.services.subtitle_renderer import SubtitleRenderer
@@ -173,7 +174,7 @@ def resolve_subtitle_render_plan(
 def probe_video_canvas(video_path: str) -> tuple[int, int]:
     """Probe a video stream's first video width and height using ffprobe."""
     cmd = [
-        "ffprobe",
+        resolve_ffprobe(),
         "-v",
         "error",
         "-select_streams",

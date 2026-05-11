@@ -25,6 +25,7 @@ from backend.api.websocket import manager, thread_safe_broadcast
 from backend.api.routes.clips import invalidate_clips_cache
 from backend.api.security import AuthContext, require_policy
 from backend.core.command_runner import CommandRunner
+from backend.core.external_tools import ytdlp as resolve_ytdlp
 from backend.core.render_contracts import resolve_duration_range
 from backend.core.orchestrator import GodTierShortsCreator
 from backend.core.exceptions import JobExecutionError, NotFoundError, RenderReviewRequiredError
@@ -265,7 +266,7 @@ async def _inspect_pipeline_cache_state(subject: str, request: JobRequest) -> di
     if not video_id:
         command_runner = CommandRunner(threading.Event())
         rc, stdout, stderr = await command_runner.run_async(
-            ["yt-dlp", "--get-id", request.youtube_url],
+            [resolve_ytdlp(), "--get-id", request.youtube_url],
             timeout=30,
             activity_timeout=10,
             error_message="Video ID alma işlemi timeout oldu",

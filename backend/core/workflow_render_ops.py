@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 
+from typing import TYPE_CHECKING
 from loguru import logger
 
 from backend.config import TEMP_DIR
@@ -24,6 +25,32 @@ from backend.core.workflow_artifacts import (
     resolve_layout_safety_mode,
 )
 from backend.core.workflow_common import TempArtifactManager, build_hook_slug, run_blocking
+from backend.core.subtitle_timing import snap_segment_boundaries
+
+if TYPE_CHECKING:
+    from backend.core.workflow_runtime import SubtitleRenderPlan
+
+
+def _should_attempt_stabilize_center(tracking_quality: dict[str, object] | None) -> bool:
+    if not isinstance(tracking_quality, dict):
+        return False
+    status = str(tracking_quality.get("status") or "")
+    if status in {"fallback", "degraded"}:
+        return True
+    if bool(tracking_quality.get("listener_lock_suspected")):
+        return True
+    try:
+        startup_settle_ms = float(tracking_quality.get("startup_settle_ms", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        startup_settle_ms = 0.0
+    if startup_settle_ms >= 400.0:
+        return True
+    identity = tracking_quality.get("identity_confidence")
+    try:
+        identity_value = float(identity) if identity is not None else 1.0
+    except (TypeError, ValueError):
+        identity_value = 1.0
+    return identity_value < 0.72
 
 
 def apply_opening_validation(
@@ -49,6 +76,38 @@ def apply_opening_validation(
         suggested_start = start_t
     opening_report["suggested_start_time"] = suggested_start
     return suggested_start, opening_report
+
+
+def resolve_segment_window_for_render(
+    *,
+    video_processor,
+    transcript_source: list,
+    source_video: str,
+    start_t: float,
+    end_t: float,
+    requested_layout: str,
+    cut_as_short: bool,
+    manual_center_x: float | None,
+):
+    """Shared segment-window logic for pipeline/batch/manual parity.
+
+    Applies transcript boundary snapping and (when cut_as_short) opening-shot validation.
+    Returns: (segment_start, segment_end, snap_report, render_plan, opening_report)
+    """
+    from backend.core.workflow_runtime import resolve_subtitle_render_plan
+
+    return _resolve_segment_window(
+        video_processor=video_processor,
+        transcript_source=transcript_source,
+        source_video=source_video,
+        start_t=start_t,
+        end_t=end_t,
+        requested_layout=requested_layout,
+        cut_as_short=cut_as_short,
+        manual_center_x=manual_center_x,
+        snap_segment_boundaries=snap_segment_boundaries,
+        resolve_subtitle_render_plan=resolve_subtitle_render_plan,
+    )
 
 
 async def render_pipeline_segments(
@@ -655,7 +714,7 @@ def _resolve_segment_window(
     manual_center_x: float | None,
     snap_segment_boundaries,
     resolve_subtitle_render_plan,
-) -> tuple[float, float, dict[str, object], object, dict[str, object]]:
+) -> tuple[float, float, dict[str, object], "SubtitleRenderPlan", dict[str, object]]:
     segment_start, segment_end, snap_report = snap_segment_boundaries(
         transcript_source,
         start_t,
@@ -839,6 +898,72 @@ async def _render_with_optional_single_fallback(
         manual_center_x=manual_center_x,
     )
 
+    # Enforce politikası: single-layout'ta takip "degraded" ise tek seferlik stabilize re-render dene.
+    if (
+        allow_single_fallback
+        and layout_safety_mode == "enforce"
+        and cut_as_short
+        and manual_center_x is None
+        and str(getattr(render_plan, "resolved_layout", "single") or "single") == "single"
+        and _should_attempt_stabilize_center(_as_dict(render_payload.get("tracking_quality")))
+    ):
+        try:
+            estimated = ctx.video_processor.estimate_manual_center_x(
+                input_video=master_video,
+                start_time=segment_start,
+                end_time=segment_end,
+            )
+        except Exception:
+            estimated = None
+        if isinstance(estimated, (int, float)) and 0.0 < float(estimated) < 1.0:
+            cleanup_render_bundle(quarantine_output)
+            stabilized_center_x = float(estimated)
+            render_plan = resolve_subtitle_render_plan(
+                video_processor=ctx.video_processor,
+                source_video=master_video,
+                start_t=segment_start,
+                end_t=segment_end,
+                requested_layout="single",
+                cut_as_short=cut_as_short,
+                manual_center_x=stabilized_center_x,
+            )
+            subtitle_engine = _create_subtitle_renderer_if_needed(
+                create_subtitle_renderer=create_subtitle_renderer,
+                style_name=style_name,
+                animation_type=animation_type,
+                render_plan=render_plan,
+                skip_subtitles=skip_subtitles,
+            )
+            _generate_ass_file_if_needed(
+                subtitle_engine=subtitle_engine,
+                shifted_json=shifted_json,
+                ass_file=ass_file,
+            )
+            render_payload = await _run_render_pass(
+                ctx=ctx,
+                master_video=master_video,
+                segment_start=segment_start,
+                segment_end=segment_end,
+                temp_cropped=temp_cropped,
+                quarantine_output=quarantine_output,
+                ass_file=ass_file,
+                subtitle_engine=subtitle_engine,
+                render_plan=render_plan,
+                opening_report=opening_report,
+                cut_as_short=cut_as_short,
+                require_audio=require_audio,
+                manual_center_x=stabilized_center_x,
+            )
+            safety_metadata = assess_layout_safety(
+                render_plan=render_plan,
+                requested_layout=requested_layout,
+                tracking_quality=_as_dict(render_payload.get("tracking_quality")),
+                manual_center_x=stabilized_center_x,
+                layout_auto_fix_reason_override="tracking_stabilize_manual_center",
+                layout_auto_fix_applied_override=True,
+                auto_repair_attempted=True,
+            )
+
     should_rerender = (
         allow_single_fallback
         and layout_safety_mode == "enforce"
@@ -892,6 +1017,7 @@ async def _render_with_optional_single_fallback(
         manual_center_x=manual_center_x,
         layout_auto_fix_reason_override="split_runtime_degraded",
         layout_auto_fix_applied_override=True,
+        auto_repair_attempted=True,
     )
     return render_plan, render_payload, safety_metadata
 
@@ -1022,6 +1148,11 @@ def _build_clip_metadata(
         "layout_auto_fix_applied": safety_metadata["layout_auto_fix_applied"],
         "layout_auto_fix_reason": safety_metadata["layout_auto_fix_reason"],
         "layout_safety_status": safety_metadata["layout_safety_status"],
+        "render_publication_status": safety_metadata["render_publication_status"],
+        "quality_gate_reasons": safety_metadata["quality_gate_reasons"],
+        "auto_repair_recommended": safety_metadata["auto_repair_recommended"],
+        "review_recommended": safety_metadata["review_recommended"],
+        "auto_repair_attempted": safety_metadata["auto_repair_attempted"],
         "layout_safety_mode": safety_metadata["layout_safety_mode"],
         "layout_safety_contract_version": safety_metadata[
             "layout_safety_contract_version"
@@ -1035,6 +1166,9 @@ def _build_clip_metadata(
         "opening_visibility_delay_ms": opening_report.get(
             "opening_visibility_delay_ms"
         ),
+        "safe_area_profile": getattr(render_plan, "safe_area_profile", "default"),
+        "lower_third_collision_detected": bool(getattr(render_plan, "lower_third_collision_detected", False)),
+        "lower_third_band_height_ratio": float(getattr(render_plan, "lower_third_band_height_ratio", 0.0) or 0.0),
         "style_name": style_name,
         "animation_type": animation_type,
         "resolved_animation_type": resolved_animation_type,
@@ -1082,8 +1216,11 @@ def _should_hold_for_review(
 ) -> bool:
     return (
         layout_safety_mode == "enforce"
-        and safety_metadata["layout_safety_status"]
-        not in SAFE_PUBLIC_LAYOUT_STATUSES
+        and (
+            str(safety_metadata.get("render_publication_status") or "") == "review_required"
+            or safety_metadata["layout_safety_status"]
+            not in SAFE_PUBLIC_LAYOUT_STATUSES
+        )
     )
 
 
@@ -1135,6 +1272,7 @@ def _as_dict(value):
 
 __all__ = [
     "apply_opening_validation",
+    "resolve_segment_window_for_render",
     "render_pipeline_segments",
     "run_cut_points_workflow",
     "render_batch_segments",

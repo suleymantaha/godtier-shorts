@@ -7,13 +7,69 @@ faster-whisper ile ses transkripsiyon servisi.
 import gc
 import json
 import os
+import sys
+import sysconfig
 import threading
 from pathlib import Path
 
+
+def _register_nvidia_dll_directories() -> list[str]:
+    """Windows Python 3.8+ icin nvidia-* pip paketlerinin DLL klasorlerini DLL search path'e ekler.
+
+    CTranslate2 GPU build'i cublas64_12.dll, cudnn64_9.dll vb. icin bu yollara ihtiyac duyar;
+    aksi halde 'Library cublas64_12.dll is not found or cannot be loaded' hatasi alinir.
+    """
+    if sys.platform != "win32":
+        return []
+
+    site_packages = Path(sysconfig.get_paths().get("purelib", ""))
+    if not site_packages.is_dir():
+        site_packages = Path(sysconfig.get_paths().get("platlib", ""))
+    if not site_packages.is_dir():
+        for entry in sys.path:
+            candidate = Path(entry)
+            if candidate.name == "site-packages" and candidate.is_dir():
+                site_packages = candidate
+                break
+
+    nvidia_root = site_packages / "nvidia"
+    if not nvidia_root.is_dir():
+        return []
+
+    registered: list[str] = []
+    path_entries: list[str] = []
+    for sub in nvidia_root.iterdir():
+        bin_dir = sub / "bin"
+        if not bin_dir.is_dir():
+            continue
+        try:
+            os.add_dll_directory(str(bin_dir))
+            registered.append(str(bin_dir))
+            path_entries.append(str(bin_dir))
+        except (OSError, FileNotFoundError):
+            continue
+
+    if path_entries:
+        existing_path = os.environ.get("PATH", "")
+        normalized_existing = existing_path.lower().split(os.pathsep)
+        prefix_to_add = [
+            entry for entry in path_entries if entry.lower() not in normalized_existing
+        ]
+        if prefix_to_add:
+            os.environ["PATH"] = os.pathsep.join([*prefix_to_add, existing_path]) if existing_path else os.pathsep.join(prefix_to_add)
+    return registered
+
+
+_REGISTERED_NVIDIA_DLL_DIRS = _register_nvidia_dll_directories()
+
+import ctranslate2
 import torch
 import faster_whisper
 from dotenv import load_dotenv
 from loguru import logger
+
+if _REGISTERED_NVIDIA_DLL_DIRS:
+    logger.debug("nvidia DLL search dirs: {}", _REGISTERED_NVIDIA_DLL_DIRS)
 
 from backend.config import LOGS_DIR, MODELS_DIR, VIDEO_METADATA
 from backend.core.exceptions import FileOperationError, TranscriptionError
@@ -25,8 +81,52 @@ load_dotenv()
 # -------------------------------------------------------------------------
 
 HF_TOKEN     = os.environ.get("HF_TOKEN", "")
-DEVICE       = "cuda" if torch.cuda.is_available() else "cpu"
 LOCAL_MODEL_REQUIRED_FILES = ("model.bin", "config.json", "tokenizer.json", "vocabulary.json")
+
+
+def _detect_whisper_device() -> str:
+    """faster-whisper icin cihaz secimi: torch CPU-only build olsa bile CTranslate2 GPU kullanabilir."""
+    forced = os.environ.get("WHISPER_DEVICE", "").strip().lower()
+    if forced in {"cpu", "cuda"}:
+        return forced
+    try:
+        if ctranslate2.get_cuda_device_count() > 0:
+            return "cuda"
+    except (RuntimeError, OSError) as exc:
+        logger.warning("CTranslate2 CUDA probe basarisiz: {}", exc)
+    if torch.cuda.is_available():
+        return "cuda"
+    return "cpu"
+
+
+DEVICE = _detect_whisper_device()
+
+
+def _read_int_env(name: str, default: int, *, minimum: int = 1) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value >= minimum else default
+
+
+def _read_bool_env(name: str, default: bool) -> bool:
+    raw = os.getenv(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "on"}
+
+
+WHISPER_BEAM_SIZE   = _read_int_env("WHISPER_BEAM_SIZE", 1)
+WHISPER_VAD_FILTER  = _read_bool_env("WHISPER_VAD_FILTER", True)
+WHISPER_VAD_MIN_SILENCE_MS = _read_int_env("WHISPER_VAD_MIN_SILENCE_MS", 500, minimum=0)
+WHISPER_CPU_THREADS = _read_int_env("WHISPER_CPU_THREADS", 8, minimum=0)
+WHISPER_NUM_WORKERS = _read_int_env("WHISPER_NUM_WORKERS", 1, minimum=1)
+WHISPER_COMPUTE_TYPE_GPU = os.environ.get("WHISPER_COMPUTE_TYPE_GPU", "float16").strip() or "float16"
+WHISPER_COMPUTE_TYPE_CPU = os.environ.get("WHISPER_COMPUTE_TYPE_CPU", "int8").strip() or "int8"
 
 # Model cache: (model_size, device) -> WhisperModel (tekrarlı transkripsiyonlarda bellek/disk tasarrufu)
 _model_cache: dict[tuple[str, str], faster_whisper.WhisperModel] = {}
@@ -107,11 +207,14 @@ def _load_whisper_model(model_size: str) -> faster_whisper.WhisperModel:
                 "📥 faster-whisper modeli deneniyor: "
                 f"model_id={model_id}, download_root={download_root or 'varsayılan-cache'}"
             )
+            compute_type = WHISPER_COMPUTE_TYPE_CPU if DEVICE == "cpu" else WHISPER_COMPUTE_TYPE_GPU
             model = faster_whisper.WhisperModel(
                 model_id,
                 device=DEVICE,
-                compute_type="int8" if DEVICE == "cpu" else "float16",
+                compute_type=compute_type,
                 download_root=download_root,
+                cpu_threads=WHISPER_CPU_THREADS,
+                num_workers=WHISPER_NUM_WORKERS,
             )
             logger.success(f"✅ Model yüklendi: {model_id}")
             _model_cache[cache_key] = model
@@ -181,10 +284,20 @@ def run_transcription(
             segments, info = model.transcribe(
                 audio_file,
                 language=language,
-                beam_size=5,
+                beam_size=WHISPER_BEAM_SIZE,
                 word_timestamps=True,
-                vad_filter=False,  # WINDOWS DEADLOCK FIX
-                vad_parameters=dict(min_silence_duration_ms=500)
+                vad_filter=WHISPER_VAD_FILTER,
+                vad_parameters=dict(min_silence_duration_ms=WHISPER_VAD_MIN_SILENCE_MS),
+            )
+            logger.info(
+                "🎛️ faster-whisper params: beam_size={}, vad_filter={}, vad_min_silence_ms={}, "
+                "compute_type={}, cpu_threads={}, num_workers={}",
+                WHISPER_BEAM_SIZE,
+                WHISPER_VAD_FILTER,
+                WHISPER_VAD_MIN_SILENCE_MS,
+                WHISPER_COMPUTE_TYPE_CPU if DEVICE == "cpu" else WHISPER_COMPUTE_TYPE_GPU,
+                WHISPER_CPU_THREADS,
+                WHISPER_NUM_WORKERS,
             )
         except (RuntimeError, ValueError, OSError) as exc:
             raise TranscriptionError("Ses transkripsiyonu başarısız oldu", details=str(exc)) from exc

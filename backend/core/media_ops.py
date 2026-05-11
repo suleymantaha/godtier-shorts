@@ -16,6 +16,7 @@ from loguru import logger
 
 from backend.config import MASTER_AUDIO, MASTER_VIDEO, ProjectPaths
 from backend.core.command_runner import CommandRunner
+from backend.core.external_tools import ffmpeg as resolve_ffmpeg, ytdlp as resolve_ytdlp
 from backend.core.subtitle_timing import (
     canonicalize_transcript_segments,
     collect_valid_words,
@@ -163,7 +164,7 @@ def build_ytdlp_progress_callback(update_status: StatusUpdater) -> Callable[[str
 
     def _handle_output(stream_name: str, line: str) -> None:
         nonlocal last_emitted_at, last_emitted_percent
-        if stream_name != "stderr":
+        if stream_name not in ("stdout", "stderr"):
             return
 
         parsed = parse_ytdlp_progress_line(line)
@@ -216,7 +217,7 @@ async def download_full_video_async(
     progress_callback = build_ytdlp_progress_callback(update_status)
     rc, _stdout, stderr = await command_runner.run_async(
         [
-            "yt-dlp",
+            resolve_ytdlp(),
             "--newline",
             "--progress-template",
             "download:GTS_DL|%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.total_bytes_estimate)s|%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress.status)s",
@@ -259,7 +260,7 @@ async def extract_audio_async(
     update_status("Video içinden ses ayrıştırılıyor...", 20)
     arc, _astout, astderr = await command_runner.run_async(
         [
-            "ffmpeg",
+            resolve_ffmpeg(),
             "-y",
             "-i",
             video_file,

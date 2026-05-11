@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urlparse
 from loguru import logger
 
 from backend.config import ProjectPaths
+from backend.core.external_tools import ytdlp as resolve_ytdlp
 from backend.core.workflow_common import run_blocking, write_json_atomic
 
 YOUTUBE_VIDEO_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]{11}$")
@@ -64,7 +65,7 @@ async def fetch_youtube_video_id(ctx, youtube_url: str) -> str:
         return parsed_video_id
 
     rc, stdout, stderr = await ctx._run_command_with_cancel_async(
-        ["yt-dlp", "--get-id", youtube_url],
+        [resolve_ytdlp(), "--get-id", youtube_url],
         timeout=120,
         error_message="Video ID alma işlemi timeout oldu",
     )

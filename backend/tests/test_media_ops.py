@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import threading
 from pathlib import Path
 
@@ -13,6 +14,10 @@ from backend.core.media_ops import (
     parse_ytdlp_progress_line,
     cut_and_burn_clip,
 )
+
+
+def _tool_basename(executable: str) -> str:
+    return os.path.splitext(os.path.basename(executable))[0]
 
 
 class _DummyVideoProcessor:
@@ -260,7 +265,7 @@ def test_download_full_video_async_streams_yt_dlp_progress_and_uses_activity_tim
                     "activity_timeout": activity_timeout,
                 }
             )
-            if cmd and cmd[0] == "yt-dlp":
+            if cmd and _tool_basename(cmd[0]) == "yt-dlp":
                 if on_output is not None:
                     on_output("stderr", "GTS_DL|1048576|2097152|NA| 50.0%| 1.00MiB/s| 00:03|downloading")
                 master_video.write_bytes(b"video")
@@ -302,6 +307,7 @@ def test_download_full_video_async_streams_yt_dlp_progress_and_uses_activity_tim
         },
     )
     assert statuses[2] == ("Video içinden ses ayrıştırılıyor...", 20, None)
-    assert runner.calls[0]["cmd"][:3] == ["yt-dlp", "--newline", "--progress-template"]
+    assert _tool_basename(runner.calls[0]["cmd"][0]) == "yt-dlp"
+    assert runner.calls[0]["cmd"][1:3] == ["--newline", "--progress-template"]
     assert runner.calls[0]["timeout"] == DOWNLOAD_TOTAL_TIMEOUT_SECONDS
     assert runner.calls[0]["activity_timeout"] == DOWNLOAD_ACTIVITY_TIMEOUT_SECONDS

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "clerk": {
+      "url": "https://mcp.clerk.dev/mcp"
+    },
+    "playwright": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@playwright/mcp@latest"]
+    }
+  }
+}

@@ -15,6 +15,11 @@ from backend.core.workflow_common import move_file_atomic, write_json_atomic
 LAYOUT_SAFETY_CONTRACT_VERSION = 1
 VALID_LAYOUT_SAFETY_MODES = {"off", "shadow", "enforce"}
 SAFE_PUBLIC_LAYOUT_STATUSES = {"safe", "degraded"}
+PUBLICATION_STATUS_PUBLISH_READY = "publish_ready"
+PUBLICATION_STATUS_AUTO_REPAIR = "auto_repair"
+PUBLICATION_STATUS_REVIEW_REQUIRED = "review_required"
+AUTO_REPAIR_STARTUP_SETTLE_MS = 400.0
+LOW_SPEAKER_ACTIVITY_CONFIDENCE = 0.35
 REVIEW_SUGGESTED_ACTIONS = ["force_single", "force_split", "manual_center"]
 
 
@@ -120,6 +125,7 @@ def assess_layout_safety(
     manual_center_x: float | None,
     layout_auto_fix_reason_override: str | None = None,
     layout_auto_fix_applied_override: bool | None = None,
+    auto_repair_attempted: bool = False,
 ) -> dict[str, object]:
     tracking = dict(tracking_quality or {})
     layout_safety_mode = _resolve_render_plan_value(
@@ -139,11 +145,26 @@ def assess_layout_safety(
         layout_auto_fix_reason=layout_auto_fix_reason,
         layout_auto_fix_applied_override=layout_auto_fix_applied_override,
     )
+    quality_gate_reasons = _resolve_quality_gate_reasons(
+        render_plan=render_plan,
+        requested_layout=requested_layout,
+        tracking=tracking,
+        layout_auto_fix_reason=layout_auto_fix_reason,
+    )
+    render_publication_status = _resolve_render_publication_status(
+        layout_safety_status=layout_safety_status,
+        quality_gate_reasons=quality_gate_reasons,
+    )
 
     return {
         "layout_auto_fix_applied": bool(layout_auto_fix_applied),
         "layout_auto_fix_reason": layout_auto_fix_reason,
         "layout_safety_status": layout_safety_status,
+        "render_publication_status": render_publication_status,
+        "quality_gate_reasons": quality_gate_reasons,
+        "auto_repair_recommended": render_publication_status == PUBLICATION_STATUS_AUTO_REPAIR,
+        "review_recommended": render_publication_status == PUBLICATION_STATUS_REVIEW_REQUIRED,
+        "auto_repair_attempted": bool(auto_repair_attempted),
         "layout_safety_mode": layout_safety_mode,
         "layout_safety_contract_version": int(
             getattr(
@@ -418,6 +439,13 @@ def _resolve_layout_safety_status(
         tracking.get("face_edge_violation_frames", 0) or 0
     )
     tracking_status = str(tracking.get("status", "good") or "good")
+    listener_lock_suspected = bool(tracking.get("listener_lock_suspected"))
+    startup_settle_ms = _safe_float(tracking.get("startup_settle_ms"), default=0.0)
+
+    # Enforce politikasında "fallback" takip, kullanıcıya açık yayın için güvenli değildir.
+    # Bu sinyali layout_safety_status'a yansıtarak review_required akışını tetikleriz.
+    if tracking_status == "fallback":
+        return "unsafe"
 
     if layout_safety_status != "unsafe":
         if panel_swap_count > 0 or unsafe_split_frames > 0:
@@ -425,11 +453,81 @@ def _resolve_layout_safety_status(
         elif (
             tracking_status in {"degraded", "fallback"}
             or face_edge_violation_frames > 0
+            or listener_lock_suspected
+            or startup_settle_ms >= AUTO_REPAIR_STARTUP_SETTLE_MS
         ):
             layout_safety_status = "degraded"
         else:
             layout_safety_status = "safe"
     return layout_safety_status
+
+
+def _resolve_quality_gate_reasons(
+    *,
+    render_plan,
+    requested_layout: str,
+    tracking: dict[str, object],
+    layout_auto_fix_reason: str | None,
+) -> list[str]:
+    reasons: list[str] = []
+    tracking_status = str(tracking.get("status", "good") or "good")
+    if tracking_status == "fallback":
+        reasons.append("tracking_fallback")
+    elif tracking_status == "degraded":
+        reasons.append("tracking_degraded")
+
+    if bool(tracking.get("listener_lock_suspected")):
+        reasons.append("listener_lock_suspected")
+
+    startup_settle_ms = _safe_float(tracking.get("startup_settle_ms"), default=0.0)
+    if startup_settle_ms >= AUTO_REPAIR_STARTUP_SETTLE_MS:
+        reasons.append("startup_settle_slow")
+
+    identity_confidence = _safe_float(tracking.get("identity_confidence"), default=1.0)
+    if identity_confidence < 0.72:
+        reasons.append("identity_unstable")
+
+    speaker_activity = tracking.get("speaker_activity_confidence")
+    if speaker_activity is not None and _safe_float(speaker_activity, default=1.0) < LOW_SPEAKER_ACTIVITY_CONFIDENCE:
+        reasons.append("speaker_activity_weak")
+
+    if (
+        requested_layout in {"auto", "split"}
+        and str(getattr(render_plan, "resolved_layout", "single") or "single") == "single"
+        and layout_auto_fix_reason in {"split_face_safety", "split_identity_unstable"}
+    ):
+        reasons.append("split_layout_fallback")
+
+    scene_class = str(getattr(render_plan, "scene_class", "") or "")
+    speaker_count_peak = int(getattr(render_plan, "speaker_count_peak", 1) or 1)
+    if scene_class == "dual_overlap_risky" and speaker_count_peak >= 3:
+        reasons.append("multi_person_overlap_risky")
+
+    panel_swap_count = int(tracking.get("panel_swap_count", 0) or 0)
+    unsafe_split_frames = int(tracking.get("unsafe_split_frames", 0) or 0)
+    if panel_swap_count > 0 or unsafe_split_frames > 0:
+        reasons.append("split_runtime_unsafe")
+
+    return list(dict.fromkeys(reasons))
+
+
+def _resolve_render_publication_status(
+    *,
+    layout_safety_status: str,
+    quality_gate_reasons: list[str],
+) -> str:
+    if layout_safety_status == "unsafe" or "tracking_fallback" in quality_gate_reasons or "split_runtime_unsafe" in quality_gate_reasons:
+        return PUBLICATION_STATUS_REVIEW_REQUIRED
+    if quality_gate_reasons:
+        return PUBLICATION_STATUS_AUTO_REPAIR
+    return PUBLICATION_STATUS_PUBLISH_READY
+
+
+def _safe_float(value: object, *, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _resolve_layout_auto_fix_reason(

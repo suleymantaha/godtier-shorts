@@ -68,6 +68,57 @@ def test_resolve_layout_for_segment_uses_auto_split_when_clip_is_stable(monkeypa
     assert reason is None
 
 
+def test_resolve_layout_for_segment_allows_stable_dominant_pair_with_extra_person(monkeypatch) -> None:
+    processor = VideoProcessor(device="cpu")
+    frames = [np.zeros((1080, 1920, 3), dtype=np.uint8) for _ in range(16)]
+    frame_iter = iter(frames)
+    candidates = [
+        DetectionCandidate(
+            track_id=1,
+            box=(160.0, 100.0, 600.0, 960.0),
+            center_x=380.0,
+            area=378400.0,
+            confidence=0.94,
+            aspect_ratio=0.51,
+            visibility_score=0.9,
+        ),
+        DetectionCandidate(
+            track_id=2,
+            box=(1180.0, 120.0, 1640.0, 980.0),
+            center_x=1410.0,
+            area=395600.0,
+            confidence=0.93,
+            aspect_ratio=0.53,
+            visibility_score=0.89,
+        ),
+        DetectionCandidate(
+            track_id=3,
+            box=(860.0, 280.0, 980.0, 640.0),
+            center_x=920.0,
+            area=43200.0,
+            confidence=0.61,
+            aspect_ratio=0.33,
+            visibility_score=0.5,
+        ),
+    ]
+
+    monkeypatch.setattr(processor, "_ensure_model_loaded", lambda: None)
+    monkeypatch.setattr(processor, "_extract_probe_frame", lambda _path, _time: next(frame_iter, None))
+    monkeypatch.setattr(processor, "_detect_person_centers", lambda _frame: [380.0, 920.0, 1410.0])
+    monkeypatch.setattr(processor, "_predict_people", lambda _frame: list(candidates))
+
+    report = processor.resolve_layout_for_segment(
+        input_video="clip.mp4",
+        start_time=0.0,
+        end_time=24.0,
+        requested_layout="auto",
+    )
+
+    assert report.resolved_layout == "split"
+    assert report.scene_class == "multi_person_dominant_pair"
+    assert report.speaker_count_peak == 3
+
+
 def test_video_processor_requires_cuda_when_flag_enabled(monkeypatch) -> None:
     processor = VideoProcessor(device="cuda")
 
@@ -217,6 +268,70 @@ def test_stabilize_tracking_center_uses_nearly_static_split_when_tracker_is_weak
     assert fourth[1] is False
 
 
+def test_active_speaker_switch_confirms_after_two_consistent_frames() -> None:
+    processor = VideoProcessor(device="cpu")
+    state = TrackSlotState("primary", 500.0, confirmed_track_id=1)
+    diagnostics = TrackingDiagnostics(mode="tracked", fps=30.0, layout="single")
+    current = DetectionCandidate(
+        track_id=1,
+        box=(300.0, 120.0, 700.0, 900.0),
+        center_x=500.0,
+        area=312000.0,
+        confidence=0.92,
+        aspect_ratio=0.51,
+        visibility_score=0.9,
+        motion_score=0.08,
+        mouth_motion_score=0.08,
+    )
+    challenger = DetectionCandidate(
+        track_id=2,
+        box=(1120.0, 120.0, 1520.0, 900.0),
+        center_x=1320.0,
+        area=312000.0,
+        confidence=0.91,
+        aspect_ratio=0.51,
+        visibility_score=0.88,
+        motion_score=0.58,
+        mouth_motion_score=0.58,
+    )
+
+    first = processor._select_active_speaker_switch_candidate(
+        state=state,
+        same_id_candidate=current,
+        candidates=[current, challenger],
+        diagnostics=diagnostics,
+        layout="single",
+    )
+    second = processor._select_active_speaker_switch_candidate(
+        state=state,
+        same_id_candidate=current,
+        candidates=[current, challenger],
+        diagnostics=diagnostics,
+        layout="single",
+    )
+
+    assert first is None
+    assert second == challenger
+
+
+def test_active_speaker_catchup_moves_fast_enough_for_visible_switch() -> None:
+    processor = VideoProcessor(device="cpu")
+    state = TrackSlotState("primary", 500.0)
+    state.active_speaker_catchup_frames_remaining = 12
+
+    next_center, movement_suppressed, _deadzone_hit, _sustained_frames = processor._stabilize_tracking_center(
+        state=state,
+        target_cx=900.0,
+        frame_width=1920,
+        layout="single",
+        mode="tracked",
+        tracker_weak=False,
+    )
+
+    assert movement_suppressed is False
+    assert next_center - 500.0 >= 95.0
+
+
 def test_tracking_diagnostics_merge_reports_split_jitter_metrics() -> None:
     primary = TrackingDiagnostics(mode="tracked", fps=30.0, layout="split")
     secondary = TrackingDiagnostics(mode="tracked", fps=30.0, layout="split")
@@ -290,3 +405,56 @@ def test_tracking_stride_uses_sampling_on_cpu_or_predict_fallback() -> None:
     assert processor._tracking_stride() == 3
     processor._tracker_available = True
     assert processor._tracking_stride() == 1
+
+
+def test_single_tracking_switches_from_listener_to_confirmed_active_speaker() -> None:
+    processor = VideoProcessor(device="cpu")
+    state = TrackSlotState(
+        "primary",
+        1440.0,
+        confirmed_track_id=1,
+        last_confirmed_box=(960.0, 220.0, 1915.0, 915.0),
+        last_confirmed_center=1440.0,
+        last_confirmed_area=663725.0,
+        last_confirmed_aspect_ratio=955.0 / 695.0,
+        last_visibility_score=0.61,
+    )
+    diagnostics = TrackingDiagnostics(mode="tracked", fps=30.0, layout="single")
+    listener = DetectionCandidate(
+        track_id=1,
+        box=(960.0, 220.0, 1915.0, 915.0),
+        center_x=1440.0,
+        area=663725.0,
+        confidence=0.96,
+        aspect_ratio=955.0 / 695.0,
+        visibility_score=0.61,
+        mouth_motion_score=0.02,
+    )
+    speaker = DetectionCandidate(
+        track_id=2,
+        box=(70.0, 205.0, 955.0, 915.0),
+        center_x=512.5,
+        area=628350.0,
+        confidence=0.94,
+        aspect_ratio=885.0 / 710.0,
+        visibility_score=0.62,
+        mouth_motion_score=0.92,
+    )
+
+    for frame_index in range(3):
+        processor._process_tracking_slot(
+            state=state,
+            candidates=[listener, speaker],
+            frame_width=1920,
+            frame_height=1080,
+            panel_center=960.0,
+            diagnostics=diagnostics,
+            layout="single",
+            frame_index=frame_index,
+            cut_confidence=0.0,
+            crop_width=608,
+        )
+
+    assert state.confirmed_track_id == 2
+    assert state.current_cx < 1400.0
+    assert diagnostics.active_track_id_switches == 1

@@ -17,5 +17,11 @@
     "[python]": {
         "editor.defaultFormatter": "ms-python.python"
     },
-    "chatgpt.openOnStartup": true
+    "chatgpt.openOnStartup": true,
+    "cursorpyright.analysis.autoImportCompletions": true,
+    "cursorpyright.analysis.extraPaths": [
+        "/home/arch/godtier-shorts",
+        "/home/arch/miniconda3/envs/godtier-shorts/lib/python3.10/site-packages"
+    ],
+    "cursorpyright.analysis.typeCheckingMode": "basic"
 }

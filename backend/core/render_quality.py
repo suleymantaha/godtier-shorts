@@ -8,10 +8,12 @@ import subprocess
 from functools import lru_cache
 from pathlib import Path
 
+from backend.core.external_tools import ffmpeg as resolve_ffmpeg, ffprobe as resolve_ffprobe
+
 
 def probe_media(path: str) -> dict:
     cmd = [
-        "ffprobe",
+        resolve_ffprobe(),
         "-v",
         "error",
         "-print_format",
@@ -70,7 +72,7 @@ def build_debug_environment(*, model_identifier: str, model_path: str) -> dict:
     import ultralytics
 
     return {
-        "ffmpeg_version": _probe_tool_version(["ffmpeg", "-version"]),
+        "ffmpeg_version": _probe_tool_version([resolve_ffmpeg(), "-version"]),
         "ultralytics_version": getattr(ultralytics, "__version__", "unknown"),
         "torch_version": getattr(torch, "__version__", "unknown"),
         "cuda_runtime": torch.version.cuda if torch.cuda.is_available() else None,

@@ -41,6 +41,7 @@ from backend.api.routes.clips import (
     prepare_uploaded_project,
     resolve_project_transcript_state,
 )
+from backend.core.external_tools import ffmpeg as resolve_ffmpeg
 from backend.core.media_ops import build_shifted_transcript_segments
 from backend.core.render_contracts import resolve_duration_range
 from backend.core.orchestrator import GodTierShortsCreator
@@ -151,7 +152,7 @@ def _extract_audio_from_video(video_path: Path, audio_path: Path) -> None:
     try:
         result = subprocess.run(
             [
-                "ffmpeg",
+                resolve_ffmpeg(),
                 "-y",
                 "-i",
                 str(video_path),

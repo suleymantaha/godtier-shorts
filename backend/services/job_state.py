@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -143,10 +145,38 @@ class JobStateRepository(dict[str, JobRecord]):
                 for job_id, record in self.items()
             },
         }
-        temp_path = self._storage_path.with_suffix(f"{self._storage_path.suffix}.tmp")
+        # Windows: os.replace() fails with PermissionError if the target is briefly held open
+        # by another reader (AV indexer, editor, background process). Use a unique temp file
+        # and retry replace a few times to avoid cascading job failures during tests/runtime.
+        temp_path = self._storage_path.with_name(
+            f"{self._storage_path.name}.tmp.{os.getpid()}.{threading.get_ident()}"
+        )
         with open(temp_path, "w", encoding="utf-8") as handle:
             json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
-        temp_path.replace(self._storage_path)
+            handle.flush()
+            try:
+                os.fsync(handle.fileno())
+            except OSError:
+                # fsync is best-effort on some Windows filesystems.
+                pass
+
+        last_error: Exception | None = None
+        for attempt in range(4):
+            try:
+                os.replace(str(temp_path), str(self._storage_path))
+                last_error = None
+                break
+            except PermissionError as exc:
+                last_error = exc
+                time.sleep(0.02 * (attempt + 1))
+        if last_error is not None:
+            # Best-effort cleanup of temp file and surface a deterministic error.
+            try:
+                if temp_path.exists():
+                    temp_path.unlink()
+            except OSError:
+                pass
+            raise last_error
 
     @staticmethod
     def _serialize_record(record: dict[str, Any]) -> dict[str, Any]:

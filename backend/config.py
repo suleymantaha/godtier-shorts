@@ -146,7 +146,15 @@ VIRAL_SEGMENTS   = METADATA_DIR  / "viral_segments.json"
 # AI Model dosyaları
 # ---------------------------------------------------------------------------
 
-YOLO_MODEL_PATH = ROOT / "yolo11x.pt"
+def _env_path(name: str, default: Path) -> Path:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    path = Path(raw)
+    return path if path.is_absolute() else ROOT / path
+
+
+YOLO_MODEL_PATH = _env_path("YOLO_MODEL_PATH", ROOT / "yolo11x.pt")
 MODELS_DIR      = ROOT / "models"
 
 # ---------------------------------------------------------------------------

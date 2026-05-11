@@ -31,11 +31,11 @@ import uvicorn
 from loguru import logger
 
 # Environment değişkenlerini yükle
-from dotenv import load_dotenv
-load_dotenv()
+from backend.core.runtime_env import load_runtime_env
+load_runtime_env()
 
 from backend.api.server import create_app
-from backend.config import API_HOST, API_PORT
+from backend.config import API_HOST, API_PORT, YOLO_MODEL_PATH
 from backend.services.social.crypto import sanitize_managed_postiz_env_fallback
 
 sanitize_managed_postiz_env_fallback(logger.warning)
@@ -44,6 +44,7 @@ app = create_app()
 
 if __name__ == "__main__":
     logger.info(f"🔥 API Sunucusu başlatılıyor... {API_HOST}:{API_PORT}")
+    logger.info("🎯 Etkin YOLO modeli: {}", YOLO_MODEL_PATH)
     uvicorn.run(
         "backend.main:app",
         host=API_HOST,

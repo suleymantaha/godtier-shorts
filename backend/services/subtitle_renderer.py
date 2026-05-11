@@ -17,6 +17,7 @@ from typing import Any
 from loguru import logger
 
 from backend.config import LOGS_DIR
+from backend.core.external_tools import ffmpeg as resolve_ffmpeg
 from backend.core.render_quality import extract_media_stream_metrics, probe_media
 from backend.core.subtitle_timing import (
     DEFAULT_MAX_CHUNK_DURATION,
@@ -755,7 +756,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         ass_abs = os.path.abspath(ass_file).replace("\\", "/")
         escaped_ass_abs = self._escape_filter_path(ass_abs)
         cmd_nvenc = [
-            "ffmpeg",
+            resolve_ffmpeg(),
             "-y",
             "-loglevel",
             "error",
@@ -774,7 +775,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             output_video,
         ]
         cmd_cpu = [
-            "ffmpeg",
+            resolve_ffmpeg(),
             "-y",
             "-i",
             input_video,

@@ -224,7 +224,7 @@ Paylasimli/global kullanimda hedef model su olmalidir:
 
 Detayli operasyon standardi:
 
-- [postiz-global-oauth-standard.md](/home/arch/godtier-shorts/docs/operations/postiz-global-oauth-standard.md)
+- [postiz-global-oauth-standard.md](operations/postiz-global-oauth-standard.md)
 
 ### 4.1 Nereden alinir?
 

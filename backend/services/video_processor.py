@@ -6,6 +6,7 @@ YOLO + ffmpeg NVENC tabanli video kirpma ve dikey donusturme servisi.
 
 from __future__ import annotations
 
+import contextlib
 import gc
 import io
 import math
@@ -16,6 +17,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 import cv2
 import numpy as np
@@ -24,6 +26,7 @@ from loguru import logger
 from ultralytics import YOLO
 
 from backend.config import LOGS_DIR, TEMP_DIR, YOLO_MODEL_PATH
+from backend.core.external_tools import ffmpeg as resolve_ffmpeg
 from backend.core.render_contracts import ensure_valid_requested_layout
 from backend.core.render_quality import extract_media_stream_metrics, probe_media
 from backend.services.subtitle_styles import (
@@ -41,7 +44,7 @@ CONTROLLED_RETURN_FRAMES = 5
 SINGLE_DEADZONE_RATIO = 0.012
 SINGLE_MAX_STEP_RATIO = 0.012
 SINGLE_EMA_ALPHA = 0.22
-SINGLE_LOCK_SAFE_BAND_RATIO = 0.55
+SINGLE_LOCK_SAFE_BAND_RATIO = 0.45
 SINGLE_REFRAME_SUSTAINED_FRAMES = 3
 SPLIT_DEADZONE_RATIO = 0.02
 SPLIT_MAX_STEP_RATIO = 0.006
@@ -72,6 +75,16 @@ STARTUP_SETTLE_JUMP_THRESHOLD_PX = 4.0
 SPLIT_JITTER_DEGRADED_THRESHOLD_PX = 12.0
 STARTUP_SETTLE_DEGRADED_MS = 250.0
 
+# Konuşan kişi takip önceliği: ağız hareketi sinyalini biraz daha güçlü tutmak,
+# çoklu kişi sahnelerinde "konuşanı" seçme stabilitesini artırır.
+SPEAKER_MOTION_WEIGHT = float(os.getenv("SPEAKER_MOTION_WEIGHT", "0.18"))
+ACTIVE_SPEAKER_MIN_MOTION_SCORE = float(os.getenv("ACTIVE_SPEAKER_MIN_MOTION_SCORE", "0.42"))
+ACTIVE_SPEAKER_MOTION_MARGIN = float(os.getenv("ACTIVE_SPEAKER_MOTION_MARGIN", "0.18"))
+ACTIVE_SPEAKER_CONFIRMATION_FRAMES = max(1, int(os.getenv("ACTIVE_SPEAKER_CONFIRMATION_FRAMES", "2")))
+ACTIVE_SPEAKER_CATCHUP_FRAMES = max(1, int(os.getenv("ACTIVE_SPEAKER_CATCHUP_FRAMES", "12")))
+ACTIVE_SPEAKER_MAX_STEP_RATIO = float(os.getenv("ACTIVE_SPEAKER_MAX_STEP_RATIO", "0.055"))
+ACTIVE_SPEAKER_EMA_ALPHA = float(os.getenv("ACTIVE_SPEAKER_EMA_ALPHA", "0.60"))
+
 
 def _is_nvenc_error(stderr: str) -> bool:
     patterns = (
@@ -83,6 +96,60 @@ def _is_nvenc_error(stderr: str) -> bool:
     )
     lowered = stderr.lower()
     return any(pattern in lowered for pattern in patterns)
+
+
+def _env_flag(name: str, *, default: bool = False) -> bool:
+    raw = os.getenv(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "on"}
+
+
+@lru_cache(maxsize=1)
+def _ffmpeg_nvenc_available() -> bool:
+    if _env_flag("DISABLE_NVENC_FOR_RENDER"):
+        logger.warning("NVENC render devre disi: DISABLE_NVENC_FOR_RENDER set.")
+        return False
+
+    probe_output = TEMP_DIR / f"nvenc_probe_{os.getpid()}.mp4"
+    with contextlib.suppress(OSError):
+        probe_output.unlink()
+    cmd = [
+        resolve_ffmpeg(),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=256x256:rate=30",
+        "-frames:v",
+        "8",
+        "-c:v",
+        "h264_nvenc",
+        str(probe_output),
+    ]
+    try:
+        completed = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logger.warning("NVENC smoke probe calistirilamadi: {}", exc)
+        return False
+
+    output_ok = probe_output.exists() and probe_output.stat().st_size > 0
+    with contextlib.suppress(OSError):
+        probe_output.unlink()
+    if completed.returncode == 0 and output_ok:
+        logger.info("✅ FFmpeg NVENC smoke probe basarili.")
+        return True
+
+    logger.warning("NVENC smoke probe basarisiz: {}", (completed.stderr or completed.stdout or "")[-300:])
+    return False
 
 
 def _clamp01(value: float) -> float:
@@ -161,6 +228,9 @@ class TrackSlotState:
     unsafe_reframe_streak: int = 0
     last_visibility_score: float | None = None
     last_identity_confidence: float = 1.0
+    active_speaker_candidate_id: int | None = None
+    active_speaker_candidate_streak: int = 0
+    active_speaker_catchup_frames_remaining: int = 0
 
 
 @dataclass
@@ -181,6 +251,9 @@ class TrackingDiagnostics:
     total_center_jump_px: float = 0.0
     jump_samples: list[float] = field(default_factory=list)
     identity_confidence_samples: list[float] = field(default_factory=list)
+    speaker_activity_confidence_samples: list[float] = field(default_factory=list)
+    speaker_switch_count: int = 0
+    listener_lock_suspected_frames: int = 0
     predict_fallback_active: bool = False
     timeline: list[dict] = field(default_factory=list)
 
@@ -205,6 +278,9 @@ class TrackingDiagnostics:
     def register_identity_confidence(self, value: float) -> None:
         self.identity_confidence_samples.append(_clamp01(value))
 
+    def register_speaker_activity_confidence(self, value: float) -> None:
+        self.speaker_activity_confidence_samples.append(_clamp01(value))
+
     def to_quality(self) -> dict:
         avg_center_jump = self.total_center_jump_px / self.total_frames if self.total_frames > 0 else 0.0
         fallback_ratio = self.fallback_frames / self.total_frames if self.total_frames > 0 else 0.0
@@ -223,7 +299,7 @@ class TrackingDiagnostics:
             or (self.layout == "split" and startup_settle_ms > STARTUP_SETTLE_DEGRADED_MS)
         ):
             status = "degraded"
-        return {
+        quality = {
             "status": status,
             "mode": self.mode,
             "total_frames": self.total_frames,
@@ -243,9 +319,15 @@ class TrackingDiagnostics:
             "reacquire_attempt_count": self.reacquire_attempt_count,
             "reacquire_success_count": self.reacquire_success_count,
             "active_track_id_switches": self.active_track_id_switches,
+            "speaker_switch_count": self.speaker_switch_count,
+            "listener_lock_suspected_frames": self.listener_lock_suspected_frames,
+            "listener_lock_suspected": self.listener_lock_suspected_frames >= ACTIVE_SPEAKER_CONFIRMATION_FRAMES,
             "shot_cut_resets": self.shot_cut_resets,
             "max_track_lost_streak": self.max_track_lost_streak,
         }
+        if self.speaker_activity_confidence_samples:
+            quality["speaker_activity_confidence"] = round(float(np.mean(self.speaker_activity_confidence_samples)), 4)
+        return quality
 
     @staticmethod
     def merge(
@@ -301,6 +383,9 @@ class TrackingDiagnostics:
             "reacquire_attempt_count": int(quality_a.get("reacquire_attempt_count", 0)) + int(quality_b.get("reacquire_attempt_count", 0)),
             "reacquire_success_count": int(quality_a.get("reacquire_success_count", 0)) + int(quality_b.get("reacquire_success_count", 0)),
             "active_track_id_switches": int(quality_a.get("active_track_id_switches", 0)) + int(quality_b.get("active_track_id_switches", 0)),
+            "speaker_switch_count": int(quality_a.get("speaker_switch_count", 0)) + int(quality_b.get("speaker_switch_count", 0)),
+            "listener_lock_suspected_frames": int(quality_a.get("listener_lock_suspected_frames", 0)) + int(quality_b.get("listener_lock_suspected_frames", 0)),
+            "listener_lock_suspected": bool(quality_a.get("listener_lock_suspected")) or bool(quality_b.get("listener_lock_suspected")),
             "shot_cut_resets": max(int(quality_a.get("shot_cut_resets", 0)), int(quality_b.get("shot_cut_resets", 0))),
             "max_track_lost_streak": max(int(quality_a.get("max_track_lost_streak", 0)), int(quality_b.get("max_track_lost_streak", 0))),
         }
@@ -362,20 +447,52 @@ class VideoProcessor:
             stderr=subprocess.PIPE,
             text=text,
         )
+        logger.debug("FFmpeg process basladi pid={} cmd={}", proc.pid, " ".join(cmd))
+        stdout_chunks: list[str | bytes] = []
+        stderr_chunks: list[str | bytes] = []
+
+        def _drain_stream(stream, chunks: list[str | bytes]) -> None:
+            if stream is None:
+                return
+            try:
+                for chunk in iter(stream.readline, "" if text else b""):
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+            except ValueError:
+                return
+
+        stdout_thread = threading.Thread(target=_drain_stream, args=(proc.stdout, stdout_chunks), daemon=True)
+        stderr_thread = threading.Thread(target=_drain_stream, args=(proc.stderr, stderr_chunks), daemon=True)
+        stdout_thread.start()
+        stderr_thread.start()
         start = time.time()
         while True:
             if cancel_event is not None and cancel_event.is_set():
                 proc.kill()
-                proc.communicate()
+                proc.wait()
+                stdout_thread.join(timeout=1)
+                stderr_thread.join(timeout=1)
                 raise RuntimeError("Job cancelled by user")
             rc = proc.poll()
             if rc is not None:
-                stdout, stderr = proc.communicate()
+                stdout_thread.join(timeout=2)
+                stderr_thread.join(timeout=2)
+                if text:
+                    stdout = "".join(str(chunk) for chunk in stdout_chunks)
+                    stderr = "".join(str(chunk) for chunk in stderr_chunks)
+                else:
+                    stdout = b"".join(chunk if isinstance(chunk, bytes) else str(chunk).encode() for chunk in stdout_chunks)
+                    stderr = b"".join(chunk if isinstance(chunk, bytes) else str(chunk).encode() for chunk in stderr_chunks)
+                logger.debug("FFmpeg process bitti pid={} rc={}", proc.pid, rc)
                 return subprocess.CompletedProcess(cmd, rc, stdout, stderr)
             if time.time() - start > timeout:
                 proc.kill()
-                proc.communicate()
-                raise RuntimeError(f"FFmpeg islemi timeout oldu ({int(timeout)} sn)")
+                proc.wait()
+                stdout_thread.join(timeout=1)
+                stderr_thread.join(timeout=1)
+                stderr_tail = "".join(str(chunk) for chunk in stderr_chunks)[-500:]
+                raise RuntimeError(f"FFmpeg islemi timeout oldu ({int(timeout)} sn). stderr_tail={stderr_tail}")
             time.sleep(0.5)
 
     def __init__(self, model_version: str | None = None, device: str = "cuda"):
@@ -392,9 +509,9 @@ class VideoProcessor:
         logger.info("🔄 YOLO modeli yukleniyor: {}", self._model_path)
         self.model = YOLO(self._model_path)
         if self._device == "cuda" and not torch.cuda.is_available():
-            if os.getenv("REQUIRE_CUDA_FOR_APP", "").strip().lower() in {"1", "true", "yes", "on"}:
+            if _env_flag("REQUIRE_CUDA_FOR_APP"):
                 raise RuntimeError("CUDA zorunlu ama torch.cuda kullanilabilir degil")
-            logger.warning("⚠️ CUDA istendi ama GPU yok. CPU'ya geciliyor.")
+            logger.warning("⚠️ YOLO icin torch CUDA yok (torch cuda={}). Tracking CPU'ya geciliyor; NVENC ayri probe ile kullanilabilir.", getattr(torch.version, "cuda", None))
             self._device = "cpu"
         self.model.to(self._device)
         logger.success("✅ YOLO modeli {} uzerine yuklendi.", self._device.upper())
@@ -416,7 +533,7 @@ class VideoProcessor:
         logger.info("🧹 VideoProcessor GPU cleanup tamamlandi.")
 
     def _prefer_nvenc(self) -> bool:
-        return self._device == "cuda" and torch.cuda.is_available()
+        return _ffmpeg_nvenc_available()
 
     @staticmethod
     def _build_h264_encoder_args(*, prefer_nvenc: bool) -> list[str]:
@@ -453,7 +570,7 @@ class VideoProcessor:
         prefer_nvenc: bool,
     ) -> list[str]:
         cmd = [
-            "ffmpeg",
+            resolve_ffmpeg(),
             "-y",
             "-ss",
             str(start_time),
@@ -476,7 +593,7 @@ class VideoProcessor:
 
     def _extract_probe_frame(self, input_video: str, sample_time: float) -> np.ndarray | None:
         cmd = [
-            "ffmpeg",
+            resolve_ffmpeg(),
             "-v",
             "error",
             "-ss",
@@ -789,16 +906,73 @@ class VideoProcessor:
             continuity = _clamp01((iou * 0.55) + (center_proximity * 0.30) + (scale_proximity * 0.15))
             continuity *= state.continuity_multiplier
 
+        motion_signal = self._speaker_motion_signal(candidate)
         score = (
             (0.45 * _clamp01(continuity))
             + (0.25 * normalized_area)
             + (0.15 * confidence)
             + (0.08 * _clamp01(candidate.visibility_score))
-            + (0.12 * _clamp01((candidate.motion_score * 0.4) + (candidate.mouth_motion_score * 0.6)))
+            + (SPEAKER_MOTION_WEIGHT * motion_signal)
             - (0.10 * center_distance_penalty)
             - (0.05 * aspect_ratio_penalty)
         )
         return _clamp01(score)
+
+    @staticmethod
+    def _speaker_motion_signal(candidate: DetectionCandidate) -> float:
+        return _clamp01((candidate.motion_score * 0.35) + (candidate.mouth_motion_score * 0.65))
+
+    def _select_active_speaker_switch_candidate(
+        self,
+        *,
+        state: TrackSlotState,
+        same_id_candidate: DetectionCandidate | None,
+        candidates: list[DetectionCandidate],
+        diagnostics: TrackingDiagnostics,
+        layout: str,
+    ) -> DetectionCandidate | None:
+        if layout != "single" or state.confirmed_track_id is None or same_id_candidate is None:
+            state.active_speaker_candidate_id = None
+            state.active_speaker_candidate_streak = 0
+            return None
+
+        current_signal = self._speaker_motion_signal(same_id_candidate)
+        challengers = [
+            candidate
+            for candidate in candidates
+            if candidate.track_id is not None
+            and candidate.track_id != state.confirmed_track_id
+            and candidate.confidence >= MIN_DETECTION_CONFIDENCE
+            and candidate.visibility_score >= 0.45
+            and self._speaker_motion_signal(candidate) >= ACTIVE_SPEAKER_MIN_MOTION_SCORE
+            and self._speaker_motion_signal(candidate) >= current_signal + ACTIVE_SPEAKER_MOTION_MARGIN
+        ]
+        if not challengers:
+            state.active_speaker_candidate_id = None
+            state.active_speaker_candidate_streak = 0
+            return None
+
+        speaker_candidate = max(
+            challengers,
+            key=lambda candidate: (
+                self._speaker_motion_signal(candidate),
+                candidate.mouth_motion_score,
+                candidate.visibility_score,
+                candidate.confidence,
+            ),
+        )
+        speaker_signal = self._speaker_motion_signal(speaker_candidate)
+        diagnostics.listener_lock_suspected_frames += 1
+        diagnostics.register_speaker_activity_confidence(speaker_signal - current_signal)
+        if state.active_speaker_candidate_id == speaker_candidate.track_id:
+            state.active_speaker_candidate_streak += 1
+        else:
+            state.active_speaker_candidate_id = speaker_candidate.track_id
+            state.active_speaker_candidate_streak = 1
+
+        if state.active_speaker_candidate_streak < ACTIVE_SPEAKER_CONFIRMATION_FRAMES:
+            return None
+        return speaker_candidate
 
     def _confirm_candidate(
         self,
@@ -884,6 +1058,22 @@ class VideoProcessor:
             tracker_weak=tracker_weak,
         )
         delta = float(target_cx) - float(state.current_cx)
+        if layout == "single" and mode == "tracked" and state.active_speaker_catchup_frames_remaining > 0:
+            if abs(delta) <= frame_width * SINGLE_DEADZONE_RATIO:
+                state.active_speaker_catchup_frames_remaining = 0
+                state.unsafe_reframe_streak = 0
+                state.sustained_movement_frames = 0
+                return float(state.current_cx), True, True, 0
+            state.active_speaker_catchup_frames_remaining -= 1
+            next_center = self._move_towards(
+                state.current_cx,
+                target_cx,
+                max_step_px=frame_width * ACTIVE_SPEAKER_MAX_STEP_RATIO,
+                ema_alpha=ACTIVE_SPEAKER_EMA_ALPHA,
+            )
+            state.unsafe_reframe_streak = 0
+            state.sustained_movement_frames = 0
+            return next_center, False, False, 0
         if layout == "single" and mode == "tracked":
             effective_crop_width = max(1, int(crop_width or frame_width))
             safe_band_px = max(
@@ -951,6 +1141,22 @@ class VideoProcessor:
         mode = "fallback"
 
         if same_id_candidate is not None:
+            active_speaker_candidate = self._select_active_speaker_switch_candidate(
+                state=state,
+                same_id_candidate=same_id_candidate,
+                candidates=candidates,
+                diagnostics=diagnostics,
+                layout=layout,
+            )
+            if active_speaker_candidate is not None:
+                diagnostics.speaker_switch_count += 1
+                target_cx = self._confirm_candidate(state, diagnostics, active_speaker_candidate, switched=True)
+                state.active_speaker_catchup_frames_remaining = ACTIVE_SPEAKER_CATCHUP_FRAMES
+                state.active_speaker_candidate_id = None
+                state.active_speaker_candidate_streak = 0
+                mode = "tracked"
+
+        if same_id_candidate is not None and mode != "tracked":
             same_id_score = self._compute_candidate_score(
                 same_id_candidate,
                 state,
@@ -1055,6 +1261,7 @@ class VideoProcessor:
                     "movement_suppressed": bool(movement_suppressed),
                     "deadzone_hit": bool(deadzone_hit),
                     "sustained_frames": int(sustained_frames),
+                    "active_speaker_catchup_frames_remaining": int(state.active_speaker_catchup_frames_remaining),
                 }
             )
         return state.current_cx
@@ -1298,7 +1505,7 @@ class VideoProcessor:
             try:
                 ffmpeg_proc = subprocess.Popen(
                     [
-                        "ffmpeg",
+                        resolve_ffmpeg(),
                         "-y",
                         "-loglevel",
                         "error",
@@ -1554,7 +1761,7 @@ class VideoProcessor:
             logger.info("🎵 Ses birlestiriliyor...")
             if normalized_metrics["has_audio"]:
                 cmd_merge = [
-                    "ffmpeg",
+                    resolve_ffmpeg(),
                     "-y",
                     "-i",
                     temp_video_only,
@@ -1573,7 +1780,7 @@ class VideoProcessor:
                 ]
             else:
                 cmd_merge = [
-                    "ffmpeg",
+                    resolve_ffmpeg(),
                     "-y",
                     "-i",
                     temp_video_only,
@@ -1593,7 +1800,7 @@ class VideoProcessor:
                 logger.error("FFmpeg ses birlestirme hatasi: {}", merge_stderr[-500:])
                 if normalized_metrics["has_audio"] and _is_nvenc_error(merge_stderr):
                     cmd_cpu_fallback = [
-                        "ffmpeg",
+                        resolve_ffmpeg(),
                         "-y",
                         "-i",
                         temp_video_only,
@@ -1804,7 +2011,9 @@ class VideoProcessor:
         scene_class = "dual_separated" if split_report["stable"] else "dual_overlap_risky"
         if speaker_count_peak <= 1:
             scene_class = "single_dynamic"
-        if speaker_count_peak >= 3:
+        if speaker_count_peak >= 3 and split_report["stable"]:
+            scene_class = "multi_person_dominant_pair"
+        elif speaker_count_peak >= 3:
             split_report = {"stable": False, "reason": "split_face_safety", "identity_confidence": 0.0}
             scene_class = "dual_overlap_risky"
 
@@ -1912,6 +2121,53 @@ class VideoProcessor:
             "suggested_start_time": suggested_start,
             **({"initial_slot_centers": [round(split_initial_centers[0], 3), round(split_initial_centers[1], 3)]} if split_initial_centers is not None else {}),
         }
+
+    def estimate_manual_center_x(
+        self,
+        *,
+        input_video: str,
+        start_time: float,
+        end_time: float,
+    ) -> float | None:
+        """Estimate a stable manual_center_x ratio (0..1) for single-layout stabilization.
+
+        Uses a tiny probe window near the start of the segment and prefers visible + large candidates.
+        This is intentionally conservative: returns None if no reliable estimate is found.
+        """
+        self._ensure_model_loaded()
+        duration = max(0.1, float(end_time) - float(start_time))
+        window = min(0.9, duration)
+        sample_offsets = (0.0, 0.22, 0.44, 0.66, 0.88)
+        centers: list[float] = []
+        weights: list[float] = []
+        for offset in sample_offsets:
+            sample_time = float(start_time) + (window * float(offset))
+            frame = self._extract_probe_frame(input_video, sample_time)
+            if frame is None or frame.size == 0:
+                continue
+            frame_h, frame_w = frame.shape[:2]
+            if frame_w <= 0 or frame_h <= 0:
+                continue
+            candidates = self._predict_people(frame)
+            if not candidates:
+                continue
+            best = max(
+                candidates,
+                key=lambda cand: (
+                    float(cand.visibility_score),
+                    float(cand.area),
+                    float(cand.confidence),
+                ),
+            )
+            weight = max(0.01, float(best.visibility_score)) * (0.6 + min(0.4, float(best.confidence)))
+            centers.append(float(best.center_x))
+            weights.append(weight)
+        if not centers:
+            return None
+        weighted_center = float(np.average(np.asarray(centers, dtype=np.float32), weights=np.asarray(weights, dtype=np.float32)))
+        # Convert to normalized ratio; clamp to avoid extreme edge locking.
+        ratio = weighted_center / max(float(frame_w), 1.0)
+        return float(np.clip(ratio, 0.06, 0.94))
 
     @staticmethod
     def _normalize_split_frame_result(frame_result: object, index: int) -> dict[str, object]:
@@ -2048,7 +2304,7 @@ class VideoProcessor:
 
         source_fps = float(source_metrics.get("fps") or 30.0)
         cmd_nvenc = [
-            "ffmpeg",
+            resolve_ffmpeg(),
             "-y",
             "-ss",
             str(start_time),
@@ -2074,7 +2330,7 @@ class VideoProcessor:
         cmd_nvenc.append(output_filename)
 
         cmd_cpu = [
-            "ffmpeg",
+            resolve_ffmpeg(),
             "-y",
             "-ss",
             str(start_time),

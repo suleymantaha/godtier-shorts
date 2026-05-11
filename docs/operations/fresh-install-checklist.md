@@ -68,9 +68,9 @@ Yalniz tek kullanicili lokal dev fallback icin:
 
 Detayli env rehberi:
 
-- [api-key-setup.md](/home/arch/godtier-shorts/docs/api-key-setup.md)
-- [clerk-auth-setup.md](/home/arch/godtier-shorts/docs/clerk-auth-setup.md)
-- [postiz-global-oauth-standard.md](/home/arch/godtier-shorts/docs/operations/postiz-global-oauth-standard.md)
+- [api-key-setup.md](../api-key-setup.md)
+- [clerk-auth-setup.md](../clerk-auth-setup.md)
+- [postiz-global-oauth-standard.md](postiz-global-oauth-standard.md)
 
 ## 4. Kurulum sonrasi dogrulama
 

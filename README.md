@@ -109,9 +109,15 @@ Linux geliştirme ortamlarında Vite watcher kotası düşükse `./run.sh` front
 ## v2.1 Stabilizasyon Notları
 
 - Tracking yalnız `person` sınıfı için çalışır; seçim artık confidence eşiği, birleşik aday skoru, grace/reacquire ve controlled-return kuralları ile yapılır.
+- `single` layout’ta listener lock azaltmak için aktif konuşan sinyali izlenir; farklı kişi birkaç ardışık frame daha güçlü ağız/üst-gövde hareketi gösterirse kontrollü speaker switch ve kısa süreli fast catch-up yapılır.
 - Auto segmentlerde boundary snap, transcript `word_coverage_ratio` değerine göre açılır, daralır veya kapanır.
 - Subtitle chunking yalnız kelime sayısına değil süreye de bakar; overflow tespit edilirse önce daha konservatif chunking denenir.
 - Pipeline, batch, manual ve reburn çıktıları `render_metadata` altında `tracking_quality`, `transcript_quality`, `audio_validation`, `subtitle_layout_quality`, `debug_timing`, `render_quality_score` ve opsiyonel `debug_artifacts` alanlarını taşıyabilir.
+- Enforce politika (LAYOUT_SAFETY_MODE=enforce):
+  - `tracking_quality.status=="fallback"` çıktıları kullanıcıya açık yayın için **unsafe** sayılır → **review_required**.
+  - `single` layout’ta takip “degraded/fallback” ya da düşük `identity_confidence` durumunda tek seferlik **stabilize re-render** (otomatik `manual_center_x`) denenir.
+  - Split runtime’da unsafe ise **split → single** fallback uygulanır.
+- Detaylı teknik not: [docs/notes/tracking-cut-subtitle-integrity.md](docs/notes/tracking-cut-subtitle-integrity.md)
 - `DEBUG_RENDER_ARTIFACTS=1` ile `workspace/projects/<project_id>/debug/<clip_stem>/` altına tanı bundle'ı yazılır.
 - `python scripts/benchmark_render_stability.py --project ID --clip NAME` ile aynı klip için determinism ve throughput raporu üretilebilir.
 

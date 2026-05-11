@@ -52,6 +52,7 @@ from backend.core.exceptions import (
     MediaSubprocessError,
     TranscriptionError,
 )
+from backend.core.external_tools import ffmpeg as resolve_ffmpeg, ffprobe as resolve_ffprobe
 
 router = APIRouter(prefix="/api", tags=["clips"])
 ProgressCallback = Callable[[str, int], None]
@@ -262,7 +263,7 @@ def _validate_video_with_ffprobe(video_path: str) -> None:
     try:
         result = subprocess.run(
             [
-                "ffprobe",
+                resolve_ffprobe(),
                 "-v",
                 "error",
                 "-print_format",
@@ -399,7 +400,7 @@ def ensure_project_audio(project: ProjectPaths, progress_callback: ProgressCallb
     try:
         result = subprocess.run(
             [
-                "ffmpeg",
+                resolve_ffmpeg(),
                 "-y",
                 "-i",
                 str(project.master_video),

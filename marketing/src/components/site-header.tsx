@@ -1,8 +1,9 @@
 import Link from "next/link"
+import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs"
 
 import { navigation, siteConfig } from "@/lib/site"
 
-export function SiteHeader() {
+export async function SiteHeader() {
   return (
     <header className="site-header">
       <div className="container header-inner">
@@ -23,6 +24,21 @@ export function SiteHeader() {
           ))}
         </nav>
         <div className="header-actions">
+          <Show when="signed-out">
+            <SignInButton mode="modal">
+              <button type="button" className="button button-secondary">
+                Sign in
+              </button>
+            </SignInButton>
+            <SignUpButton mode="modal">
+              <button type="button" className="button">
+                Sign up
+              </button>
+            </SignUpButton>
+          </Show>
+          <Show when="signed-in">
+            <UserButton />
+          </Show>
           <Link className="button button-secondary" href={siteConfig.appUrl}>
             Open app
           </Link>

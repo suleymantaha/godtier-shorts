@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from backend.core.render_quality import compute_render_quality_score, merge_transcript_quality
+from backend.core.workflow_render_ops import _should_attempt_stabilize_center
 
 
 def test_merge_transcript_quality_marks_overflow_as_degraded() -> None:
@@ -53,3 +54,14 @@ def test_compute_render_quality_score_caps_fallback_tracking() -> None:
     )
 
     assert score <= 69
+
+
+def test_listener_lock_tracking_triggers_auto_repair_attempt() -> None:
+    assert _should_attempt_stabilize_center(
+        {
+            "status": "good",
+            "identity_confidence": 0.99,
+            "listener_lock_suspected": True,
+            "startup_settle_ms": 500.0,
+        }
+    ) is True

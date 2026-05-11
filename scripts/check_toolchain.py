@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -95,8 +96,20 @@ def _parse_package_manager_major(package_manager: str) -> int:
 
 
 def _run_version(cmd: list[str]) -> str:
-    completed = subprocess.run(cmd, check=True, capture_output=True, text=True, cwd=PROJECT_ROOT)
+    executable = _resolve_executable(cmd[0])
+    completed = subprocess.run([executable, *cmd[1:]], check=True, capture_output=True, text=True, cwd=PROJECT_ROOT)
     return completed.stdout.strip()
+
+
+def _resolve_executable(name: str) -> str:
+    candidates = [name]
+    if sys.platform == "win32" and not name.lower().endswith((".exe", ".cmd", ".bat")):
+        candidates = [f"{name}.cmd", f"{name}.exe", f"{name}.bat", name]
+    for candidate in candidates:
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+    raise SystemExit(f"Komut bulunamadi: {name}")
 
 
 def _extract_major(raw: str) -> int:
