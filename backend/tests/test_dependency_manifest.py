@@ -1,4 +1,4 @@
-"""Checks that runtime backend imports are represented in requirements.txt."""
+"""Checks that runtime backend imports are represented in requirements.txt files."""
 
 from __future__ import annotations
 
@@ -6,11 +6,13 @@ from pathlib import Path
 
 
 REQUIREMENTS_PATH = Path(__file__).resolve().parents[2] / "requirements.txt"
+DIARIZATION_REQUIREMENTS_PATH = Path(__file__).resolve().parents[2] / "requirements-diarization.txt"
 
 
-def _normalized_requirement_names() -> set[str]:
+
+def _normalized_requirement_names(path: Path) -> set[str]:
     names: set[str] = set()
-    for raw_line in REQUIREMENTS_PATH.read_text(encoding="utf-8").splitlines():
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
@@ -23,9 +25,22 @@ def _normalized_requirement_names() -> set[str]:
     return names
 
 
+
 def test_requirements_cover_critical_runtime_dependencies() -> None:
-    requirement_names = _normalized_requirement_names()
+    requirement_names = _normalized_requirement_names(REQUIREMENTS_PATH)
 
     assert "pyjwt" in requirement_names
     assert "cryptography" in requirement_names
+    assert "huggingface-hub" in requirement_names
 
+
+
+def test_diarization_requirements_cover_isolated_worker_dependencies() -> None:
+    requirement_names = _normalized_requirement_names(DIARIZATION_REQUIREMENTS_PATH)
+
+    assert "pyannote.audio" in requirement_names
+    assert "torchaudio" in requirement_names
+    assert "soundfile" in requirement_names
+    assert "matplotlib" in requirement_names
+    assert "transformers" in requirement_names
+    assert "speechbrain" in requirement_names

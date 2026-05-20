@@ -34,6 +34,7 @@ from backend.config import (
 from backend.api.websocket import manager, thread_safe_broadcast
 from backend.api.security import AuthContext, ensure_project_access, ensure_project_owner, require_policy
 from backend.api.upload_validation import stream_upload_to_path, validate_upload
+from backend.services.diarization import ensure_transcript_diarization
 from backend.services.transcription import run_transcription
 from backend.services.ownership import (
     build_owner_scoped_project_id,
@@ -434,12 +435,19 @@ def ensure_project_transcript(
 ) -> str:
     """Proje transkriptini üretir veya mevcut transkripti reuse eder."""
     transcript_path = str(project.transcript)
-    if os.path.exists(transcript_path):
-        if progress_callback:
-            progress_callback("Transkript hazır, mevcut kütüphane kullanılıyor...", 35)
-        return transcript_path
-
     audio_path = ensure_project_audio(project, progress_callback)
+    if os.path.exists(transcript_path):
+        backfill_ok = ensure_transcript_diarization(
+            audio_path=audio_path,
+            transcript_json_path=transcript_path,
+            status_callback=progress_callback,
+        )
+        if progress_callback:
+            if backfill_ok:
+                progress_callback("Transkript hazır, speaker etiketleri doğrulandı...", 35)
+            else:
+                progress_callback("Transkript hazır ama speaker backfill tamamlanamadı; fallback ile devam ediliyor...", 35)
+        return transcript_path
     run_transcription(
         audio_file=audio_path,
         output_json=transcript_path,

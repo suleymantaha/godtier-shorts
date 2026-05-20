@@ -70,6 +70,7 @@ class OrchestratorContext(Protocol):
         initial_slot_centers: tuple[float, float] | None = None,
         cut_as_short: bool = True,
         require_audio: bool = False,
+        transcript_path: str | None = None,
     ) -> dict:
         ...
 

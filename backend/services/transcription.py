@@ -73,6 +73,7 @@ if _REGISTERED_NVIDIA_DLL_DIRS:
 
 from backend.config import LOGS_DIR, MODELS_DIR, VIDEO_METADATA
 from backend.core.exceptions import FileOperationError, TranscriptionError
+from backend.services.diarization import run_diarization
 
 load_dotenv()
 
@@ -240,6 +241,8 @@ def run_transcription(
     language: str = "tr",
     model_size: str = "large-v3",
     cancel_event: threading.Event | None = None,
+    diarize: bool = True,
+    num_speakers: int | None = None,
 ) -> str:
     """
     faster-whisper ile ses dosyasını transkript eder. 
@@ -353,6 +356,24 @@ def run_transcription(
             raise FileOperationError("Transkript dosyası yazılamadı", details=str(exc)) from exc
 
         logger.success(f"🎉 Transkript oluşturuldu → {output_json}")
+
+        # 2. Konuşmacı diarizasyonu (pyannote.audio)
+        if diarize:
+            _status("Konuşmacı diarizasyonu başlatılıyor (pyannote.audio)...", 42)
+            _check_cancelled()
+            try:
+                diarization_ok = run_diarization(
+                    audio_file,
+                    output_json,
+                    num_speakers=num_speakers,
+                    status_callback=status_callback,
+                )
+                if not diarization_ok:
+                    _status("Konuşmacı diarizasyonu tamamlanamadı; transcript Unknown fallback ile kaydedildi.", 50)
+            except Exception as exc:
+                # Diarizasyon hatası kritik değil — transkripsiyon yine de kullanılabilir
+                logger.warning("⚠️ Diarizasyon başarısız (transkript hâlâ geçerli): {}", exc)
+
         return output_json
     finally:
         release_whisper_models()

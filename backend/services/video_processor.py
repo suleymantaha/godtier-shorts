@@ -18,6 +18,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from functools import lru_cache
+from typing import Any
 
 import cv2
 import numpy as np
@@ -29,6 +30,7 @@ from backend.config import LOGS_DIR, TEMP_DIR, YOLO_MODEL_PATH
 from backend.core.external_tools import ffmpeg as resolve_ffmpeg
 from backend.core.render_contracts import ensure_valid_requested_layout
 from backend.core.render_quality import extract_media_stream_metrics, probe_media
+from backend.services.diarization import DiarizationEntry, build_diarization_index, speaker_at
 from backend.services.subtitle_styles import (
     LOGICAL_CANVAS_HEIGHT,
     LOGICAL_CANVAS_WIDTH,
@@ -36,7 +38,7 @@ from backend.services.subtitle_styles import (
     SPLIT_PANEL_HEIGHT,
 )
 
-MIN_DETECTION_CONFIDENCE = 0.35
+MIN_DETECTION_CONFIDENCE = 0.20
 MIN_TRACK_ACCEPT_SCORE = 0.30
 MISSING_TRACK_GRACE_FRAMES = 8
 REACQUIRE_CONFIRMATION_FRAMES = 3
@@ -58,12 +60,12 @@ DIFF_ID_REACQUIRE_CENTER_RATIO = 0.12
 SPLIT_SAMPLE_WINDOWS = 16
 SPLIT_REQUIRED_POSITIVE_WINDOWS = 12
 SPLIT_MIN_SEPARATION_RATIO = 0.18
-SPLIT_MIN_VISIBILITY_SCORE = 0.72
-SPLIT_EDGE_MARGIN_RATIO = 0.06
+SPLIT_MIN_VISIBILITY_SCORE = 0.40
+SPLIT_EDGE_MARGIN_RATIO = 0.02
 SPLIT_UNSAFE_SUSTAINED_FRAMES = 4
 LAYOUT_SAFETY_CONTRACT_VERSION = 1
 TRACKER_CONFIG = "bytetrack.yaml"
-DETECTION_LONG_EDGE = 960
+DETECTION_LONG_EDGE = 1280
 CPU_TRACKING_STRIDE = 3
 HARD_CUT_THRESHOLD = 0.75
 SOFT_CUT_THRESHOLD = 0.55
@@ -77,9 +79,9 @@ STARTUP_SETTLE_DEGRADED_MS = 250.0
 
 # Konuşan kişi takip önceliği: ağız hareketi sinyalini biraz daha güçlü tutmak,
 # çoklu kişi sahnelerinde "konuşanı" seçme stabilitesini artırır.
-SPEAKER_MOTION_WEIGHT = float(os.getenv("SPEAKER_MOTION_WEIGHT", "0.18"))
-ACTIVE_SPEAKER_MIN_MOTION_SCORE = float(os.getenv("ACTIVE_SPEAKER_MIN_MOTION_SCORE", "0.42"))
-ACTIVE_SPEAKER_MOTION_MARGIN = float(os.getenv("ACTIVE_SPEAKER_MOTION_MARGIN", "0.18"))
+SPEAKER_MOTION_WEIGHT = float(os.getenv("SPEAKER_MOTION_WEIGHT", "0.35"))
+ACTIVE_SPEAKER_MIN_MOTION_SCORE = float(os.getenv("ACTIVE_SPEAKER_MIN_MOTION_SCORE", "0.25"))
+ACTIVE_SPEAKER_MOTION_MARGIN = float(os.getenv("ACTIVE_SPEAKER_MOTION_MARGIN", "0.08"))
 ACTIVE_SPEAKER_CONFIRMATION_FRAMES = max(1, int(os.getenv("ACTIVE_SPEAKER_CONFIRMATION_FRAMES", "2")))
 ACTIVE_SPEAKER_CATCHUP_FRAMES = max(1, int(os.getenv("ACTIVE_SPEAKER_CATCHUP_FRAMES", "12")))
 ACTIVE_SPEAKER_MAX_STEP_RATIO = float(os.getenv("ACTIVE_SPEAKER_MAX_STEP_RATIO", "0.055"))
@@ -153,7 +155,7 @@ def _ffmpeg_nvenc_available() -> bool:
 
 
 def _clamp01(value: float) -> float:
-    return max(0.0, min(1.0, float(value)))
+    return max(0.0, min(1.0, value))
 
 
 def _read_layout_safety_mode() -> str:
@@ -271,7 +273,7 @@ class TrackingDiagnostics:
             self.fallback_frames += 1
 
     def register_center_jump(self, jump_px: float) -> None:
-        jump = max(0.0, float(jump_px))
+        jump = max(0.0, jump_px)
         self.total_center_jump_px += jump
         self.jump_samples.append(jump)
 
@@ -307,10 +309,10 @@ class TrackingDiagnostics:
             "avg_center_jump_px": round(avg_center_jump, 3),
             "p95_center_jump_px": round(p95_center_jump, 3),
             "startup_settle_ms": round(startup_settle_ms, 3),
-            "predict_fallback_active": bool(self.predict_fallback_active),
+            "predict_fallback_active": self.predict_fallback_active,
             "speaker_lock_policy": "hold_until_unsafe" if self.layout == "single" else "stable_split",
             "identity_confidence": round(
-                float(np.mean(self.identity_confidence_samples)) if self.identity_confidence_samples else 1.0,
+                np.mean(self.identity_confidence_samples) if self.identity_confidence_samples else 1.0,
                 4,
             ),
             "confirmed_track_frames": self.confirmed_track_frames,
@@ -326,7 +328,7 @@ class TrackingDiagnostics:
             "max_track_lost_streak": self.max_track_lost_streak,
         }
         if self.speaker_activity_confidence_samples:
-            quality["speaker_activity_confidence"] = round(float(np.mean(self.speaker_activity_confidence_samples)), 4)
+            quality["speaker_activity_confidence"] = round(np.mean(self.speaker_activity_confidence_samples), 4)
         return quality
 
     @staticmethod
@@ -338,10 +340,10 @@ class TrackingDiagnostics:
     ) -> dict:
         quality_a = diag_a.to_quality()
         quality_b = diag_b.to_quality()
-        total_frames = int(quality_a.get("total_frames", 0)) + int(quality_b.get("total_frames", 0))
+        total_frames = quality_a.get("total_frames", 0) + quality_b.get("total_frames", 0)
         avg_center_jump = (
-            float(quality_a.get("avg_center_jump_px", 0.0) or 0.0)
-            + float(quality_b.get("avg_center_jump_px", 0.0) or 0.0)
+            quality_a.get("avg_center_jump_px", 0.0) or 0.0
+            + quality_b.get("avg_center_jump_px", 0.0) or 0.0
         ) / 2.0
         status_order = {"good": 0, "degraded": 1, "fallback": 2}
         merged_status = max(
@@ -349,11 +351,11 @@ class TrackingDiagnostics:
             str(quality_b.get("status", "good")),
             key=lambda value: status_order.get(value, 0),
         )
-        primary_p95 = float(quality_a.get("p95_center_jump_px", 0.0) or 0.0)
-        secondary_p95 = float(quality_b.get("p95_center_jump_px", 0.0) or 0.0)
+        primary_p95 = quality_a.get("p95_center_jump_px", 0.0) or 0.0
+        secondary_p95 = quality_b.get("p95_center_jump_px", 0.0) or 0.0
         startup_settle_ms = max(
-            float(quality_a.get("startup_settle_ms", 0.0) or 0.0),
-            float(quality_b.get("startup_settle_ms", 0.0) or 0.0),
+            quality_a.get("startup_settle_ms", 0.0) or 0.0,
+            quality_b.get("startup_settle_ms", 0.0) or 0.0,
         )
         if panel_swap_count > 0 or primary_p95 > SPLIT_JITTER_DEGRADED_THRESHOLD_PX or secondary_p95 > SPLIT_JITTER_DEGRADED_THRESHOLD_PX or startup_settle_ms > STARTUP_SETTLE_DEGRADED_MS:
             merged_status = max(merged_status, "degraded", key=lambda value: status_order.get(value, 0))
@@ -361,13 +363,13 @@ class TrackingDiagnostics:
             "status": merged_status,
             "mode": "tracked",
             "total_frames": total_frames,
-            "fallback_frames": int(quality_a.get("fallback_frames", 0)) + int(quality_b.get("fallback_frames", 0)),
+            "fallback_frames": quality_a.get("fallback_frames", 0) + quality_b.get("fallback_frames", 0),
             "avg_center_jump_px": round(avg_center_jump, 3),
             "primary_p95_center_jump_px": round(primary_p95, 3),
             "secondary_p95_center_jump_px": round(secondary_p95, 3),
             "startup_settle_ms": round(startup_settle_ms, 3),
-            "panel_swap_count": int(panel_swap_count),
-            "predict_fallback_active": bool(quality_a.get("predict_fallback_active")) or bool(quality_b.get("predict_fallback_active")),
+            "panel_swap_count": panel_swap_count,
+            "predict_fallback_active": quality_a.get("predict_fallback_active") or quality_b.get("predict_fallback_active"),
             "split_motion_policy": "stable",
             "speaker_lock_policy": "hold_until_unsafe",
             "identity_confidence": round(
@@ -377,17 +379,17 @@ class TrackingDiagnostics:
                 ) / 2.0,
                 4,
             ),
-            "confirmed_track_frames": int(quality_a.get("confirmed_track_frames", 0)) + int(quality_b.get("confirmed_track_frames", 0)),
-            "grace_hold_frames": int(quality_a.get("grace_hold_frames", 0)) + int(quality_b.get("grace_hold_frames", 0)),
-            "controlled_return_frames": int(quality_a.get("controlled_return_frames", 0)) + int(quality_b.get("controlled_return_frames", 0)),
-            "reacquire_attempt_count": int(quality_a.get("reacquire_attempt_count", 0)) + int(quality_b.get("reacquire_attempt_count", 0)),
-            "reacquire_success_count": int(quality_a.get("reacquire_success_count", 0)) + int(quality_b.get("reacquire_success_count", 0)),
-            "active_track_id_switches": int(quality_a.get("active_track_id_switches", 0)) + int(quality_b.get("active_track_id_switches", 0)),
-            "speaker_switch_count": int(quality_a.get("speaker_switch_count", 0)) + int(quality_b.get("speaker_switch_count", 0)),
-            "listener_lock_suspected_frames": int(quality_a.get("listener_lock_suspected_frames", 0)) + int(quality_b.get("listener_lock_suspected_frames", 0)),
-            "listener_lock_suspected": bool(quality_a.get("listener_lock_suspected")) or bool(quality_b.get("listener_lock_suspected")),
-            "shot_cut_resets": max(int(quality_a.get("shot_cut_resets", 0)), int(quality_b.get("shot_cut_resets", 0))),
-            "max_track_lost_streak": max(int(quality_a.get("max_track_lost_streak", 0)), int(quality_b.get("max_track_lost_streak", 0))),
+            "confirmed_track_frames": quality_a.get("confirmed_track_frames", 0) + quality_b.get("confirmed_track_frames", 0),
+            "grace_hold_frames": quality_a.get("grace_hold_frames", 0) + quality_b.get("grace_hold_frames", 0),
+            "controlled_return_frames": quality_a.get("controlled_return_frames", 0) + quality_b.get("controlled_return_frames", 0),
+            "reacquire_attempt_count": quality_a.get("reacquire_attempt_count", 0) + quality_b.get("reacquire_attempt_count", 0),
+            "reacquire_success_count": quality_a.get("reacquire_success_count", 0) + quality_b.get("reacquire_success_count", 0),
+            "active_track_id_switches": quality_a.get("active_track_id_switches", 0) + quality_b.get("active_track_id_switches", 0),
+            "speaker_switch_count": quality_a.get("speaker_switch_count", 0) + quality_b.get("speaker_switch_count", 0),
+            "listener_lock_suspected_frames": quality_a.get("listener_lock_suspected_frames", 0) + quality_b.get("listener_lock_suspected_frames", 0),
+            "listener_lock_suspected": quality_a.get("listener_lock_suspected") or quality_b.get("listener_lock_suspected"),
+            "shot_cut_resets": max(quality_a.get("shot_cut_resets", 0), quality_b.get("shot_cut_resets", 0)),
+            "max_track_lost_streak": max(quality_a.get("max_track_lost_streak", 0), quality_b.get("max_track_lost_streak", 0)),
         }
 
     @staticmethod
@@ -400,7 +402,7 @@ class TrackingDiagnostics:
     def _compute_startup_settle_ms(jump_samples: list[float], fps: float) -> float:
         if not jump_samples or fps <= 0:
             return 0.0
-        startup_window_frames = min(len(jump_samples), max(1, int(round(fps * 0.5))))
+        startup_window_frames = min(len(jump_samples), max(1, round(fps * 0.5)))
         significant_frames = [
             frame_index + 1
             for frame_index, jump in enumerate(jump_samples[:startup_window_frames])
@@ -428,8 +430,8 @@ class VideoProcessor:
         minimum: int = 300,
         maximum: int = 1800,
     ) -> int:
-        safe_duration = max(1.0, float(duration))
-        safe_start = max(0.0, float(start_time))
+        safe_duration = max(1.0, duration)
+        safe_start = max(0.0, start_time)
         estimated = int(180 + (safe_duration * 8.0) + (safe_start * 0.15))
         return max(minimum, min(maximum, estimated))
 
@@ -479,11 +481,11 @@ class VideoProcessor:
                 stdout_thread.join(timeout=2)
                 stderr_thread.join(timeout=2)
                 if text:
-                    stdout = "".join(str(chunk) for chunk in stdout_chunks)
-                    stderr = "".join(str(chunk) for chunk in stderr_chunks)
+                    stdout = "".join(chunk if isinstance(chunk, str) else chunk.decode() for chunk in stdout_chunks)
+                    stderr = "".join(chunk if isinstance(chunk, str) else chunk.decode() for chunk in stderr_chunks)
                 else:
-                    stdout = b"".join(chunk if isinstance(chunk, bytes) else str(chunk).encode() for chunk in stdout_chunks)
-                    stderr = b"".join(chunk if isinstance(chunk, bytes) else str(chunk).encode() for chunk in stderr_chunks)
+                    stdout = b"".join(chunk if isinstance(chunk, bytes) else chunk.encode() for chunk in stdout_chunks)
+                    stderr = b"".join(chunk if isinstance(chunk, bytes) else chunk.encode() for chunk in stderr_chunks)
                 logger.debug("FFmpeg process bitti pid={} rc={}", proc.pid, rc)
                 return subprocess.CompletedProcess(cmd, rc, stdout, stderr)
             if time.time() - start > timeout:
@@ -491,7 +493,7 @@ class VideoProcessor:
                 proc.wait()
                 stdout_thread.join(timeout=1)
                 stderr_thread.join(timeout=1)
-                stderr_tail = "".join(str(chunk) for chunk in stderr_chunks)[-500:]
+                stderr_tail = "".join(chunk if isinstance(chunk, str) else chunk.decode() for chunk in stderr_chunks)[-500:]
                 raise RuntimeError(f"FFmpeg islemi timeout oldu ({int(timeout)} sn). stderr_tail={stderr_tail}")
             time.sleep(0.5)
 
@@ -630,6 +632,32 @@ class VideoProcessor:
 
     @staticmethod
     def _compute_crop_bounds(center_x: float, crop_width: int, frame_width: int) -> tuple[int, int]:
+        min_x = crop_width / 2.0
+        max_x = frame_width - crop_width / 2.0
+        
+        if min_x < max_x:
+            # Sınır geçişlerinde yumuşak sönümleme için %5'lik bir marjin kullanıyoruz
+            margin = crop_width * 0.05
+            margin = min(margin, (max_x - min_x) * 0.5)
+            
+            if center_x < min_x + margin:
+                t = (center_x - min_x) / margin
+                if t <= 0:
+                    center_x = min_x
+                else:
+                    # g(t) = -t^3 + 2*t^2 (Cubic spline: continuous value and first derivative)
+                    g = -(t ** 3) + 2 * (t ** 2)
+                    center_x = min_x + margin * g
+            elif center_x > max_x - margin:
+                t = (max_x - center_x) / margin
+                if t <= 0:
+                    center_x = max_x
+                else:
+                    g = -(t ** 3) + 2 * (t ** 2)
+                    center_x = max_x - margin * g
+        else:
+            center_x = frame_width / 2.0
+
         x1 = int(center_x - crop_width / 2)
         max_x1 = max(0, frame_width - crop_width)
         x1 = min(max(0, x1), max_x1)
@@ -706,9 +734,12 @@ class VideoProcessor:
         crop_width: int,
     ) -> float:
         crop_x1, crop_x2 = VideoProcessor._compute_crop_bounds(candidate.center_x, crop_width, frame_width)
-        left_margin = max(0.0, candidate.box[0] - crop_x1)
-        right_margin = max(0.0, crop_x2 - candidate.box[2])
-        return min(left_margin, right_margin) / max(float(crop_width), 1.0)
+        left_margin = max(0.0, candidate.box[0] - crop_x1) if crop_x1 > 0 else float('inf')
+        right_margin = max(0.0, crop_x2 - candidate.box[2]) if crop_x2 < frame_width else float('inf')
+        min_margin = min(left_margin, right_margin)
+        if min_margin == float('inf'):
+            return 1.0
+        return min_margin / max(float(crop_width), 1.0)
 
     @staticmethod
     def _compute_motion_scores(
@@ -720,7 +751,7 @@ class VideoProcessor:
             return 0.0, 0.0
 
         frame_height, frame_width = current_frame.shape[:2]
-        x1, y1, x2, y2 = [int(round(value)) for value in box]
+        x1, y1, x2, y2 = [round(value) for value in box]
         x1 = max(0, min(frame_width - 1, x1))
         x2 = max(x1 + 1, min(frame_width, x2))
         y1 = max(0, min(frame_height - 1, y1))
@@ -736,18 +767,46 @@ class VideoProcessor:
         body_diff = float(np.mean(cv2.absdiff(current_gray, previous_gray)) / 255.0)
 
         crop_height, crop_width = current_gray.shape[:2]
-        mouth_y1 = int(round(crop_height * 0.42))
-        mouth_y2 = int(round(crop_height * 0.78))
-        mouth_x1 = int(round(crop_width * 0.18))
-        mouth_x2 = int(round(crop_width * 0.82))
-        current_mouth = current_gray[mouth_y1:mouth_y2, mouth_x1:mouth_x2]
-        previous_mouth = previous_gray[mouth_y1:mouth_y2, mouth_x1:mouth_x2]
-        if current_mouth.size == 0 or previous_mouth.size == 0:
-            mouth_diff = 0.0
-        else:
-            mouth_diff = float(np.mean(cv2.absdiff(current_mouth, previous_mouth)) / 255.0)
 
-        return _clamp01(body_diff * 6.0), _clamp01(mouth_diff * 10.0)
+        # Two-zone differential mouth detection.
+        #
+        # YOLO boxes vary between full-body and bust shots:
+        #   Full-body: face is top ~0-15%, mouth at ~7-12%
+        #   Bust shot:  face is top ~0-45%, mouth at ~25-40%
+        #
+        # Strategy: measure TWO zones within the face region (top 50% of box):
+        #   UPPER zone (0-22%): forehead + eyes — moves with head tilt/nod/gesture
+        #                        but NOT with speaking. Used as noise reference.
+        #   LOWER zone (22-50%): mouth + chin + jaw — moves BOTH with speaking
+        #                         AND with head movement.
+        #
+        # speech_signal = lower_diff - upper_diff
+        #   Head nod/tilt: both zones move equally -> signal near 0
+        #   Hand on chin (gesture): hand is still across frames -> signal near 0
+        #   Talking: lower zone changes every frame due to lip/jaw -> signal > 0
+        #
+        # Horizontal crop 20-80%: excludes profile edges, focuses on central face.
+        face_x1 = int(round(crop_width * 0.20))
+        face_x2 = int(round(crop_width * 0.80))
+        upper_y1 = 0
+        upper_y2 = int(round(crop_height * 0.22))
+        lower_y1 = int(round(crop_height * 0.22))
+        lower_y2 = int(round(crop_height * 0.50))
+
+        def _zone_diff(y1: int, y2: int) -> float:
+            cur = current_gray[y1:y2, face_x1:face_x2]
+            prv = previous_gray[y1:y2, face_x1:face_x2]
+            if cur.size == 0 or prv.size == 0:
+                return 0.0
+            return float(np.mean(cv2.absdiff(cur, prv)) / 255.0)
+
+        upper_diff = _zone_diff(upper_y1, upper_y2)  # head/gesture noise
+        lower_diff = _zone_diff(lower_y1, lower_y2)  # mouth + head noise
+
+        # Differential isolates true lip/jaw movement.
+        # 1.2x on upper_diff slightly over-subtracts head noise to be conservative.
+        pure_mouth_diff = max(0.0, lower_diff - upper_diff * 1.2)
+        return _clamp01(body_diff * 6.0), _clamp01(pure_mouth_diff * 25.0)
 
     def _track_people(self, frame: np.ndarray, previous_frame: np.ndarray | None = None) -> list[DetectionCandidate]:
         if self.model is None:
@@ -860,7 +919,7 @@ class VideoProcessor:
         curr_hist = cv2.calcHist([curr_hsv], [0, 1], None, [12, 12], [0, 180, 0, 256])
         cv2.normalize(prev_hist, prev_hist)
         cv2.normalize(curr_hist, curr_hist)
-        hist_corr = float(cv2.compareHist(prev_hist, curr_hist, cv2.HISTCMP_CORREL))
+        hist_corr = cv2.compareHist(prev_hist, curr_hist, cv2.HISTCMP_CORREL)
 
         prev_gray = cv2.cvtColor(prev_small, cv2.COLOR_BGR2GRAY)
         curr_gray = cv2.cvtColor(curr_small, cv2.COLOR_BGR2GRAY)
@@ -920,7 +979,7 @@ class VideoProcessor:
 
     @staticmethod
     def _speaker_motion_signal(candidate: DetectionCandidate) -> float:
-        return _clamp01((candidate.motion_score * 0.35) + (candidate.mouth_motion_score * 0.65))
+        return _clamp01((candidate.motion_score * 0.10) + (candidate.mouth_motion_score * 0.90))
 
     def _select_active_speaker_switch_candidate(
         self,
@@ -930,12 +989,50 @@ class VideoProcessor:
         candidates: list[DetectionCandidate],
         diagnostics: TrackingDiagnostics,
         layout: str,
+        # Diarizasyon destekli alanlar
+        diarization_index: list[DiarizationEntry] | None = None,
+        frame_time: float | None = None,
+        speaker_track_map: dict[str, int] | None = None,
     ) -> DetectionCandidate | None:
         if layout != "single" or state.confirmed_track_id is None or same_id_candidate is None:
             state.active_speaker_candidate_id = None
             state.active_speaker_candidate_streak = 0
             return None
 
+        # ------------------------------------------------------------------
+        # Diarizasyon destekli mod: transkriptte aktif konuşmacı biliniyorsa
+        # pixel motion'a gerek yok; doğrudan track_id eşleştirmesi yap.
+        # ------------------------------------------------------------------
+        if diarization_index and frame_time is not None and speaker_track_map is not None:
+            active_speaker = speaker_at(diarization_index, frame_time)
+            if active_speaker is not None:
+                # Hangi track_id bu konuşmacıya karşılık geliyor?
+                target_track_id = speaker_track_map.get(active_speaker)
+                if target_track_id is not None:
+                    if target_track_id != state.confirmed_track_id:
+                        # Konuşmacı değişti, geçmek istediğimiz adayı bul
+                        switch_candidate = next(
+                            (c for c in candidates if c.track_id == target_track_id), None
+                        )
+                        if switch_candidate is not None:
+                            diagnostics.listener_lock_suspected_frames += 1
+                            if state.active_speaker_candidate_id == target_track_id:
+                                state.active_speaker_candidate_streak += 1
+                            else:
+                                state.active_speaker_candidate_id = target_track_id
+                                state.active_speaker_candidate_streak = 1
+                            if state.active_speaker_candidate_streak >= ACTIVE_SPEAKER_CONFIRMATION_FRAMES:
+                                return switch_candidate
+                            return None
+                    else:
+                        # Doğru kişideyiz, geçiş gerekmez
+                        state.active_speaker_candidate_id = None
+                        state.active_speaker_candidate_streak = 0
+                        return None
+
+        # ------------------------------------------------------------------
+        # Fallback: pixel motion bazlı seçim (diarizasyon yoksa)
+        # ------------------------------------------------------------------
         current_signal = self._speaker_motion_signal(same_id_candidate)
         challengers = [
             candidate
@@ -943,7 +1040,7 @@ class VideoProcessor:
             if candidate.track_id is not None
             and candidate.track_id != state.confirmed_track_id
             and candidate.confidence >= MIN_DETECTION_CONFIDENCE
-            and candidate.visibility_score >= 0.45
+            and candidate.visibility_score >= 0.30
             and self._speaker_motion_signal(candidate) >= ACTIVE_SPEAKER_MIN_MOTION_SCORE
             and self._speaker_motion_signal(candidate) >= current_signal + ACTIVE_SPEAKER_MOTION_MARGIN
         ]
@@ -1002,12 +1099,12 @@ class VideoProcessor:
 
     @staticmethod
     def _move_towards(current: float, target: float, *, max_step_px: float, ema_alpha: float) -> float:
-        delta = float(target) - float(current)
+        delta = target - current
         if abs(delta) <= 0.001:
-            return float(current)
-        proposed_step = delta * float(ema_alpha)
+            return current
+        proposed_step = delta * ema_alpha
         clamped_step = float(np.clip(proposed_step, -max_step_px, max_step_px))
-        return float(current + clamped_step)
+        return current + clamped_step
 
     @staticmethod
     def _movement_profile(
@@ -1016,13 +1113,17 @@ class VideoProcessor:
         mode: str,
         frame_width: int,
         tracker_weak: bool,
+        state: TrackSlotState | None = None,
     ) -> tuple[float, float, float, int]:
         if layout == "split":
             if mode == "controlled_return":
+                lost_streak = state.lost_streak if state is not None else MISSING_TRACK_GRACE_FRAMES + 10
+                return_frames = max(1, lost_streak - MISSING_TRACK_GRACE_FRAMES)
+                ease_in = min(1.0, return_frames / 10.0)
                 return (
                     frame_width * SPLIT_DEADZONE_RATIO,
-                    frame_width * SPLIT_CONTROLLED_RETURN_PAN_RATIO,
-                    SPLIT_EMA_ALPHA,
+                    frame_width * SPLIT_CONTROLLED_RETURN_PAN_RATIO * ease_in,
+                    SPLIT_EMA_ALPHA * ease_in,
                     1,
                 )
             deadzone_ratio = SPLIT_FALLBACK_DEADZONE_RATIO if tracker_weak else SPLIT_DEADZONE_RATIO
@@ -1056,14 +1157,15 @@ class VideoProcessor:
             mode=mode,
             frame_width=frame_width,
             tracker_weak=tracker_weak,
+            state=state,
         )
-        delta = float(target_cx) - float(state.current_cx)
+        delta = target_cx - state.current_cx
         if layout == "single" and mode == "tracked" and state.active_speaker_catchup_frames_remaining > 0:
             if abs(delta) <= frame_width * SINGLE_DEADZONE_RATIO:
                 state.active_speaker_catchup_frames_remaining = 0
                 state.unsafe_reframe_streak = 0
                 state.sustained_movement_frames = 0
-                return float(state.current_cx), True, True, 0
+                return state.current_cx, True, True, 0
             state.active_speaker_catchup_frames_remaining -= 1
             next_center = self._move_towards(
                 state.current_cx,
@@ -1075,7 +1177,7 @@ class VideoProcessor:
             state.sustained_movement_frames = 0
             return next_center, False, False, 0
         if layout == "single" and mode == "tracked":
-            effective_crop_width = max(1, int(crop_width or frame_width))
+            effective_crop_width = max(1, (crop_width or frame_width))
             safe_band_px = max(
                 frame_width * SINGLE_DEADZONE_RATIO,
                 (effective_crop_width * SINGLE_LOCK_SAFE_BAND_RATIO) / 2.0,
@@ -1083,21 +1185,21 @@ class VideoProcessor:
             if abs(delta) <= safe_band_px:
                 state.unsafe_reframe_streak = 0
                 state.sustained_movement_frames = 0
-                return float(state.current_cx), True, True, 0
+                return state.current_cx, True, True, 0
             state.unsafe_reframe_streak += 1
             if state.unsafe_reframe_streak < SINGLE_REFRAME_SUSTAINED_FRAMES:
-                return float(state.current_cx), True, False, state.unsafe_reframe_streak
+                return state.current_cx, True, False, state.unsafe_reframe_streak
         else:
             state.unsafe_reframe_streak = 0
         deadzone_hit = abs(delta) <= deadzone_px
         if deadzone_hit:
             state.sustained_movement_frames = 0
-            return float(state.current_cx), True, True, 0
+            return state.current_cx, True, True, 0
 
         if layout == "split" and mode != "controlled_return":
             state.sustained_movement_frames += 1
             if state.sustained_movement_frames < sustained_required:
-                return float(state.current_cx), True, False, state.sustained_movement_frames
+                return state.current_cx, True, False, state.sustained_movement_frames
         else:
             state.sustained_movement_frames = 0
 
@@ -1108,7 +1210,7 @@ class VideoProcessor:
             ema_alpha=ema_alpha,
         )
         if abs(next_center - state.current_cx) < 0.25:
-            next_center = float(state.current_cx)
+            next_center = state.current_cx
         return next_center, False, False, state.sustained_movement_frames
 
     def _process_tracking_slot(
@@ -1124,6 +1226,9 @@ class VideoProcessor:
         frame_index: int,
         cut_confidence: float,
         crop_width: int | None = None,
+        diarization_index: list[DiarizationEntry] | None = None,
+        frame_time: float | None = None,
+        speaker_track_map: dict[str, int] | None = None,
     ) -> float:
         best_candidate: DetectionCandidate | None = None
         best_score = -1.0
@@ -1140,6 +1245,32 @@ class VideoProcessor:
         target_cx = state.current_cx
         mode = "fallback"
 
+        # ------------------------------------------------------------------
+        # DIARIZATION HIGH-PRIORITY SPEAKER ACQUISITION / SWITCHING
+        # ------------------------------------------------------------------
+        if (
+            layout == "single"
+            and diarization_index
+            and frame_time is not None
+            and speaker_track_map
+        ):
+            active_speaker = speaker_at(diarization_index, frame_time)
+            if active_speaker is not None:
+                target_track_id = speaker_track_map.get(active_speaker)
+                if target_track_id is not None:
+                    target_cand = next(
+                        (c for c in candidates if c.track_id == target_track_id), None
+                    )
+                    if target_cand is not None:
+                        # Sadece hedef kişiyle zaten kilitliysek onay yap
+                        if state.confirmed_track_id == target_track_id:
+                            target_cx = self._confirm_candidate(
+                                state, diagnostics, target_cand, switched=False
+                            )
+                            mode = "tracked"
+                        # Hedef farklıysa anında zıplama yapma, fall-through ile switch onay akışına (streak) bırak.
+
+
         if same_id_candidate is not None:
             active_speaker_candidate = self._select_active_speaker_switch_candidate(
                 state=state,
@@ -1147,6 +1278,9 @@ class VideoProcessor:
                 candidates=candidates,
                 diagnostics=diagnostics,
                 layout=layout,
+                diarization_index=diarization_index or [],
+                frame_time=frame_time,
+                speaker_track_map=speaker_track_map or {},
             )
             if active_speaker_candidate is not None:
                 diagnostics.speaker_switch_count += 1
@@ -1255,13 +1389,20 @@ class VideoProcessor:
                     "mode": mode,
                     "track_id": state.confirmed_track_id,
                     "center_x": round(state.current_cx, 3),
-                    "target_center_x": round(float(target_cx), 3),
+                    "target_center_x": round(target_cx, 3),
                     "cut_confidence": round(cut_confidence, 4),
                     "candidate_count": len(candidates),
-                    "movement_suppressed": bool(movement_suppressed),
-                    "deadzone_hit": bool(deadzone_hit),
-                    "sustained_frames": int(sustained_frames),
-                    "active_speaker_catchup_frames_remaining": int(state.active_speaker_catchup_frames_remaining),
+                    "movement_suppressed": movement_suppressed,
+                    "deadzone_hit": deadzone_hit,
+                    "sustained_frames": sustained_frames,
+                    "active_speaker_catchup_frames_remaining": state.active_speaker_catchup_frames_remaining,
+                    "faces": [
+                        {
+                            "id": c.track_id,
+                            "body": round(c.motion_score, 3),
+                            "mouth": round(c.mouth_motion_score, 3)
+                        } for c in candidates
+                    ]
                 }
             )
         return state.current_cx
@@ -1287,8 +1428,8 @@ class VideoProcessor:
 
     @staticmethod
     def _create_overlay_writer(path: str, fps: float, size: tuple[int, int]) -> cv2.VideoWriter | None:
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        writer = cv2.VideoWriter(path, fourcc, max(1.0, float(fps or 1.0)), size)
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
+        writer = cv2.VideoWriter(path, fourcc, max(1.0, (fps or 1.0)), size)
         if not writer.isOpened():
             writer.release()
             return None
@@ -1323,7 +1464,7 @@ class VideoProcessor:
             track_colors[secondary_slot.confirmed_track_id] = (255, 200, 80)
 
         for candidate in candidates:
-            x1, y1, x2, y2 = [int(round(value)) for value in candidate.box]
+            x1, y1, x2, y2 = [round(value) for value in candidate.box]
             color = track_colors.get(candidate.track_id, (180, 180, 180))
             cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
             label = f"id={candidate.track_id if candidate.track_id is not None else 'na'} conf={candidate.confidence:.2f}"
@@ -1406,10 +1547,26 @@ class VideoProcessor:
         initial_slot_centers: tuple[float, float] | None = None,
         cancel_event: threading.Event | None = None,
         require_audio: bool = False,
+        transcript_path: str | None = None,
     ) -> dict:
         logger.info("✂️ Klip: {} - {} sn (Layout: {}) → {}", start_time, end_time, layout, output_filename)
         if manual_center_x is None:
             self._ensure_model_loaded()
+
+        # Diarizasyon indeksini yükle (varsa)
+        diarization_index: list[DiarizationEntry] = []
+        if transcript_path and os.path.exists(transcript_path) and layout == "single":
+            diarization_index = build_diarization_index(transcript_path)
+            if diarization_index:
+                logger.info("🎤 Diarizasyon indeksi yüklendi: {} segment", len(diarization_index))
+            else:
+                logger.debug("ℹ️ Diarizasyon indeksi boş — pixel motion fallback kullanılacak.")
+
+        # speaker_label -> track_id haritası (ilk kalibrasyonda doldurulur)
+        speaker_track_map: dict[str, int] = {}
+        
+        # Konuşmacı kalibrasyon kararlılığını sağlamak için streak takibi
+        speaker_calibration_streaks: dict[str, dict[int, int]] = {}
 
         duration = end_time - start_time
         source_probe = probe_media(input_video)
@@ -1477,14 +1634,14 @@ class VideoProcessor:
             initial_primary_cx = orig_w / 2.0
             initial_secondary_cx = orig_w / 2.0
             if layout == "split" and initial_slot_centers is not None:
-                initial_primary_cx = float(initial_slot_centers[0])
-                initial_secondary_cx = float(initial_slot_centers[1])
+                initial_primary_cx = initial_slot_centers[0]
+                initial_secondary_cx = initial_slot_centers[1]
             elif layout == "split":
                 initial_primary_cx = orig_w * 0.33
                 initial_secondary_cx = orig_w * 0.67
 
-            primary_diagnostics = TrackingDiagnostics(mode="tracked", fps=float(orig_fps), layout=layout)
-            secondary_diagnostics = TrackingDiagnostics(mode="tracked", fps=float(orig_fps), layout=layout)
+            primary_diagnostics = TrackingDiagnostics(mode="tracked", fps=orig_fps, layout=layout)
+            secondary_diagnostics = TrackingDiagnostics(mode="tracked", fps=orig_fps, layout=layout)
             primary_diagnostics.predict_fallback_active = not self._tracker_available
             secondary_diagnostics.predict_fallback_active = not self._tracker_available
             primary_slot = TrackSlotState("primary", initial_primary_cx)
@@ -1575,6 +1732,7 @@ class VideoProcessor:
                         primary_slot.continuity_multiplier = 1.0
                         secondary_slot.continuity_multiplier = 1.0
 
+                    current_cx1, current_cx2 = 0.0, 0.0
                     if manual_center_x is not None:
                         primary_slot.current_cx = manual_center_x * orig_w
                         secondary_slot.current_cx = primary_slot.current_cx
@@ -1590,6 +1748,27 @@ class VideoProcessor:
                         )
                         if should_refresh_candidates:
                             cached_candidates = self._track_people(frame, motion_reference)
+                        else:
+                            # Stride cache hit: YOLO boxes/IDs are reused, but motion scores
+                            # must be refreshed every frame so active-speaker selection
+                            # reflects the current frame's mouth activity, not a stale value.
+                            refreshed: list[DetectionCandidate] = []
+                            for cand in cached_candidates:
+                                ms, mms = self._compute_motion_scores(frame, motion_reference, cand.box)
+                                refreshed.append(
+                                    DetectionCandidate(
+                                        track_id=cand.track_id,
+                                        box=cand.box,
+                                        center_x=cand.center_x,
+                                        area=cand.area,
+                                        confidence=cand.confidence,
+                                        aspect_ratio=cand.aspect_ratio,
+                                        visibility_score=cand.visibility_score,
+                                        motion_score=ms,
+                                        mouth_motion_score=mms,
+                                    )
+                                )
+                            cached_candidates = refreshed
                         primary_diagnostics.predict_fallback_active = primary_diagnostics.predict_fallback_active or (not self._tracker_available)
                         secondary_diagnostics.predict_fallback_active = secondary_diagnostics.predict_fallback_active or (not self._tracker_available)
                         candidates = list(cached_candidates)
@@ -1646,6 +1825,83 @@ class VideoProcessor:
                             if any(track_id is not None for track_id in current_pair):
                                 last_confirmed_pair = current_pair
                         else:
+                            frame_time = start_time + (frame_count - 1) / source_fps
+
+                            # Speaker-track kalibrasyon ve dinamik güncelleme:
+                            # Diarizasyon ile aktif konuşmacı biliniyorsa, yüksek mouth_motion_score olan adayı bulup
+                            # bu konuşmacının güncel track_id'sini sürekli olarak eşleştirir.
+                            if diarization_index:
+                                active_spk = speaker_at(diarization_index, frame_time)
+                                if active_spk:
+                                    # Adayları mouth_motion_score'a göre sırala
+                                    valid_cands = sorted(
+                                        (c for c in candidates if c.track_id is not None),
+                                        key=lambda c: c.mouth_motion_score,
+                                        reverse=True,
+                                    )
+                                    best_cand = valid_cands[0] if valid_cands else None
+                                    
+                                    if best_cand is not None:
+                                        # Güçlendirilmiş kalibrasyon kuralları:
+                                        # 1. Mouth motion en az 0.15 olmalı
+                                        # 2. Eğer birden fazla aday varsa, fark en az 0.10 olmalı (belirginlik marjı)
+                                        is_distinct = True
+                                        if len(valid_cands) > 1:
+                                            margin = best_cand.mouth_motion_score - valid_cands[1].mouth_motion_score
+                                            if margin < 0.10:
+                                                is_distinct = False
+                                        
+                                        if best_cand.mouth_motion_score >= 0.15 and is_distinct:
+                                            if active_spk not in speaker_calibration_streaks:
+                                                speaker_calibration_streaks[active_spk] = {}
+                                            
+                                            tid = best_cand.track_id
+                                            old_track_id = speaker_track_map.get(active_spk)
+                                            
+                                            # En iyi adayın streak değerini artır, diğerlerini sıfırla
+                                            speaker_calibration_streaks[active_spk][tid] = speaker_calibration_streaks[active_spk].get(tid, 0) + 1
+                                            for other_tid in list(speaker_calibration_streaks[active_spk].keys()):
+                                                if other_tid != tid:
+                                                    speaker_calibration_streaks[active_spk][other_tid] = 0
+                                            
+                                            current_streak = speaker_calibration_streaks[active_spk][tid]
+                                            
+                                            # Geçiş koşullarını (Histerezis) denetle
+                                            should_switch = False
+                                            if old_track_id is None:
+                                                # İlk kalibrasyon: hızlı kilitlenme için 3 kare yeterli
+                                                if current_streak >= 3:
+                                                    should_switch = True
+                                            else:
+                                                if tid != old_track_id:
+                                                    old_cand = next((c for c in candidates if c.track_id == old_track_id), None)
+                                                    old_mouth = old_cand.mouth_motion_score if old_cand is not None else 0.0
+                                                    
+                                                    # Eski aday sessizleştiyse veya kaybolduysa 8 kare onay aranır
+                                                    if old_cand is None or old_mouth < 0.15:
+                                                        if current_streak >= 8:
+                                                            should_switch = True
+                                                    else:
+                                                        # Eski aday hala konuşuyorsa geçiş zorlaştırılır (15 kare onay gerekir)
+                                                        if current_streak >= 15:
+                                                            should_switch = True
+                                        
+                                        if should_switch:
+                                            # 1-to-1 eşleşme koruması: bu track_id'yi kullanan başka konuşmacı varsa sil
+                                            for spk, v in list(speaker_track_map.items()):
+                                                if v == tid:
+                                                    speaker_track_map.pop(spk, None)
+                                            speaker_track_map[active_spk] = tid
+                                            logger.info(
+                                                "🎤 Dinamik Kalibrasyon Güncellendi (Streak={}): {} -> track_id={} (mouth={:.2f}, eski_track_id={})",
+                                                current_streak,
+                                                active_spk,
+                                                tid,
+                                                best_cand.mouth_motion_score,
+                                                old_track_id,
+                                            )
+
+
                             current_cx1 = self._process_tracking_slot(
                                 state=primary_slot,
                                 candidates=candidates,
@@ -1657,6 +1913,9 @@ class VideoProcessor:
                                 layout=layout,
                                 frame_index=frame_count,
                                 cut_confidence=cut_confidence,
+                                diarization_index=diarization_index if diarization_index else None,
+                                frame_time=frame_time,
+                                speaker_track_map=speaker_track_map if speaker_track_map else None,
                             )
                             current_cx2 = current_cx1
 
@@ -1675,13 +1934,15 @@ class VideoProcessor:
                         primary_margin_ok = False
                         secondary_margin_ok = False
                         if primary_slot.last_confirmed_box is not None:
-                            left_margin = max(0.0, primary_slot.last_confirmed_box[0] - primary_bounds[0])
-                            right_margin = max(0.0, primary_bounds[1] - primary_slot.last_confirmed_box[2])
-                            primary_margin_ok = min(left_margin, right_margin) / max(float(src_crop_w), 1.0) >= SPLIT_EDGE_MARGIN_RATIO
+                            left_margin = max(0.0, primary_slot.last_confirmed_box[0] - primary_bounds[0]) if primary_bounds[0] > 0 else float('inf')
+                            right_margin = max(0.0, primary_bounds[1] - primary_slot.last_confirmed_box[2]) if primary_bounds[1] < orig_w else float('inf')
+                            min_p_margin = min(left_margin, right_margin)
+                            primary_margin_ok = min_p_margin == float('inf') or min_p_margin / max(float(src_crop_w), 1.0) >= SPLIT_EDGE_MARGIN_RATIO
                         if secondary_slot.last_confirmed_box is not None:
-                            left_margin = max(0.0, secondary_slot.last_confirmed_box[0] - secondary_bounds[0])
-                            right_margin = max(0.0, secondary_bounds[1] - secondary_slot.last_confirmed_box[2])
-                            secondary_margin_ok = min(left_margin, right_margin) / max(float(src_crop_w), 1.0) >= SPLIT_EDGE_MARGIN_RATIO
+                            left_margin = max(0.0, secondary_slot.last_confirmed_box[0] - secondary_bounds[0]) if secondary_bounds[0] > 0 else float('inf')
+                            right_margin = max(0.0, secondary_bounds[1] - secondary_slot.last_confirmed_box[2]) if secondary_bounds[1] < orig_w else float('inf')
+                            min_s_margin = min(left_margin, right_margin)
+                            secondary_margin_ok = min_s_margin == float('inf') or min_s_margin / max(float(src_crop_w), 1.0) >= SPLIT_EDGE_MARGIN_RATIO
                         primary_edge_violation_streak = 0 if primary_margin_ok else primary_edge_violation_streak + 1
                         secondary_edge_violation_streak = 0 if secondary_margin_ok else secondary_edge_violation_streak + 1
                         if not primary_margin_ok:
@@ -1942,8 +2203,36 @@ class VideoProcessor:
         end_time: float,
         requested_layout: str,
         manual_center_x: float | None = None,
+        diarization_index: list[DiarizationEntry] | None = None,
     ) -> LayoutDecisionReport:
         normalized_layout = ensure_valid_requested_layout(requested_layout)
+
+        if diarization_index and normalized_layout in {"auto", "split"}:
+            speaker_durations: dict[str, float] = {}
+            for entry in diarization_index:
+                seg_start = entry["start"]
+                seg_end = entry["end"]
+                if seg_end <= start_time or seg_start >= end_time:
+                    continue
+                overlap_start = max(start_time, seg_start)
+                overlap_end = min(end_time, seg_end)
+                duration = max(0.0, overlap_end - overlap_start)
+                if duration > 0.0:
+                    spk = entry["speaker"]
+                    speaker_durations[spk] = speaker_durations.get(spk, 0.0) + duration
+
+            total_active_time = sum(speaker_durations.values())
+            if total_active_time > 0.0:
+                sorted_speakers = sorted(speaker_durations.items(), key=lambda x: x[1], reverse=True)
+                if len(sorted_speakers) <= 1:
+                    logger.info("🎤 Segmentte sadece tek aktif konuşmacı var. 'single' layout'a zorlanıyor.")
+                    normalized_layout = "single"
+                else:
+                    second_spk, second_dur = sorted_speakers[1]
+                    if second_dur < 1.5:
+                        logger.info("🎤 İkinci konuşmacı ({}) çok az konuştu ({:.2f} sn < 1.5 sn). 'single' layout'a zorlanıyor.", second_spk, second_dur)
+                        normalized_layout = "single"
+
         if normalized_layout == "single":
             return LayoutDecisionReport(
                 requested_layout=normalized_layout,
@@ -1967,7 +2256,7 @@ class VideoProcessor:
         self._ensure_model_loaded()
 
         duration = max(0.2, end_time - start_time)
-        frame_results: list[dict[str, object]] = []
+        frame_results: list[dict[str, Any]] = []
         speaker_count_peak = 0
         for index in range(SPLIT_SAMPLE_WINDOWS):
             ratio = 0.0 if SPLIT_SAMPLE_WINDOWS == 1 else index / (SPLIT_SAMPLE_WINDOWS - 1)
@@ -1985,7 +2274,18 @@ class VideoProcessor:
             )
             speaker_count_peak = max(speaker_count_peak, len(candidates), len(centers))
             crop_width = min(frame_width, max(1, int(frame_height * (LOGICAL_CANVAS_WIDTH / SPLIT_PANEL_HEIGHT)))) if frame_width > 0 and frame_height > 0 else 0
-            pair = sorted(candidates[:2], key=lambda candidate: candidate.center_x)
+            pair = []
+            best_score = -1.0
+            for i in range(len(candidates)):
+                for j in range(i + 1, len(candidates)):
+                    sep = abs(candidates[i].center_x - candidates[j].center_x)
+                    if sep >= frame_width * SPLIT_MIN_SEPARATION_RATIO:
+                        score = candidates[i].visibility_score + candidates[j].visibility_score
+                        if score > best_score:
+                            best_score = score
+                            pair = sorted([candidates[i], candidates[j]], key=lambda c: c.center_x)
+            if not pair:
+                pair = sorted(candidates[:2], key=lambda c: c.center_x)
             edge_margin_ratios = [
                 self._split_crop_margin_ratio(candidate, frame_width=frame_width, crop_width=crop_width)
                 for candidate in pair
@@ -2057,12 +2357,12 @@ class VideoProcessor:
         end_time: float,
         resolved_layout: str,
         manual_center_x: float | None = None,
-    ) -> dict[str, object]:
+    ) -> dict[str, Any]:
         if manual_center_x is not None:
             return {
                 "layout_validation_status": "manual",
                 "opening_visibility_delay_ms": 0.0,
-                "suggested_start_time": float(start_time),
+                "suggested_start_time": start_time,
             }
 
         self._ensure_model_loaded()
@@ -2089,7 +2389,7 @@ class VideoProcessor:
                 if len(centers) >= 2:
                     visible = abs(centers[1] - centers[0]) >= frame.shape[1] * SPLIT_MIN_SEPARATION_RATIO
                     if visible:
-                        split_initial_centers = (float(centers[0]), float(centers[1]))
+                        split_initial_centers = (centers[0], centers[1])
             else:
                 visible = len(candidates) > 0
             if visible:
@@ -2100,21 +2400,21 @@ class VideoProcessor:
             return {
                 "layout_validation_status": "probe_failed",
                 "opening_visibility_delay_ms": 0.0,
-                "suggested_start_time": float(start_time),
+                "suggested_start_time": start_time,
             }
 
         if earliest_visible_offset is None:
             return {
                 "layout_validation_status": "opening_subject_missing",
                 "opening_visibility_delay_ms": round(window * 1000, 3),
-                "suggested_start_time": float(min(end_time, start_time + min(window, OPENING_MAX_SHIFT_SECONDS))),
+                "suggested_start_time": min(end_time, start_time + min(window, OPENING_MAX_SHIFT_SECONDS)),
             }
 
-        suggested_start = float(start_time)
+        suggested_start = start_time
         status = "ok"
         if earliest_visible_offset > OPENING_VISIBILITY_OK_SECONDS:
             status = "opening_subject_delayed"
-            suggested_start = float(min(end_time, start_time + min(earliest_visible_offset, OPENING_MAX_SHIFT_SECONDS)))
+            suggested_start = min(end_time, start_time + min(earliest_visible_offset, OPENING_MAX_SHIFT_SECONDS))
         return {
             "layout_validation_status": status,
             "opening_visibility_delay_ms": round(earliest_visible_offset * 1000, 3),
@@ -2135,13 +2435,14 @@ class VideoProcessor:
         This is intentionally conservative: returns None if no reliable estimate is found.
         """
         self._ensure_model_loaded()
-        duration = max(0.1, float(end_time) - float(start_time))
+        duration = max(0.1, end_time - start_time)
         window = min(0.9, duration)
         sample_offsets = (0.0, 0.22, 0.44, 0.66, 0.88)
         centers: list[float] = []
         weights: list[float] = []
+        frame_w = 0
         for offset in sample_offsets:
-            sample_time = float(start_time) + (window * float(offset))
+            sample_time = start_time + (window * offset)
             frame = self._extract_probe_frame(input_video, sample_time)
             if frame is None or frame.size == 0:
                 continue
@@ -2154,47 +2455,58 @@ class VideoProcessor:
             best = max(
                 candidates,
                 key=lambda cand: (
-                    float(cand.visibility_score),
-                    float(cand.area),
-                    float(cand.confidence),
+                    cand.visibility_score,
+                    cand.area,
+                    cand.confidence,
                 ),
             )
-            weight = max(0.01, float(best.visibility_score)) * (0.6 + min(0.4, float(best.confidence)))
-            centers.append(float(best.center_x))
+            weight = max(0.01, best.visibility_score) * (0.6 + min(0.4, best.confidence))
+            centers.append(best.center_x)
             weights.append(weight)
         if not centers:
             return None
         weighted_center = float(np.average(np.asarray(centers, dtype=np.float32), weights=np.asarray(weights, dtype=np.float32)))
         # Convert to normalized ratio; clamp to avoid extreme edge locking.
-        ratio = weighted_center / max(float(frame_w), 1.0)
+        ratio = weighted_center / max(frame_w, 1.0)
         return float(np.clip(ratio, 0.06, 0.94))
 
     @staticmethod
-    def _normalize_split_frame_result(frame_result: object, index: int) -> dict[str, object]:
+    def _normalize_split_frame_result(frame_result: object, index: int) -> dict[str, Any]:
         if isinstance(frame_result, dict):
-            centers = [float(value) for value in frame_result.get("centers", []) if isinstance(value, (int, float))]
+            centers = [value for value in frame_result.get("centers", []) if isinstance(value, (int, float))]
             return {
-                "frame_width": int(frame_result.get("frame_width", 0) or 0),
-                "sample_index": int(frame_result.get("sample_index", index) or index),
-                "sample_total": int(frame_result.get("sample_total", SPLIT_SAMPLE_WINDOWS) or SPLIT_SAMPLE_WINDOWS),
+                "frame_width": frame_result.get("frame_width", 0) or 0,
+                "sample_index": frame_result.get("sample_index", index) or index,
+                "sample_total": frame_result.get("sample_total", SPLIT_SAMPLE_WINDOWS) or SPLIT_SAMPLE_WINDOWS,
                 "speaker_count": int(frame_result.get("speaker_count", len(centers)) or len(centers)),
                 "centers": centers,
-                "visibility_scores": [float(value) for value in frame_result.get("visibility_scores", []) if isinstance(value, (int, float))],
-                "edge_margin_ratios": [float(value) for value in frame_result.get("edge_margin_ratios", []) if isinstance(value, (int, float))],
+                "visibility_scores": [value for value in frame_result.get("visibility_scores", []) if isinstance(value, (int, float))],
+                "edge_margin_ratios": [value for value in frame_result.get("edge_margin_ratios", []) if isinstance(value, (int, float))],
                 "candidates": frame_result.get("candidates") if isinstance(frame_result.get("candidates"), list) else [],
             }
         if isinstance(frame_result, tuple):
             if len(frame_result) >= 4:
                 frame_width, centers, sample_index, sample_total = frame_result[:4]
-            else:
+            elif len(frame_result) >= 2:
                 frame_width, centers = frame_result[:2]
                 sample_index = index
                 sample_total = len(frame_result)
-            center_values = [float(value) for value in centers if isinstance(value, (int, float))]
+            else:
+                return {
+                    "frame_width": 0,
+                    "sample_index": index,
+                    "sample_total": SPLIT_SAMPLE_WINDOWS,
+                    "speaker_count": 0,
+                    "centers": [],
+                    "visibility_scores": [],
+                    "edge_margin_ratios": [],
+                    "candidates": [],
+                }
+            center_values = [value for value in centers if isinstance(value, (int, float))]
             return {
-                "frame_width": int(frame_width or 0),
-                "sample_index": int(sample_index),
-                "sample_total": int(sample_total or SPLIT_SAMPLE_WINDOWS),
+                "frame_width": (frame_width or 0),
+                "sample_index": sample_index,
+                "sample_total": (sample_total or SPLIT_SAMPLE_WINDOWS),
                 "speaker_count": len(center_values),
                 "centers": center_values,
                 "visibility_scores": [1.0 for _ in center_values],
@@ -2213,7 +2525,7 @@ class VideoProcessor:
         }
 
     @classmethod
-    def _evaluate_split_layout(cls, frame_results: list[object]) -> dict[str, object]:
+    def _evaluate_split_layout(cls, frame_results: list[Any]) -> dict[str, Any]:
         if not frame_results:
             return {"stable": False, "reason": "split_face_safety", "identity_confidence": 0.0}
 
@@ -2228,13 +2540,13 @@ class VideoProcessor:
         identity_scores: list[float] = []
 
         for frame_result in normalized_results:
-            frame_width = int(frame_result["frame_width"])
+            frame_width = frame_result["frame_width"]
             centers = list(frame_result["centers"])
             visibility_scores = list(frame_result["visibility_scores"])
             edge_margin_ratios = list(frame_result["edge_margin_ratios"])
-            sample_index = int(frame_result["sample_index"])
+            sample_index = frame_result["sample_index"]
             sampled_frames += 1 if frame_width > 0 else 0
-            if frame_width <= 0 or len(centers) < 2 or int(frame_result["speaker_count"]) < 2:
+            if frame_width <= 0 or len(centers) < 2 or frame_result["speaker_count"] < 2:
                 previous_pair = None
                 continue
             separation = abs(float(centers[1]) - float(centers[0]))

@@ -36,6 +36,12 @@ def release_whisper_models() -> None:
 
     _release_whisper_models()
 
+
+def ensure_transcript_diarization(*args, **kwargs):
+    from backend.services.diarization import ensure_transcript_diarization as _ensure_transcript_diarization
+
+    return _ensure_transcript_diarization(*args, **kwargs)
+
 class PipelineWorkflow:
     def __init__(self, ctx: OrchestratorContext):
         self.ctx = ctx
@@ -156,8 +162,17 @@ class PipelineWorkflow:
 
         metadata_file = str(project.transcript)
         if os.path.exists(metadata_file):
-            self.ctx._update_status("✅ Transkript kütüphanede bulundu, analiz atlanıyor.", 45)
             logger.info(f"♻️ Transkript zaten mevcut: {metadata_file}")
+            backfill_ok = await run_blocking(
+                ensure_transcript_diarization,
+                audio_path=master_audio,
+                transcript_json_path=metadata_file,
+                status_callback=lambda msg, pct: self.ctx._update_status(msg, pct),
+            )
+            if backfill_ok:
+                self.ctx._update_status("✅ Transkript kütüphanede bulundu, speaker etiketleri hazır.", 45)
+            else:
+                self.ctx._update_status("⚠️ Transkript bulundu ama speaker backfill tamamlanamadı; fallback ile devam ediliyor.", 45)
             return metadata_file
 
         self.ctx._check_cancelled()
@@ -171,6 +186,20 @@ class PipelineWorkflow:
                 cancel_event=self.ctx.cancel_event,
             )
             await run_blocking(release_whisper_models)
+
+            # Run speaker diarization immediately on the newly generated transcript
+            self.ctx._check_cancelled()
+            backfill_ok = await run_blocking(
+                ensure_transcript_diarization,
+                audio_path=master_audio,
+                transcript_json_path=metadata_file,
+                status_callback=lambda msg, pct: self.ctx._update_status(msg, pct),
+            )
+            if backfill_ok:
+                self.ctx._update_status("✅ Speaker diarization başarıyla tamamlandı.", 45)
+            else:
+                self.ctx._update_status("⚠️ Speaker diarization tamamlanamadı; fallback ile devam ediliyor.", 45)
+
             return metadata_file
         except Exception as exc:
             logger.error(f"❌ faster-whisper hatası: {exc}")

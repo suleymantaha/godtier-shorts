@@ -1,0 +1,26 @@
+# Isolated pyannote diarization environment
+# Recommended: create a dedicated venv with Python 3.11 or 3.12
+# Then point DIARIZATION_PYTHON to that venv's python executable.
+#
+# Windows example:
+#   py -3.11 -m venv .venv-diarization
+#   .\.venv-diarization\Scripts\python -m pip install -U pip
+#   .\.venv-diarization\Scripts\python -m pip install -r requirements-diarization.txt
+#
+# GPU (Windows, Python 3.13 example — use cu126 index after base install):
+#   .\.venv-diarization\Scripts\python -m pip install torch==2.10.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu126
+#
+# torchaudio 2.11 removed APIs that pyannote.audio 3.1.x still touches.
+# Keep torch/torchaudio below 2.11 in the isolated worker env.
+
+python-dotenv>=1.0.0
+loguru>=0.7.0
+numpy>=1.26,<2.3
+huggingface-hub>=0.24,<1.0
+soundfile>=0.12.1
+matplotlib>=3.8,<3.11
+transformers>=4.45,<5
+torch>=2.7,<2.11
+torchaudio>=2.7,<2.11
+speechbrain>=0.5.14,<1.0
+pyannote.audio==3.1.1

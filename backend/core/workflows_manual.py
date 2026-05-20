@@ -74,7 +74,7 @@ class ManualClipWorkflow:
         if self.ctx.project is None:
             raise RuntimeError("Proje bağlamı bulunamadı.")
         quarantine_output = str(build_quarantine_output_path(self.ctx.project, clip_filename))
-        debug_environment = build_debug_environment(model_identifier=os.path.basename(str(self.ctx.video_processor._model_path)), model_path=str(self.ctx.video_processor._model_path))
+        debug_environment = build_debug_environment(model_identifier=os.path.basename(self.ctx.video_processor._model_path), model_path=self.ctx.video_processor._model_path)
         layout_safety_mode = resolve_layout_safety_mode()
 
         with TempArtifactManager(temp_json, shifted_json, temp_cropped) as artifacts:
@@ -94,8 +94,8 @@ class ManualClipWorkflow:
                     video_processor=self.ctx.video_processor,
                     transcript_source=normalized_transcript,
                     source_video=master_video,
-                    start_t=float(start_t),
-                    end_t=float(end_t),
+                    start_t=start_t,
+                    end_t=end_t,
                     requested_layout=layout,
                     cut_as_short=cut_as_short,
                     manual_center_x=center_x,
@@ -136,6 +136,7 @@ class ManualClipWorkflow:
                     initial_slot_centers,
                     cut_as_short,
                     False,
+                    transcript_path=str(self.ctx.project.transcript) if (self.ctx.project is not None and getattr(self.ctx.project, "transcript", None) is not None) else None,
                 )
             render_payload = render_report if isinstance(render_report, dict) else {}
             safety_metadata = assess_layout_safety(
@@ -158,8 +159,8 @@ class ManualClipWorkflow:
                         video_processor=self.ctx.video_processor,
                         transcript_source=normalized_transcript,
                         source_video=master_video,
-                        start_t=float(resolved_start_t),
-                        end_t=float(resolved_end_t),
+                        start_t=resolved_start_t,
+                        end_t=resolved_end_t,
                         requested_layout="single",
                         cut_as_short=cut_as_short,
                         manual_center_x=None,
@@ -197,6 +198,7 @@ class ManualClipWorkflow:
                     None,
                     cut_as_short,
                     False,
+                    transcript_path=str(self.ctx.project.transcript) if (self.ctx.project is not None and getattr(self.ctx.project, "transcript", None) is not None) else None,
                 )
                 render_payload = render_report if isinstance(render_report, dict) else {}
                 safety_metadata = assess_layout_safety(
@@ -327,14 +329,7 @@ class CutPointsWorkflow:
         cut_as_short: bool = True,
     ) -> list[str]:
         return await run_cut_points_workflow(
-            self.ctx,
-            cut_points=cut_points,
-            transcript_data=transcript_data,
-            job_id=job_id,
-            style_name=style_name,
-            animation_type=animation_type,
-            project_id=project_id,
-            layout=layout,
-            skip_subtitles=skip_subtitles,
-            cut_as_short=cut_as_short,
+            self.ctx, cut_points=cut_points, transcript_data=transcript_data, job_id=job_id,
+            style_name=style_name, animation_type=animation_type, project_id=project_id,
+            layout=layout, skip_subtitles=skip_subtitles, cut_as_short=cut_as_short,
         )

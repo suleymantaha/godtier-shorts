@@ -21,6 +21,11 @@ def test_resolve_duration_validation_status_reports_bounds() -> None:
     assert resolve_duration_validation_status(0.0, 220.0, duration_min=120.0, duration_max=180.0) == "too_long"
 
 
+def test_resolve_duration_validation_status_allows_boundary_snap_drift() -> None:
+    assert resolve_duration_validation_status(338.82, 518.92, duration_min=120.0, duration_max=180.0) == "ok"
+    assert resolve_duration_validation_status(0.0, 181.0, duration_min=120.0, duration_max=180.0) == "too_long"
+
+
 def test_ensure_valid_requested_layout_accepts_auto() -> None:
     assert ensure_valid_requested_layout("auto") == "auto"
     assert ensure_valid_requested_layout("split") == "split"

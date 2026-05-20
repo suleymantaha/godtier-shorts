@@ -388,7 +388,8 @@ def test_track_people_falls_back_to_predict_when_lap_is_missing(monkeypatch) -> 
         aspect_ratio=0.25,
         visibility_score=0.8,
     )
-    processor.model = _FakeModel()
+    import typing
+    processor.model = typing.cast(typing.Any, _FakeModel())
     monkeypatch.setattr(processor, "_predict_people", lambda _frame: [fallback_candidate])
 
     candidates = processor._track_people(frame)
@@ -458,3 +459,199 @@ def test_single_tracking_switches_from_listener_to_confirmed_active_speaker() ->
     assert state.confirmed_track_id == 2
     assert state.current_cx < 1400.0
     assert diagnostics.active_track_id_switches == 1
+
+
+def test_high_priority_diarization_switching_and_dynamic_calibration() -> None:
+    from backend.services.diarization import DiarizationEntry
+    processor = VideoProcessor(device="cpu")
+    
+    # Başlangıç durumu: Track ID 1 takip ediliyor
+    state = TrackSlotState(
+        "primary",
+        1440.0,
+        confirmed_track_id=1,
+    )
+    diagnostics = TrackingDiagnostics(mode="tracked", fps=30.0, layout="single")
+    
+    # Speaker map: SPEAKER_01 -> track_id 2
+    speaker_track_map = {"SPEAKER_01": 2}
+    diarization_index = [
+        DiarizationEntry(start=0.0, end=5.0, speaker="SPEAKER_01"),
+    ]
+    
+    # Ekranda 2 aday var
+    cand_1 = DetectionCandidate(
+        track_id=1,
+        box=(960.0, 220.0, 1915.0, 915.0),
+        center_x=1440.0,
+        area=663725.0,
+        confidence=0.96,
+        aspect_ratio=1.0,
+        visibility_score=0.9,
+        mouth_motion_score=0.01,
+    )
+    cand_2 = DetectionCandidate(
+        track_id=2,
+        box=(70.0, 205.0, 955.0, 915.0),
+        center_x=512.5,
+        area=628350.0,
+        confidence=0.94,
+        aspect_ratio=1.0,
+        visibility_score=0.9,
+        mouth_motion_score=0.1,
+    )
+    
+    # 1. kare: Geçiş isteği başlatılır (streak=1)
+    processor._process_tracking_slot(
+        state=state,
+        candidates=[cand_1, cand_2],
+        frame_width=1920,
+        frame_height=1080,
+        panel_center=960.0,
+        diagnostics=diagnostics,
+        layout="single",
+        frame_index=1,
+        cut_confidence=0.0,
+        crop_width=608,
+        diarization_index=diarization_index,
+        frame_time=1.0,
+        speaker_track_map=speaker_track_map,
+    )
+    assert state.confirmed_track_id == 1  # Henüz geçilmedi (streak=1 < 2)
+    
+    # 2. kare: Geçiş onaylanır (streak=2 >= 2) ve geçilir
+    processor._process_tracking_slot(
+        state=state,
+        candidates=[cand_1, cand_2],
+        frame_width=1920,
+        frame_height=1080,
+        panel_center=960.0,
+        diagnostics=diagnostics,
+        layout="single",
+        frame_index=2,
+        cut_confidence=0.0,
+        crop_width=608,
+        diarization_index=diarization_index,
+        frame_time=1.1,
+        speaker_track_map=speaker_track_map,
+    )
+    assert state.confirmed_track_id == 2  # Streak tamamlandı, geçiş başarılı!
+
+
+def test_analyze_speaker_dominance_and_auto_layout(monkeypatch) -> None:
+    from backend.core.workflow_render_ops import _analyze_speaker_dominance, _resolve_segment_window
+    import backend.core.workflow_render_ops as ops
+    from backend.config import ProjectPaths
+    from backend.services.video_processor import VideoProcessor
+    
+    # 1. Monologue: Only SPEAKER_01 speaking
+    transcript = [
+        {"start": 0.0, "end": 5.0, "speaker": "SPEAKER_01"},
+        {"start": 5.0, "end": 10.0, "speaker": "SPEAKER_01"},
+    ]
+    dominant_ratio, speaker_count, second_ratio = _analyze_speaker_dominance(transcript, 0.0, 10.0)
+    assert speaker_count == 1
+    assert dominant_ratio == 1.0
+    assert second_ratio == 0.0
+    
+    # 2. Split dialogue: SPEAKER_01 for 6.0s, SPEAKER_02 for 4.0s
+    transcript = [
+        {"start": 0.0, "end": 6.0, "speaker": "SPEAKER_01"},
+        {"start": 6.0, "end": 10.0, "speaker": "SPEAKER_02"},
+    ]
+    dominant_ratio, speaker_count, second_ratio = _analyze_speaker_dominance(transcript, 0.0, 10.0)
+    assert speaker_count == 2
+    assert abs(dominant_ratio - 0.6) < 1e-5
+    assert abs(second_ratio - 0.4) < 1e-5
+    
+    # 3. Weak secondary dialogue: SPEAKER_01 for 9.0s, SPEAKER_02 for 1.0s (10% of total speaking) -> should force single layout since second_ratio < 0.20
+    transcript = [
+        {"start": 0.0, "end": 9.0, "speaker": "SPEAKER_01"},
+        {"start": 9.0, "end": 10.0, "speaker": "SPEAKER_02"},
+    ]
+    dominant_ratio, speaker_count, second_ratio = _analyze_speaker_dominance(transcript, 0.0, 10.0)
+    assert speaker_count == 2
+    assert abs(dominant_ratio - 0.9) < 1e-5
+    assert abs(second_ratio - 0.1) < 1e-5
+    
+    # Mocking snap and subtitle resolution functions for _resolve_segment_window
+    def dummy_snap(transcript, s, e):
+        return s, e, {}
+        
+    class DummySubPlan:
+        resolved_layout = "single"
+        
+    def dummy_resolve_sub(*args, **kwargs):
+        return DummySubPlan()
+
+    monkeypatch.setattr(
+        ops,
+        "apply_opening_validation",
+        lambda **kwargs: (kwargs["start_t"], {"layout_validation_status": "mocked"})
+    )
+
+    processor = VideoProcessor(device="cpu")
+
+    # If requested_layout is auto, with second_ratio = 10% (< 20%), it must choose "single" layout
+    res_start, res_end, custom_meta, render_plan, report = _resolve_segment_window(
+        video_processor=processor,
+        source_video=None,
+        transcript_source=transcript,
+        start_t=0.0,
+        end_t=10.0,
+        requested_layout="auto",
+        cut_as_short=True,
+        manual_center_x=None,
+        snap_segment_boundaries=dummy_snap,
+        resolve_subtitle_render_plan=dummy_resolve_sub,
+    )
+    assert render_plan.resolved_layout == "single"
+
+
+def test_stabilize_tracking_center_split_controlled_return_ease_in() -> None:
+    """Split layout controlled_return modunda ease-in damping faktörünün uygulandığını doğrular."""
+    processor = VideoProcessor(device="cpu")
+    from backend.services.video_processor import SPLIT_CONTROLLED_RETURN_PAN_RATIO, SPLIT_EMA_ALPHA
+
+    # 1. lost_streak = 9 (return_frames = 1, ease_in = 0.1)
+    state1 = TrackSlotState("primary", 640.0)
+    state1.lost_streak = 9
+    profile1 = processor._movement_profile(
+        layout="split",
+        mode="controlled_return",
+        frame_width=1000,
+        tracker_weak=False,
+        state=state1,
+    )
+
+    # 2. lost_streak = 13 (return_frames = 5, ease_in = 0.5)
+    state2 = TrackSlotState("primary", 640.0)
+    state2.lost_streak = 13
+    profile2 = processor._movement_profile(
+        layout="split",
+        mode="controlled_return",
+        frame_width=1000,
+        tracker_weak=False,
+        state=state2,
+    )
+
+    # 3. lost_streak = 18 (return_frames = 10, ease_in = 1.0)
+    state3 = TrackSlotState("primary", 640.0)
+    state3.lost_streak = 18
+    profile3 = processor._movement_profile(
+        layout="split",
+        mode="controlled_return",
+        frame_width=1000,
+        tracker_weak=False,
+        state=state3,
+    )
+
+    # Adım boyutlarının ve EMA alfalarının kademeli olarak arttığını kontrol edelim
+    assert profile1[1] < profile2[1] < profile3[1]
+    assert profile1[2] < profile2[2] < profile3[2]
+
+    # Tam ease_in (1.0) durumundaki değerlerin tam sınır limitlerine ulaştığını doğrulayalım
+    assert abs(profile3[1] - 1000 * SPLIT_CONTROLLED_RETURN_PAN_RATIO) < 1e-5
+    assert abs(profile3[2] - SPLIT_EMA_ALPHA) < 1e-5
+
+

@@ -101,6 +101,7 @@ def test_manual_cut_upload_single_clip_uses_transcript_and_defers_output_fields(
     project.root.mkdir(parents=True, exist_ok=True)
     project.outputs.mkdir(parents=True, exist_ok=True)
     project.master_video.write_bytes(b"video")
+    project.master_audio.write_bytes(b"audio")
     project.transcript.write_text(json.dumps(transcript_payload), encoding="utf-8")
 
     class _FakeOrchestrator:

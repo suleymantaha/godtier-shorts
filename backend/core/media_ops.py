@@ -476,6 +476,7 @@ def cut_and_burn_clip(
     initial_slot_centers: tuple[float, float] | None = None,
     cut_as_short: bool,
     require_audio: bool = False,
+    transcript_path: str | None = None,
 ) -> dict:
     """Cuts clip and optionally burns subtitles."""
     render_report: dict = {}
@@ -492,6 +493,7 @@ def cut_and_burn_clip(
                 initial_slot_centers=initial_slot_centers,
                 cancel_event=cancel_event,
                 require_audio=require_audio,
+                transcript_path=transcript_path,
             )
         finally:
             video_processor.cleanup_gpu()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import typing
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -11,7 +12,7 @@ from backend.services.ownership import build_owner_scoped_project_id
 
 
 def test_pipeline_ensure_transcript_passes_cancel_event_as_keyword(monkeypatch, tmp_path) -> None:
-    observed: dict[str, object] = {}
+    observed: dict[str, typing.Any] = {}
     transcript_path = tmp_path / "transcript.json"
     cancel_event = object()
 
@@ -23,6 +24,7 @@ def test_pipeline_ensure_transcript_passes_cancel_event_as_keyword(monkeypatch, 
 
     monkeypatch.setattr("backend.core.workflows_pipeline.run_transcription", fake_run_transcription)
     monkeypatch.setattr("backend.core.workflows_pipeline.release_whisper_models", lambda: None)
+    monkeypatch.setattr("backend.core.workflows_pipeline.ensure_transcript_diarization", lambda *args, **kwargs: True)
 
     ctx = SimpleNamespace(
         project=SimpleNamespace(transcript=transcript_path),
@@ -31,7 +33,7 @@ def test_pipeline_ensure_transcript_passes_cancel_event_as_keyword(monkeypatch, 
         _update_status=lambda *_args, **_kwargs: None,
     )
 
-    result = asyncio.run(PipelineWorkflow(ctx)._ensure_transcript(str(tmp_path / "master.wav")))
+    result = asyncio.run(PipelineWorkflow(typing.cast(typing.Any, ctx))._ensure_transcript(str(tmp_path / "master.wav")))
 
     assert result == str(transcript_path)
     assert observed["args"] == ()
@@ -77,3 +79,31 @@ def test_ensure_pipeline_master_assets_recovers_missing_audio_even_when_transcri
     assert observed["video_file"] == str(project.master_video)
     assert observed["audio_file"] == str(project.master_audio)
     assert project.master_audio.read_bytes() == b"audio"
+
+
+def test_pipeline_ensure_transcript_backfills_speakers_for_cached_transcript(monkeypatch, tmp_path) -> None:
+    transcript_path = tmp_path / "transcript.json"
+    transcript_path.write_text("[]", encoding="utf-8")
+    observed: dict[str, typing.Any] = {}
+
+    def fake_backfill(*args, **kwargs):
+        observed["args"] = args
+        observed["kwargs"] = kwargs
+        return True
+
+    monkeypatch.setattr("backend.core.workflows_pipeline.ensure_transcript_diarization", fake_backfill)
+
+    ctx = SimpleNamespace(
+        project=SimpleNamespace(transcript=transcript_path),
+        cancel_event=object(),
+        _check_cancelled=lambda: None,
+        _update_status=lambda *_args, **_kwargs: None,
+    )
+
+    result = asyncio.run(PipelineWorkflow(typing.cast(typing.Any, ctx))._ensure_transcript(str(tmp_path / "master.wav")))
+
+    assert result == str(transcript_path)
+    assert observed["args"] == ()
+    assert observed["kwargs"]["audio_path"] == str(tmp_path / "master.wav")
+    assert observed["kwargs"]["transcript_json_path"] == str(transcript_path)
+    assert callable(observed["kwargs"]["status_callback"])

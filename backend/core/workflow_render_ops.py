@@ -40,14 +40,14 @@ def _should_attempt_stabilize_center(tracking_quality: dict[str, object] | None)
     if bool(tracking_quality.get("listener_lock_suspected")):
         return True
     try:
-        startup_settle_ms = float(tracking_quality.get("startup_settle_ms", 0.0) or 0.0)
+        startup_settle_ms = float(str(tracking_quality.get("startup_settle_ms", 0.0) or 0.0))
     except (TypeError, ValueError):
         startup_settle_ms = 0.0
     if startup_settle_ms >= 400.0:
         return True
     identity = tracking_quality.get("identity_confidence")
     try:
-        identity_value = float(identity) if identity is not None else 1.0
+        identity_value = float(str(identity)) if identity is not None else 1.0
     except (TypeError, ValueError):
         identity_value = 1.0
     return identity_value < 0.72
@@ -296,7 +296,9 @@ async def render_pipeline_segments(
                     )
                 )
                 if render_payload:
-                    artifacts.add(render_payload.get("debug_overlay_temp_path"))
+                    debug_path = render_payload.get("debug_overlay_temp_path")
+                    if isinstance(debug_path, str):
+                        artifacts.add(debug_path)
 
                 render_quality_context = _collect_render_quality_context(
                     compute_render_quality_score=compute_render_quality_score,
@@ -609,7 +611,9 @@ async def render_batch_segments(
                     )
                 )
                 if render_payload:
-                    artifacts.add(render_payload.get("debug_overlay_temp_path"))
+                    debug_path = render_payload.get("debug_overlay_temp_path")
+                    if isinstance(debug_path, str):
+                        artifacts.add(debug_path)
 
                 render_quality_context = _collect_render_quality_context(
                     compute_render_quality_score=compute_render_quality_score,
@@ -679,7 +683,7 @@ async def render_batch_segments(
                 results.append(
                     (
                         public_output,
-                        render_quality_context["render_quality_score"],
+                        float(str(render_quality_context["render_quality_score"])),
                         segment_index,
                     )
                 )
@@ -702,6 +706,41 @@ def _build_debug_environment(video_processor, *, build_debug_environment):
     )
 
 
+def _analyze_speaker_dominance(
+    transcript_source: list[dict],
+    start_time: float,
+    end_time: float,
+) -> tuple[float, int, float]:
+    """Analyze speaker dominance in the segment. Returns (dominant_ratio, unique_speaker_count, second_ratio)."""
+    speaker_durations: dict[str, float] = {}
+    for segment in transcript_source:
+        seg_start = float(segment.get("start", 0.0))
+        seg_end = float(segment.get("end", 0.0))
+        if seg_end <= start_time or seg_start >= end_time:
+            continue
+        
+        overlap_start = max(start_time, seg_start)
+        overlap_end = min(end_time, seg_end)
+        duration = max(0.0, overlap_end - overlap_start)
+        
+        speaker = str(segment.get("speaker") or "SPEAKER_00")
+        speaker_durations[speaker] = speaker_durations.get(speaker, 0.0) + duration
+        
+    total_speaking_time = sum(speaker_durations.values())
+    if total_speaking_time <= 0:
+        return 0.0, 0, 0.0
+        
+    sorted_durs = sorted(speaker_durations.values(), reverse=True)
+    dominant_duration = sorted_durs[0]
+    dominant_ratio = dominant_duration / total_speaking_time
+    
+    second_ratio = 0.0
+    if len(sorted_durs) > 1:
+        second_ratio = sorted_durs[1] / total_speaking_time
+        
+    return dominant_ratio, len(speaker_durations), second_ratio
+
+
 def _resolve_segment_window(
     *,
     video_processor,
@@ -720,12 +759,24 @@ def _resolve_segment_window(
         start_t,
         end_t,
     )
+    
+    effective_layout = requested_layout
+    if requested_layout == "auto" and cut_as_short:
+        dominant_ratio, speaker_count, second_ratio = _analyze_speaker_dominance(
+            transcript_source,
+            segment_start,
+            segment_end,
+        )
+        if speaker_count <= 1 or dominant_ratio >= 0.85 or second_ratio < 0.20:
+            effective_layout = "single"
+            logger.info("Dynamic monologue detected (ratio: {:.2f}, speakers: {}, second_ratio: {:.2f}), forcing 'single' layout.", dominant_ratio, speaker_count, second_ratio)
+
     render_plan = resolve_subtitle_render_plan(
         video_processor=video_processor,
         source_video=source_video,
         start_t=segment_start,
         end_t=segment_end,
-        requested_layout=requested_layout,
+        requested_layout=effective_layout,
         cut_as_short=cut_as_short,
         manual_center_x=manual_center_x,
     )
@@ -760,7 +811,7 @@ def _resolve_segment_window(
         source_video=source_video,
         start_t=segment_start,
         end_t=segment_end,
-        requested_layout=requested_layout,
+        requested_layout=effective_layout,
         cut_as_short=cut_as_short,
         manual_center_x=manual_center_x,
     )
@@ -863,7 +914,7 @@ async def _render_with_optional_single_fallback(
     manual_center_x: float | None,
     layout_safety_mode: str,
     allow_single_fallback: bool,
-) -> tuple[object, dict[str, object], dict[str, object]]:
+) -> tuple["SubtitleRenderPlan", dict[str, object], dict[str, object]]:
     subtitle_engine = _create_subtitle_renderer_if_needed(
         create_subtitle_renderer=create_subtitle_renderer,
         style_name=style_name,
@@ -1052,6 +1103,7 @@ async def _run_render_pass(
         initial_slot_centers=resolve_initial_slot_centers(opening_report),
         cut_as_short=cut_as_short,
         require_audio=require_audio,
+        transcript_path=str(ctx.project.transcript) if ctx.project is not None else None,
     )
     return render_report if isinstance(render_report, dict) else {}
 

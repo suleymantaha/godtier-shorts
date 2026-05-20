@@ -160,6 +160,7 @@ class GodTierShortsCreator:
         initial_slot_centers: tuple[float, float] | None = None,
         cut_as_short: bool = True,
         require_audio: bool = False,
+        transcript_path: str | None = None,
     ) -> dict:
         return cut_and_burn_clip(
             video_processor=self.video_processor,
@@ -176,6 +177,7 @@ class GodTierShortsCreator:
             initial_slot_centers=initial_slot_centers,
             cut_as_short=cut_as_short,
             require_audio=require_audio,
+            transcript_path=transcript_path,
         )
 
     async def run_pipeline_async(

@@ -92,3 +92,16 @@ Her senaryoda ölç: `tracking_quality.status`, `layout_safety_status`, `layout_
 - `timing_report.json`
 üretimi zaten destekleniyor. Manual/cut-points parity sonrası bu paketler teşhis ve regression için yeterli olmalı.
 
+### 6) 2026-05-14 render duration boundary kararı
+
+Pipeline cache segmenti `120-180s` kontratına uygun olsa bile render öncesi `snap_segment_boundaries`
+kelime sınırına oturtma nedeniyle birkaç yüz milisaniyelik drift oluşturabilir. Örnek olayda ilk klip
+`338.8-518.8` iken snap sonrası `338.82-518.92` oldu ve süre `180.10s` ile sert `180s` sınırını
+aşarak render job'unu düşürdü.
+
+Karar:
+- `resolve_duration_validation_status` artık sınır driftleri için `0.5s` tolerans kullanır.
+- Bu tolerans yalnız boundary/snap kaynaklı küçük farkları geçirir; gerçek uzun segmentler halen `too_long` döner.
+- Background job hata yolunda websocket event'i açıkça `status="error"` gönderir ve `last_message` güncellenir; UI'nin
+  `61% / GPU render slotu alındı` gibi canlı iş görüntüsünde kalması önlenir.
+

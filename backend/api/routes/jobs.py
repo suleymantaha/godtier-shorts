@@ -48,7 +48,14 @@ STARTING_MESSAGE = "İşlem başlatılıyor. Hazırlık aşamaları yürütülü
 ACTIVE_PIPELINE_JOB_STATUSES = {"queued", "processing"}
 
 
-def _finalize_job(job_id: str, status: str, *, progress: int | None = None, error: str | None = None) -> None:
+def _finalize_job(
+    job_id: str,
+    status: str,
+    *,
+    progress: int | None = None,
+    error: str | None = None,
+    last_message: str | None = None,
+) -> None:
     job = manager.jobs.get(job_id)
     if not job:
         return
@@ -57,6 +64,8 @@ def _finalize_job(job_id: str, status: str, *, progress: int | None = None, erro
         job["progress"] = progress
     if error is not None:
         job["error"] = error
+    if last_message is not None:
+        job["last_message"] = last_message
 
 
 def _mark_job_cancelled(job_id: str, message: str = "İş iptal edildi.") -> None:
@@ -237,8 +246,13 @@ async def run_gpu_job(job_id: str, request: JobRequest) -> None:
         else:
             mapped_error = JobExecutionError("Arka plan işi çalıştırılamadı", details=str(exc))
             logger.error(f"İş hatası ({job_id}): {mapped_error.message} | details={mapped_error.details}")
-            _finalize_job(job_id, "error", error=mapped_error.message)
-        await manager.broadcast_progress(str(exc), -1, job_id)
+            _finalize_job(
+                job_id,
+                "error",
+                error=mapped_error.message,
+                last_message=str(exc),
+            )
+        await manager.broadcast_progress(str(exc), -1, job_id, status="error")
 
 
 # -------------------------------------------------------------------------

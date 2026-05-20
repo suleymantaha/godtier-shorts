@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import typing
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -14,6 +15,7 @@ def _transcript() -> list[dict]:
             "text": "one two",
             "start": 0.0,
             "end": 2.0,
+            "speaker": "SPEAKER_00",
             "words": [
                 {"word": "one", "start": 0.0, "end": 1.0, "score": 0.99},
                 {"word": "two", "start": 1.0, "end": 2.0, "score": 0.99},
@@ -23,6 +25,7 @@ def _transcript() -> list[dict]:
             "text": "three",
             "start": 2.0,
             "end": 3.0,
+            "speaker": "SPEAKER_01",
             "words": [{"word": "three", "start": 2.0, "end": 3.0, "score": 0.99}],
         },
     ]
@@ -100,7 +103,7 @@ class _FakeContext:
     def acquire_gpu_stage(self, **_kwargs) -> _GpuStage:
         return _GpuStage()
 
-    def _cut_and_burn_clip(self, master_video, start_t, end_t, temp_cropped, final_output, ass_file, subtitle_engine, layout="single", center_x=None, initial_slot_centers=None, cut_as_short=True, require_audio=False) -> dict:
+    def _cut_and_burn_clip(self, master_video, start_t, end_t, temp_cropped, final_output, ass_file, subtitle_engine, layout="single", center_x=None, initial_slot_centers=None, cut_as_short=True, require_audio=False, transcript_path=None) -> dict:
         self.render_calls.append({"start_t": start_t, "end_t": end_t, "layout": layout, "initial_slot_centers": initial_slot_centers})
         Path(final_output).parent.mkdir(parents=True, exist_ok=True)
         Path(final_output).write_bytes(b"video")
@@ -150,7 +153,7 @@ def test_manual_snap_and_opening_validation_use_resolved_window_for_render_and_s
     _FakeSubtitleRenderer.generated_payloads.clear()
     _install_manual_fakes(monkeypatch, tmp_path, ctx)
 
-    asyncio.run(ManualClipWorkflow(ctx).run(0.2, 2.9, _transcript(), output_name="manual.mp4", layout="auto"))
+    asyncio.run(ManualClipWorkflow(typing.cast(typing.Any, ctx)).run(0.2, 2.9, _transcript(), output_name="manual.mp4", layout="auto"))
 
     assert ctx.render_calls[0]["start_t"] == 1.0
     assert ctx.render_calls[0]["end_t"] == 3.0
@@ -158,6 +161,7 @@ def test_manual_snap_and_opening_validation_use_resolved_window_for_render_and_s
     shifted_words = [word for segment in _FakeSubtitleRenderer.generated_payloads[0] for word in segment.get("words", [])]
     assert shifted_words[0]["word"] == "two"
     assert shifted_words[0]["start"] == 0.0
+    assert ctx.committed_metadata is not None
     assert ctx.committed_metadata["render_metadata"]["start_time"] == 1.0
     assert ctx.committed_metadata["render_metadata"]["transcript_quality"]["boundary_snaps_applied"] == 1
 
@@ -173,7 +177,7 @@ def test_manual_split_fallback_rebuilds_single_plan_with_resolved_window(monkeyp
     )
     plan_calls = _install_manual_fakes(monkeypatch, tmp_path, ctx)
 
-    asyncio.run(ManualClipWorkflow(ctx).run(0.2, 2.9, _transcript(), output_name="manual.mp4", layout="auto"))
+    asyncio.run(ManualClipWorkflow(typing.cast(typing.Any, ctx)).run(0.2, 2.9, _transcript(), output_name="manual.mp4", layout="auto"))
 
     single_plan_call = [call for call in plan_calls if call["requested_layout"] == "single"][-1]
     assert single_plan_call["start_t"] == 1.0
@@ -186,7 +190,7 @@ def test_manual_debug_artifacts_include_boundary_snap(monkeypatch, tmp_path: Pat
     ctx = _make_context(tmp_path)
     _install_manual_fakes(monkeypatch, tmp_path, ctx)
 
-    asyncio.run(ManualClipWorkflow(ctx).run(0.2, 2.9, _transcript(), output_name="manual.mp4", layout="auto"))
+    asyncio.run(ManualClipWorkflow(typing.cast(typing.Any, ctx)).run(0.2, 2.9, _transcript(), output_name="manual.mp4", layout="auto"))
 
     boundary_snap = tmp_path / "debug" / "manual" / "boundary_snap.json"
     assert boundary_snap.exists()
