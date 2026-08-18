@@ -207,6 +207,29 @@ Not:
 
 "LM Studio'yu kur, bir model indir, local server'i ac, `LMSTUDIO_HOST=http://localhost:1234` yaz. Istersen `LM_STUDIO_API_KEY=lm-studio` birak."
 
+## 3C. NVIDIA NIM (NVIDIA AI Endpoints)
+
+NVIDIA'nin sundugu OpenAI uyumlu bulut LLM servisidir (`nvapi-` ile baslayan API key'ler).
+
+### Nereden alinir?
+
+1. `https://build.nvidia.com` adresine gidin
+2. NVIDIA Build hesabi ile giris yapin
+3. Bir model (orn. `meta/llama-3.3-70b-instruct`) secin ve `Get API Key` butonuyla key alin
+
+### `.env` ayari
+
+```dotenv
+NVIDIA_API_KEY=nvapi-xxxxxxxxxxxxxxxx
+NVIDIA_MODEL=nvidia/nemotron-3-ultra-550b-a55b
+NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+```
+
+### Ne ise yarar?
+
+- `OPENROUTER_API_KEY` tanimli olmadiginda `cloud` motoru otomatik NVIDIA API key'e fallback yapar.
+- UI uzerinden dogrudan `Cloud (NVIDIA NIM)` motoru secilerek de kullanilabilir.
+
 ## 4. Postiz Kurulumu
 
 Bu kisim sadece sosyal medya yayinlama ozelligini kullanacaksan gerekli.
@@ -413,3 +436,58 @@ Hayir. Mevcut repo akisinda zorunlu degil.
 - LM Studio OpenAI compatibility: https://lmstudio.ai/docs/developer/openai-compat
 - Postiz Public API: https://docs.postiz.com/public-api/introduction
 - YouTube Data API credentials: https://developers.google.com/youtube/registering_an_application
+
+---
+
+## 🛠️ Bilinen Hatalar ve Kök Neden Çözüm Rehberi (Troubleshooting)
+
+İleride karşılaşılabilecek olası aksaklıklar ve sistemdeki çözümleri aşağıda derlenmiştir:
+
+### 1. Clerk Oturum Süresi / WebSocket Donması (`token_expired`)
+- **Belirti**: İlerleme çubuğu %60 seviyesinde sabit kalıyor veya WebSocket bağlantısı kopuyor (`auth_failed: token_expired`).
+- **Kök Neden**: Clerk geliştirme anahtarları (`pk_test_...`) 60 saniyelik JWT token üretir. Ön yüzdeki `AUTH_TOKEN_EXPIRY_SKEW_MS` 60s ise token daha doğduğu an süresi dolmuş sayılır.
+- **Çözüm**:
+  - `frontend/src/config.ts`: `AUTH_TOKEN_EXPIRY_SKEW_MS = 5000` (5 saniye) olarak ayarlanmalıdır.
+  - `backend/api/security.py`: `jwt.decode` fonksiyonunda `leeway=10` saat toleransı kullanılmalıdır.
+
+### 2. YOLO Kişi Takibinde İşlemciye (CPU) Düşme Yavaşlığı
+- **Belirti**: Klip kurgusu ve YOLO takibi adımında 140 saniyelik video 3-5 dakika sürüyor (`YOLO icin torch CUDA yok`).
+- **Kök Neden**: Sanal ortamda (`.venv`) PyTorch'un `2.13.0+cpu` sürümü yüklüdür (`torch.cuda.is_available() == False`).
+- **Çözüm**:
+  - Sanal ortama PyTorch CUDA 12.4 sürümü kurulmalıdır:
+    ```powershell
+    .venv\Scripts\pip.exe install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+    ```
+  - Doğrulama: `python -c "import torch; print(torch.cuda.is_available())"` çıktısı `True` ve `RTX 3080 Ti` olmalıdır.
+
+### 3. FFmpeg NVENC Render Çakışması (`CUDA error: driver mismatch`)
+- **Belirti**: Altyazı basma adımı (`burn_subtitles_to_video`) CPU (`libx264`) moduna geçerek yavaşlıyor.
+- **Kök Neden**: Arka planda başka bir PyTorch/CUDA süreci (ör. pytest) çalışırken FFmpeg `h264_nvenc` ekran kartı donanım sürücüsüyle anlık bağlam çakışması yaşar.
+- **Çözüm**:
+  - Subtitle renderer otomatik korumayla CPU'ya devreder. Arka plan test süreci bittiğinde `ffmpeg -c:v h264_nvenc` testiyle GPU'nun 4.4x hızla tekrar aktif olduğu doğrulanır.
+
+### 4. OpenRouter Yer Tutucu Anahtarı (`sk-or-v1-xxxx`)
+- **Belirti**: AI analizi OpenRouter çağrısında yanıt vermiyor veya hata veriyor.
+- **Kök Neden**: `.env` içindeki `OPENROUTER_API_KEY` geçersiz bir yer tutucu metindir.
+- **Çözüm**:
+  - `viral_analyzer.py` içerisindeki `_is_usable_key()` kontrolü ile geçersiz anahtar tespit edildiğinde sistem otomatik olarak `NVIDIA_API_KEY` (`nvidia/nemotron-3-ultra-550b-a55b`) motoruna geçiş yapar.
+
+### 5. Görev İptal Etme İşleminde CORS / 500 Hatası
+- **Belirti**: Arayüzden görev iptal edilirken konsolda `CORS policy: No Access-Control-Allow-Origin header` hatası düşer.
+- **Kök Neden**: `CancelJobRequest` Pydantic şemasında `confirmed` ve `source` alanlarının bulunmaması nedeniyle sunucunun 500 Unhandled Exception üretmesidir.
+- **Çözüm**:
+  - `backend/models/schemas.py`: `CancelJobRequest` şemasına `confirmed: bool = True` ve `source: str | None = None` eklenmiştir.
+
+### 6. Vite Otomatik Sayfa Yenilenmesi (`Full Reload`)
+- **Belirti**: Arka planda videolar işlenirken tarayıcı sayfası ikide bir kendini yeniler.
+- **Kök Neden**: Vite dosya izleyicisinin `workspace/`, `temp/` veya `logs/` klasörlerine yazılan geçici dosyaları kod değişimi sanmasıdır.
+- **Çözüm**:
+  - `frontend/vite.config.ts`: `server.watch.ignored` listesine `**/workspace/**`, `**/backend/**`, `**/outputs/**`, `**/logs/**`, `**/temp/**`, `**/.venv/**` eklenmiştir.
+
+### 7. PyTorch & cuDNN DLL Sembol Çakışması (`Could not load symbol cudnnGetLibConfig`)
+- **Belirti**: Render başlatıldığında konsol / stderr çıktısına `Could not load symbol cudnnGetLibConfig. Error code 127` uyarısı düşer ve arka plan uvicorn süreci çıkış yapabilir.
+- **Kök Neden**: `transcription.py` modülü yüklenirken `nvidia/cudnn/bin` klasörünün PyTorch'tan önce `PATH`'in başına eklenmesidir. Windows DLL yükleyicisi PyTorch'un kendi cuDNN DLL'leri yerine pip ile gelen farklı cuDNN versiyonunu yüklemeye çalışır.
+- **Çözüm**:
+  - `backend/services/transcription.py`: `import torch` ifadesi `_register_nvidia_dll_directories()` fonksiyonundan önceye çekilmiş ve nvidia DLL klasörleri `PATH`'in başına değil sonuna eklenmiştir. Böylece PyTorch sorunsuz başlatılır.
+
+

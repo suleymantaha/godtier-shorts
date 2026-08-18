@@ -76,15 +76,18 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     )
 
 
+from fastapi.encoders import jsonable_encoder
+
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     trace_id = _trace_id(request)
-    logger.warning(f"trace_id={trace_id} code=REQUEST_VALIDATION_ERROR details={sanitize_log_value(exc.errors())}")
+    sanitized_details = jsonable_encoder(exc.errors())
+    logger.warning(f"trace_id={trace_id} code=REQUEST_VALIDATION_ERROR details={sanitize_log_value(sanitized_details)}")
     return JSONResponse(
         status_code=422,
         content=_error_payload(
             code="REQUEST_VALIDATION_ERROR",
             message="Request validation failed",
-            details=sanitize_log_value(exc.errors()),
+            details=sanitized_details,
             trace_id=trace_id,
         ),
     )

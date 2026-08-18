@@ -23,6 +23,13 @@ from backend.services.viral_analyzer_core import (
 )
 
 load_dotenv()
+
+def _is_usable_key(key: str | None) -> bool:
+    if not key or not key.strip():
+        return False
+    k = key.strip().lower()
+    return not ("xxxx" in k or "your_" in k or "placeholder" in k)
+
 class ViralSegment(BaseModel):
     start_time: float = Field(description="Viral kısmın başlangıç saniyesi")
     end_time: float = Field(description="Viral kısmın bitiş saniyesi")
@@ -30,17 +37,21 @@ class ViralSegment(BaseModel):
     ui_title: str = Field(description="Dashboard'da görünecek ilgi çekici başlık")
     social_caption: str = Field(description="TikTok/Shorts açıklaması ve hashtagler")
     viral_score: int = Field(description="1-100 arası puan")
+
 class ViralAnalysisResult(BaseModel):
     segments: list[ViralSegment]
+
 class ViralAnalyzer:
     def __init__(self, engine: str = "cloud"):
         self.engine = (engine or "cloud").strip().lower()
         self.model_name = os.environ.get("OPENROUTER_MODEL", "moonshotai/kimi-k2.5")
         self.local_model_name = os.environ.get("LMSTUDIO_MODEL", "local-model")
+        self.nvidia_model_name = os.environ.get("NVIDIA_MODEL", "nvidia/nemotron-3-ultra-550b-a55b")
 
     @staticmethod
     def _clip_words(text: str, limit: int) -> str:
         return clip_words(text, limit)
+
     @staticmethod
     def _normalize_hook(text: str) -> str:
         return normalize_hook(text)
@@ -68,35 +79,46 @@ class ViralAnalyzer:
     @staticmethod
     def _parse_llm_json_response(content: str) -> dict | None:
         return parse_llm_json_response(content)
+
     def _build_cloud_client(self) -> OpenAI | None:
-        api_key = os.environ.get("OPENROUTER_API_KEY")
-        if not api_key:
-            logger.warning("⚠️ OPENROUTER_API_KEY bulunamadı. Cloud yerine fallback analiz kullanılacak.")
+        api_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+        if not _is_usable_key(api_key):
+            nvidia_key = os.environ.get("NVIDIA_API_KEY", "").strip()
+            if _is_usable_key(nvidia_key):
+                logger.info("ℹ️ OPENROUTER_API_KEY yer tutucu/boş, NVIDIA_API_KEY kullanılıyor.")
+                return self._build_nvidia_client()
+            logger.warning("⚠️ OPENROUTER_API_KEY ve NVIDIA_API_KEY bulunamadı. Cloud yerine fallback analiz kullanılacak.")
             return None
         return OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
+
+    def _build_nvidia_client(self) -> OpenAI | None:
+        api_key = os.environ.get("NVIDIA_API_KEY", "").strip()
+        if not _is_usable_key(api_key):
+            logger.warning("⚠️ NVIDIA_API_KEY bulunamadı. NVIDIA NIM yerine fallback analiz kullanılacak.")
+            return None
+        base_url = os.environ.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1").strip()
+        return OpenAI(base_url=base_url, api_key=api_key)
 
     def _build_lmstudio_client(self) -> OpenAI | None:
         host = os.environ.get("LMSTUDIO_HOST", "").strip()
         if not host:
             logger.warning("⚠️ LMSTUDIO_HOST bulunamadı. LM Studio yerine fallback analiz kullanılacak.")
             return None
-
         base_url = host.rstrip("/")
         if not base_url.endswith("/v1"):
             base_url = f"{base_url}/v1"
-
         api_key = os.environ.get("LM_STUDIO_API_KEY", "").strip() or "lm-studio"
         return OpenAI(base_url=base_url, api_key=api_key)
 
     @staticmethod
     def _extract_message_content(message: object) -> str:
         return extract_message_content(message)
+
     @staticmethod
     def _status_callback(ui_callback: Optional[Callable]) -> Callable[[str, int], None]:
         def _status(message: str, progress: int) -> None:
             if ui_callback:
                 ui_callback({"message": message, "progress": progress})
-
         return _status
 
     @staticmethod
@@ -104,29 +126,40 @@ class ViralAnalyzer:
         def _check_cancelled() -> None:
             if cancel_event is not None and cancel_event.is_set():
                 raise RuntimeError("Job cancelled by user")
-
         return _check_cancelled
 
     def _engine_label(self) -> str:
         return engine_label(self.engine)
+
     def _resolve_client(self) -> OpenAI | None:
         if self.engine == "cloud":
             return self._build_cloud_client()
         if self.engine == "lmstudio":
             return self._build_lmstudio_client()
+        if self.engine == "nvidia":
+            return self._build_nvidia_client()
         return None
 
     def _resolve_adapter(self) -> ViralLLMAdapter | None:
+        effective_engine = self.engine
+        if (
+            effective_engine == "cloud"
+            and not _is_usable_key(os.environ.get("OPENROUTER_API_KEY"))
+            and _is_usable_key(os.environ.get("NVIDIA_API_KEY"))
+        ):
+            effective_engine = "nvidia"
         return create_adapter(
-            self.engine,
+            effective_engine,
             cloud_model_name=self.model_name,
             local_model_name=self.local_model_name,
+            nvidia_model_name=self.nvidia_model_name,
         )
 
     @staticmethod
     def _persist_segments(result: dict) -> None:
         with open(str(VIRAL_SEGMENTS), "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=4)
+
     def _fallback_result(
         self,
         transcript_data: list[dict],
@@ -152,18 +185,23 @@ class ViralAnalyzer:
     ) -> dict | None:
         request_kwargs = adapter.build_request_kwargs(prompt, include_reasoning=include_reasoning)
         response = client.chat.completions.create(**request_kwargs)
-
-        message = response.choices[0].message
+        choices = getattr(response, "choices", None)
+        if not choices:
+            return None
+        message = choices[0].message
         content = self._extract_message_content(message)
-
         if include_reasoning and status is not None:
             model_extra = getattr(message, "model_extra", None) or {}
-            reasoning = getattr(message, "reasoning", None) or model_extra.get("reasoning")
+            reasoning = (
+                getattr(message, "reasoning_content", None)
+                or getattr(message, "reasoning", None)
+                or model_extra.get("reasoning_content")
+                or model_extra.get("reasoning")
+            )
             if reasoning:
                 msg = f"🧠 AI Akıl Yürütme: {reasoning[:150]}..."
                 logger.debug(msg)
                 status(msg, 53)
-
         return self._parse_llm_json_response(content)
 
     @logger.catch
@@ -188,40 +226,21 @@ class ViralAnalyzer:
             transcript_data = json.load(f)
         check_cancelled()
 
-        fallback_kw = {
-            "limit": num_clips,
-            "min_duration": duration_min,
-            "max_duration": duration_max,
-        }
+        fallback_kw = {"limit": num_clips, "min_duration": duration_min, "max_duration": duration_max}
 
-        if self.engine not in {"cloud", "lmstudio"}:
+        if self.engine not in {"cloud", "lmstudio", "nvidia"}:
             logger.warning(f"⚠️ {self.engine} motoru için güvenli fallback analiz kullanılıyor.")
             status("Yerel fallback analiz çalışıyor...", 55)
-            return self._fallback_result(
-                transcript_data,
-                fallback_kw=fallback_kw,
-                check_cancelled=check_cancelled,
-                persist=True,
-            )
+            return self._fallback_result(transcript_data, fallback_kw=fallback_kw, check_cancelled=check_cancelled, persist=True)
 
         adapter = self._resolve_adapter()
         client = self._resolve_client()
         if client is None or adapter is None:
             status(f"{engine_label} hazir degil, fallback analiz kullaniliyor...", 55)
-            return self._fallback_result(
-                transcript_data,
-                fallback_kw=fallback_kw,
-                check_cancelled=check_cancelled,
-                persist=True,
-            )
+            return self._fallback_result(transcript_data, fallback_kw=fallback_kw, check_cancelled=check_cancelled, persist=True)
 
         full_text = build_transcript_text(transcript_data, check_cancelled)
-        prompt = build_metadata_prompt(
-            full_text,
-            num_clips=num_clips,
-            duration_min=duration_min,
-            duration_max=duration_max,
-        )
+        prompt = build_metadata_prompt(full_text, num_clips=num_clips, duration_min=duration_min, duration_max=duration_max)
 
         try:
             check_cancelled()
@@ -229,21 +248,10 @@ class ViralAnalyzer:
             if result is None:
                 logger.error("❌ LLM çıktısında 'segments' anahtarı bulunamadı!")
                 return None
-            normalized_result = normalize_viral_segments(
-                result,
-                transcript_data,
-                limit=num_clips,
-                duration_min=duration_min,
-                duration_max=duration_max,
-            )
+            normalized_result = normalize_viral_segments(result, transcript_data, limit=num_clips, duration_min=duration_min, duration_max=duration_max)
             if not normalized_result or not normalized_result.get("segments"):
                 logger.warning("⚠️ LLM sonucu süre kontratını karşılamadı, fallback analiz kullanılacak.")
-                return self._fallback_result(
-                    transcript_data,
-                    fallback_kw=fallback_kw,
-                    check_cancelled=check_cancelled,
-                    persist=True,
-                )
+                return self._fallback_result(transcript_data, fallback_kw=fallback_kw, check_cancelled=check_cancelled, persist=True)
 
             check_cancelled()
             self._persist_segments(normalized_result)
@@ -252,12 +260,7 @@ class ViralAnalyzer:
         except Exception as exc:
             logger.error(f"❌ Analiz Hatası: {exc}")
             status(f"{engine_label} analiz hatasi alindi, fallback analiz kullaniliyor...", 56)
-            return self._fallback_result(
-                transcript_data,
-                fallback_kw=fallback_kw,
-                check_cancelled=check_cancelled,
-                persist=True,
-            )
+            return self._fallback_result(transcript_data, fallback_kw=fallback_kw, check_cancelled=check_cancelled, persist=True)
 
     @logger.catch
     def analyze_transcript_segment(
@@ -286,63 +289,30 @@ class ViralAnalyzer:
             "target_duration": target_duration,
         }
 
-        if self.engine not in {"cloud", "lmstudio"}:
+        if self.engine not in {"cloud", "lmstudio", "nvidia"}:
             logger.warning(f"⚠️ {self.engine} motoru için segment fallback analizi kullanılıyor.")
-            return self._fallback_result(
-                transcript_data,
-                fallback_kw=fallback_kw,
-                check_cancelled=check_cancelled,
-                persist=False,
-            )
+            return self._fallback_result(transcript_data, fallback_kw=fallback_kw, check_cancelled=check_cancelled, persist=False)
 
         adapter = self._resolve_adapter()
         client = self._resolve_client()
         if client is None or adapter is None:
-            return self._fallback_result(
-                transcript_data,
-                fallback_kw=fallback_kw,
-                check_cancelled=check_cancelled,
-                persist=False,
-            )
+            return self._fallback_result(transcript_data, fallback_kw=fallback_kw, check_cancelled=check_cancelled, persist=False)
 
         logger.info(f"📂 Transkript segmenti analizi başlıyor (Limit: {limit})")
         full_text = build_transcript_text(transcript_data, check_cancelled)
-        prompt = build_segment_prompt(
-            full_text,
-            limit=limit,
-            window_start=window_start,
-            window_end=window_end,
-            duration_min=duration_min,
-            duration_max=duration_max,
-        )
+        prompt = build_segment_prompt(full_text, limit=limit, window_start=window_start, window_end=window_end, duration_min=duration_min, duration_max=duration_max)
 
         try:
             check_cancelled()
             result = self._call_llm(client, adapter, prompt, include_reasoning=False)
             if result is None:
                 return None
-            normalized_result = normalize_viral_segments(
-                result,
-                transcript_data,
-                limit=limit,
-                duration_min=duration_min,
-                duration_max=duration_max,
-            )
+            normalized_result = normalize_viral_segments(result, transcript_data, limit=limit, duration_min=duration_min, duration_max=duration_max)
             if not normalized_result or not normalized_result.get("segments"):
-                return self._fallback_result(
-                    transcript_data,
-                    fallback_kw=fallback_kw,
-                    check_cancelled=check_cancelled,
-                    persist=False,
-                )
+                return self._fallback_result(transcript_data, fallback_kw=fallback_kw, check_cancelled=check_cancelled, persist=False)
 
             logger.success(f"✅ Segment analizi tamamlandı ({len(normalized_result['segments'])} segment).")
             return normalized_result
         except Exception as exc:
             logger.error(f"❌ Segment Analiz Hatası: {exc}")
-            return self._fallback_result(
-                transcript_data,
-                fallback_kw=fallback_kw,
-                check_cancelled=check_cancelled,
-                persist=False,
-            )
+            return self._fallback_result(transcript_data, fallback_kw=fallback_kw, check_cancelled=check_cancelled, persist=False)

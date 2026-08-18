@@ -338,7 +338,8 @@ export const tr: TranslationSchema = {
       layoutSplit: 'Split',
       engineLocal: 'Yerel (Ollama)',
       engineLmstudio: 'Yerel (LM Studio)',
-      engineCloud: 'Bulut (OpenAI API)',
+      engineCloud: 'Bulut (OpenRouter)',
+      engineNvidia: 'Bulut (NVIDIA NIM)',
     },
     cache: {
       title: 'CACHE INTELLIGENCE',
