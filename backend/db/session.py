@@ -17,12 +17,15 @@ def _cached_session_factory(database_url: str) -> async_sessionmaker[AsyncSessio
     return create_session_factory(database_url)
 
 
-async def get_db_session() -> AsyncIterator[AsyncSession]:
-    database_url = os.getenv("DATABASE_URL", "").strip()
-    if not database_url:
+def get_session_factory(database_url: str | None = None) -> async_sessionmaker[AsyncSession]:
+    resolved_url = (database_url or os.getenv("DATABASE_URL", "")).strip()
+    if not resolved_url:
         raise RuntimeError("DATABASE_URL is required")
+    return _cached_session_factory(resolved_url)
 
-    factory = _cached_session_factory(database_url)
+
+async def get_db_session() -> AsyncIterator[AsyncSession]:
+    factory = get_session_factory()
     async with factory() as session:
         try:
             yield session

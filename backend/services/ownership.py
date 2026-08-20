@@ -7,17 +7,108 @@ import hmac
 import json
 import os
 import shutil
+import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import backend.config as config
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.db.models import User, UserRole, UserStatus
+from backend.db.session import get_session_factory
 
 
 PROJECT_MANIFEST_SCHEMA_VERSION = 1
 PROJECT_MANIFEST_FILENAME = "project_manifest.json"
 DEFAULT_SUPPORT_GRANT_TTL_SECONDS = 24 * 60 * 60
+
+
+class IdentityStoreError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class UserIdentity:
+    id: uuid.UUID
+    clerk_subject: str
+    role: UserRole
+    status: UserStatus
+
+
+def _user_identity(user: User) -> UserIdentity:
+    return UserIdentity(
+        id=user.id,
+        clerk_subject=user.clerk_subject,
+        role=user.role,
+        status=user.status,
+    )
+
+
+async def _get_or_create_user(
+    session: AsyncSession,
+    clerk_subject: str,
+    *,
+    email_normalized: str | None,
+    role: UserRole,
+) -> UserIdentity:
+    statement = (
+        insert(User)
+        .values(
+            clerk_subject=clerk_subject,
+            email_normalized=email_normalized,
+            role=role,
+            status=UserStatus.ACTIVE,
+        )
+        .on_conflict_do_nothing(index_elements=[User.clerk_subject])
+        .returning(User)
+    )
+    user = (await session.execute(statement)).scalar_one_or_none()
+    if user is None:
+        user = await session.scalar(
+            select(User).where(User.clerk_subject == clerk_subject)
+        )
+    if user is None:
+        raise IdentityStoreError("Clerk kullanici kimligi olusturulamadi")
+    return _user_identity(user)
+
+
+async def get_or_create_user(
+    clerk_subject: str,
+    *,
+    email_normalized: str | None = None,
+    role: UserRole = UserRole.USER,
+    session: AsyncSession | None = None,
+) -> UserIdentity:
+    normalized_subject = clerk_subject.strip()
+    if not normalized_subject:
+        raise ValueError("clerk_subject bos olamaz")
+    normalized_email = (email_normalized or "").strip().lower() or None
+
+    try:
+        if session is not None:
+            return await _get_or_create_user(
+                session,
+                normalized_subject,
+                email_normalized=normalized_email,
+                role=role,
+            )
+
+        factory = get_session_factory()
+        async with factory() as owned_session:
+            async with owned_session.begin():
+                return await _get_or_create_user(
+                    owned_session,
+                    normalized_subject,
+                    email_normalized=normalized_email,
+                    role=role,
+                )
+    except SQLAlchemyError as exc:
+        raise IdentityStoreError("Clerk kullanici kimligi veritabanina yazilamadi") from exc
 
 
 @dataclass(slots=True)

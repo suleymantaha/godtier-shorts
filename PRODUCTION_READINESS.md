@@ -48,6 +48,7 @@ Use this as the living go-live gate. Never put secret values here.
 
 ## Application Security
 - [ ] Clerk tokens verified server-side
+- [ ] Clerk bot protection enabled in the production dashboard
 - [ ] Cross-user ownership tests pass
 - [ ] Admin RBAC and stronger authentication controls enabled
 - [ ] SSRF blocks private/link-local/metadata networks and unsafe redirects
