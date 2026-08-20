@@ -156,6 +156,8 @@ def test_social_accounts_endpoint_reports_managed_mode(
     social_store: SocialStore,
     auth_header: dict[str, str],
 ):
+    monkeypatch.delenv("POSTIZ_API_KEY", raising=False)
+    monkeypatch.delenv("ALLOW_ENV_POSTIZ_API_KEY_FALLBACK", raising=False)
     monkeypatch.setenv("SOCIAL_CONNECTION_MODE", "managed")
     monkeypatch.setenv("POSTIZ_API_BASE_URL", "http://localhost:4007/api/public/v1")
     monkeypatch.setenv("POSTIZ_OAUTH_CLIENT_ID", "postiz_client_123")

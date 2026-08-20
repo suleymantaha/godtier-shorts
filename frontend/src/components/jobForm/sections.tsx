@@ -13,6 +13,7 @@ import {
   getStyleSelectOptions,
 } from './helpers';
 import { Select } from '../ui/Select';
+import { AiStatusBadge } from '../ui/AiStatusBadge';
 
 interface SourceSectionProps {
   isSubmitting: boolean;
@@ -239,17 +240,20 @@ function EngineControlCard({
   const { t } = useTranslation();
 
   return (
-    <JobFormSelectCard
-      accentClassName="border-accent/20"
-      disabled={isSubmitting}
-      icon={<Cpu className="w-4 h-4 text-accent/50" />}
-      id={engineId}
-      label={t('jobForm.aiCoreEngine')}
-      labelClassName="ml-1 block max-w-full text-sm font-medium leading-tight text-accent uppercase tracking-[0.18em] holo-text"
-      onChange={onEngineChange}
-      options={getEngineSelectOptions()}
-      value={engine}
-    />
+    <div className="flex flex-col">
+      <JobFormSelectCard
+        accentClassName="border-accent/20"
+        disabled={isSubmitting}
+        icon={<Cpu className="w-4 h-4 text-accent/50" />}
+        id={engineId}
+        label={t('jobForm.aiCoreEngine')}
+        labelClassName="ml-1 block max-w-full text-sm font-medium leading-tight text-accent uppercase tracking-[0.18em] holo-text"
+        onChange={onEngineChange}
+        options={getEngineSelectOptions()}
+        value={engine}
+      />
+      <AiStatusBadge engine={engine} />
+    </div>
   );
 }
 

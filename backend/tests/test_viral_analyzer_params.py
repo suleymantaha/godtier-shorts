@@ -94,6 +94,32 @@ class TestAnalyzeMetadataParams:
         assert kwargs["base_url"] == "http://localhost:1234/v1"
         assert kwargs["api_key"] == "lm-studio"
 
+    def test_nvidia_client_creation(self, monkeypatch: pytest.MonkeyPatch):
+        """NVIDIA API key ile NVIDIA NIM OpenAI client oluşturulur."""
+        monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+        monkeypatch.setenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+
+        with patch("backend.services.viral_analyzer.OpenAI") as mock_openai:
+            analyzer = ViralAnalyzer(engine="nvidia")
+            analyzer._build_nvidia_client()
+
+        _, kwargs = mock_openai.call_args
+        assert kwargs["base_url"] == "https://integrate.api.nvidia.com/v1"
+        assert kwargs["api_key"] == "nvapi-test-key"
+
+    def test_cloud_engine_falls_back_to_nvidia_key_when_openrouter_missing(self, monkeypatch: pytest.MonkeyPatch):
+        """OPENROUTER_API_KEY yoksa engine=cloud otomatik NVIDIA API key kullanır."""
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+
+        with patch("backend.services.viral_analyzer.OpenAI") as mock_openai:
+            analyzer = ViralAnalyzer(engine="cloud")
+            client = analyzer._resolve_client()
+
+        assert client is not None
+        _, kwargs = mock_openai.call_args
+        assert kwargs["api_key"] == "nvapi-test-key"
+
     def test_analyze_metadata_uses_lmstudio_client(self):
         """engine=lmstudio iken LLM çağrısı LM Studio client ile yapılır."""
         transcript_data = [

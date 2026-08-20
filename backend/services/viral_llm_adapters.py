@@ -42,11 +42,28 @@ class LMStudioAdapter(ViralLLMAdapter):
     pass
 
 
-def create_adapter(engine: str, *, cloud_model_name: str, local_model_name: str) -> ViralLLMAdapter | None:
+class NvidiaAdapter(ViralLLMAdapter):
+    def _apply_provider_options(self, request_kwargs: dict, *, include_reasoning: bool) -> None:
+        if include_reasoning:
+            request_kwargs["extra_body"] = {
+                "chat_template_kwargs": {"enable_thinking": True},
+                "reasoning_budget": 16384,
+            }
+
+
+def create_adapter(
+    engine: str,
+    *,
+    cloud_model_name: str,
+    local_model_name: str,
+    nvidia_model_name: str = "nvidia/nemotron-3-ultra-550b-a55b",
+) -> ViralLLMAdapter | None:
     if engine == "cloud":
         return OpenRouterAdapter(engine=engine, model_name=cloud_model_name)
     if engine == "lmstudio":
         return LMStudioAdapter(engine=engine, model_name=local_model_name)
+    if engine == "nvidia":
+        return NvidiaAdapter(engine=engine, model_name=nvidia_model_name)
     return None
 
 
@@ -55,4 +72,6 @@ def engine_label(engine: str) -> str:
         return "Cloud (OpenRouter)"
     if engine == "lmstudio":
         return "LM Studio"
+    if engine == "nvidia":
+        return "Cloud (NVIDIA NIM)"
     return f"{engine} (fallback)"

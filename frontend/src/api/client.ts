@@ -80,6 +80,10 @@ async function waitForClerkSession(timeoutMs: number): Promise<ClerkSessionLike 
         return immediateSession;
     }
 
+    if (typeof window !== 'undefined' && (window as any).Clerk?.isLoaded && !(window as any).Clerk?.session) {
+        return null;
+    }
+
     const deadline = Date.now() + Math.max(0, timeoutMs);
     while (Date.now() < deadline) {
         await sleep(50);
@@ -873,5 +877,37 @@ export const accountApi = {
         apiFetch<AccountDeletionResponse>('/api/account/me/data', {
             method: 'DELETE',
             body: JSON.stringify({ confirm }),
+        }),
+};
+
+export interface AiEngineStatus {
+    configured: boolean;
+    masked_key?: string | null;
+    model?: string;
+    label: string;
+    fallback_to_nvidia?: boolean;
+    host?: string;
+}
+
+export interface AiStatusResponse {
+    status: string;
+    effective_default_engine: string;
+    engines: Record<string, AiEngineStatus>;
+}
+
+export interface TestAiResponse {
+    ok: boolean;
+    engine: string;
+    actual_engine: string;
+    message: string;
+    sample_response?: unknown;
+}
+
+export const settingsApi = {
+    getAiStatus: () => apiFetch<AiStatusResponse>('/api/settings/ai-status'),
+    testAi: (engine: string) =>
+        apiFetch<TestAiResponse>('/api/settings/test-ai', {
+            method: 'POST',
+            body: JSON.stringify({ engine }),
         }),
 };

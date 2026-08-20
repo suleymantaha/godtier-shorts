@@ -26,11 +26,16 @@ async def _asyncio_to_thread_inline(func, /, *args, **kwargs):
 
 
 async def _anyio_run_sync_inline(func, *args, **kwargs):
+    kwargs.pop("limiter", None)
+    kwargs.pop("abandon_on_close", None)
+    if func is open:
+        allowed = {"file", "mode", "buffering", "encoding", "errors", "newline", "closefd", "opener"}
+        kwargs = {k: v for k, v in kwargs.items() if k in allowed}
     return func(*args, **kwargs)
 
 
-fastapi_testclient.TestClient = CompatTestClient
-starlette_testclient.TestClient = CompatTestClient
+fastapi_testclient.TestClient = CompatTestClient  # type: ignore[assignment]
+starlette_testclient.TestClient = CompatTestClient  # type: ignore[assignment]
 fastapi_routing.run_in_threadpool = _run_in_threadpool_inline
 fastapi_dependencies_utils.run_in_threadpool = _run_in_threadpool_inline
 starlette_concurrency.run_in_threadpool = _run_in_threadpool_inline

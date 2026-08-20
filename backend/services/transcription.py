@@ -13,11 +13,14 @@ import threading
 from pathlib import Path
 
 
+import torch
+
 def _register_nvidia_dll_directories() -> list[str]:
     """Windows Python 3.8+ icin nvidia-* pip paketlerinin DLL klasorlerini DLL search path'e ekler.
 
     CTranslate2 GPU build'i cublas64_12.dll, cudnn64_9.dll vb. icin bu yollara ihtiyac duyar;
     aksi halde 'Library cublas64_12.dll is not found or cannot be loaded' hatasi alinir.
+    PyTorch'un kendi DLL'leriyle sembol cakisimi yasamamasi icin yollar PATH'in sonuna eklenir.
     """
     if sys.platform != "win32":
         return []
@@ -38,12 +41,14 @@ def _register_nvidia_dll_directories() -> list[str]:
 
     registered: list[str] = []
     path_entries: list[str] = []
+    add_dll_dir = getattr(os, "add_dll_directory", None)
     for sub in nvidia_root.iterdir():
         bin_dir = sub / "bin"
         if not bin_dir.is_dir():
             continue
         try:
-            os.add_dll_directory(str(bin_dir))
+            if add_dll_dir is not None:
+                add_dll_dir(str(bin_dir))
             registered.append(str(bin_dir))
             path_entries.append(str(bin_dir))
         except (OSError, FileNotFoundError):
@@ -52,18 +57,17 @@ def _register_nvidia_dll_directories() -> list[str]:
     if path_entries:
         existing_path = os.environ.get("PATH", "")
         normalized_existing = existing_path.lower().split(os.pathsep)
-        prefix_to_add = [
+        entries_to_add = [
             entry for entry in path_entries if entry.lower() not in normalized_existing
         ]
-        if prefix_to_add:
-            os.environ["PATH"] = os.pathsep.join([*prefix_to_add, existing_path]) if existing_path else os.pathsep.join(prefix_to_add)
+        if entries_to_add:
+            os.environ["PATH"] = f"{existing_path}{os.pathsep}{os.pathsep.join(entries_to_add)}" if existing_path else os.pathsep.join(entries_to_add)
     return registered
 
 
 _REGISTERED_NVIDIA_DLL_DIRS = _register_nvidia_dll_directories()
 
 import ctranslate2
-import torch
 import faster_whisper
 from dotenv import load_dotenv
 from loguru import logger
@@ -331,8 +335,8 @@ def run_transcription(
                 })
 
             segment_list.append({
-                "start": float(seg.start),
-                "end": float(seg.end),
+                "start": seg.start,
+                "end": seg.end,
                 "text": seg.text.strip(),
                 "speaker": "Unknown",
                 "words": words,

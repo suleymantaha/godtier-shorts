@@ -148,6 +148,8 @@ function useBackendIdentitySync({
       }
       clearBackendIdentity();
       resetProtectedRequests();
+      setAuthError(null);
+      setBackendIdentity(null);
       return;
     }
 

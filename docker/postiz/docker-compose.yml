@@ -1,0 +1,72 @@
+name: postiz-stack
+
+services:
+  postiz-postgres:
+    image: postgres:17-alpine
+    container_name: postiz-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postiz-user
+      POSTGRES_PASSWORD: postiz-password-secure
+      POSTGRES_DB: postiz-db
+    volumes:
+      - postiz-db-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  postiz-redis:
+    image: redis:7-alpine
+    container_name: postiz-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+
+  temporal:
+    image: temporalio/auto-setup:1.24.2
+    container_name: postiz-temporal
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:7233:7233"
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=postiz-user
+      - POSTGRES_PWD=postiz-password-secure
+      - POSTGRES_SEEDS=postiz-postgres
+    depends_on:
+      - postiz-postgres
+
+  postiz:
+    image: ghcr.io/gitroomhq/postiz-app:latest
+    container_name: postiz
+    restart: unless-stopped
+    environment:
+      MAIN_URL: "http://localhost:4007"
+      NEXT_PUBLIC_BACKEND_URL: "http://localhost:4007/api"
+      JWT_SECRET: "postiz-godtier-shorts-jwt-secret-key-9f8e"
+      DATABASE_URL: "postgresql://postiz-user:postiz-password-secure@postiz-postgres:5432/postiz-db"
+      REDIS_URL: "redis://postiz-redis:6379"
+      FRONTEND_URL: "http://localhost:4007"
+      BACKEND_INTERNAL_URL: "http://localhost:3000"
+      TEMPORAL_ADDRESS: "temporal:7233"
+      IS_LOCAL: "true"
+      IS_GENERAL: "true"
+      DISABLE_REGISTRATION: "false"
+      RUN_CRON: "true"
+      YOUTUBE_CLIENT_ID: "${YOUTUBE_CLIENT_ID:-}"
+      YOUTUBE_CLIENT_SECRET: "${YOUTUBE_CLIENT_SECRET:-}"
+      STORAGE_PROVIDER: "local"
+      UPLOAD_DIRECTORY: "/uploads"
+      NEXT_PUBLIC_UPLOAD_DIRECTORY: "/uploads"
+      DISABLE_SSRF_PROTECTION: "true"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "127.0.0.1:4007:5000"
+    depends_on:
+      - postiz-postgres
+      - postiz-redis
+      - temporal
+
+volumes:
+  postiz-db-data:

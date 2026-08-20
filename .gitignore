@@ -7,9 +7,8 @@ frontend/dist/
 frontend/node_modules/
 marketing/.next/
 marketing/node_modules/
-.github/workflows/
-# Large models
-models/
+# Large models (root-level only — do NOT match backend/models/, the Pydantic schemas package)
+/models/
 .mypy_cache/
 # OS / IDE
 *.pt

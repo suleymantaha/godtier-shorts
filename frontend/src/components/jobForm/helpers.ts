@@ -17,12 +17,13 @@ export const DEFAULT_ENGINE = 'cloud';
 export const DEFAULT_AUTO_DURATION_RANGE = { max: 180, min: 120 } as const;
 export const CLIP_COUNT_LIMITS = { max: 20, min: 1 } as const;
 export const DURATION_LIMITS = { max: 300, min: 30 } as const;
-export const ENGINE_OPTIONS = new Set(['local', 'lmstudio', 'cloud']);
+export const ENGINE_OPTIONS = new Set(['local', 'lmstudio', 'cloud', 'nvidia']);
 export function getEngineSelectOptions() {
   return [
     { label: tSafe('jobForm.options.engineLocal', { defaultValue: 'Local (Ollama)' }), value: 'local' },
     { label: tSafe('jobForm.options.engineLmstudio', { defaultValue: 'Local (LM Studio)' }), value: 'lmstudio' },
-    { label: tSafe('jobForm.options.engineCloud', { defaultValue: 'Cloud (OpenAI API)' }), value: 'cloud' },
+    { label: tSafe('jobForm.options.engineCloud', { defaultValue: 'Cloud (OpenRouter)' }), value: 'cloud' },
+    { label: tSafe('jobForm.options.engineNvidia', { defaultValue: 'Cloud (NVIDIA NIM)' }), value: 'nvidia' },
   ];
 }
 

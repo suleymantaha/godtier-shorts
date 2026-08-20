@@ -50,6 +50,7 @@ POLICY_ROLES: dict[str, set[str]] = {
     "recover_project_transcript": {"admin", "member", "producer", "editor"},
     "view_transcript": {"admin", "member", "producer", "editor", "operator", "uploader", "viewer"},
     "view_jobs": {"admin", "member", "producer", "editor", "operator", "uploader", "viewer"},
+    "view_settings": {"admin", "member", "producer", "editor", "operator", "uploader", "viewer"},
     "view_styles": {"admin", "member", "producer", "editor", "operator", "uploader", "viewer"},
     "save_transcript": {"admin", "member", "producer", "editor"},
     "websocket_progress": {"admin", "member", "producer", "editor", "operator", "uploader", "viewer"},
@@ -190,13 +191,16 @@ def _decode_jwt(token: str, issuer: str, audience: str | list[str]) -> AuthConte
     jwks_client = _get_jwks_client(issuer, cache_ttl_seconds, timeout_seconds)
     try:
         signing_key = jwks_client.get_signing_key_from_jwt(token)
+        unverified = jwt.decode(token, options={"verify_signature": False})
+        verify_aud = bool(audience and "aud" in unverified)
         payload = jwt.decode(
             token,
             signing_key.key,
             algorithms=["RS256"],
             issuer=issuer,
-            audience=audience,
-            options={"verify_aud": True},
+            audience=audience if verify_aud else None,
+            leeway=10,
+            options={"verify_aud": verify_aud},
         )
     except ExpiredSignatureError as exc:
         raise ClerkTokenExpiredError("JWT token expired") from exc
@@ -334,7 +338,7 @@ def authenticate_request(
             interactive_browser=_is_interactive_browser_request(request.headers),
         )
     except HTTPException as exc:
-        _security_log(request, event="auth_failed", reason=str(exc.detail))
+        _security_log(request, event="auth_failed", reason=f"{exc.detail}")
         raise
 
 
@@ -348,7 +352,7 @@ def authenticate_websocket_token(token: str | None, headers: Any | None = None) 
             interactive_browser=_is_interactive_browser_request(headers),
         )
     except HTTPException as exc:
-        _security_log_ws(event="auth_failed", reason=str(exc.detail))
+        _security_log_ws(event="auth_failed", reason=f"{exc.detail}")
         raise
 
 

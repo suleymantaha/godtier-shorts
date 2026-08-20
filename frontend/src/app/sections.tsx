@@ -148,6 +148,7 @@ export function SignedInShell({
         handleStyleChange={handleStyleChange}
         openConfig={openConfig}
         openClipSubtitleEditor={openClipSubtitleEditor}
+        openSocial={openSocial}
         subtitleSessionNonce={subtitleSessionNonce}
         subtitleTargetClip={subtitleTargetClip}
         subtitlesDisabled={subtitlesDisabled}
@@ -261,7 +262,7 @@ function ViewNavigation({
   return (
     <nav className="flex p-1 glass-card rounded-xl border-accent/20" aria-label={t('app.nav.ariaLabel')}>
       {navItems.map(({ activeClass, icon: Icon, label, mode }) => {
-        // The dedicated compose page is a sub-flow of Social, so it keeps the Social tab highlighted.
+        // Social Compose is a sub-flow reached from a clip, not a standalone destination — it keeps the Social tab highlighted.
         const isActive = viewMode === mode || (mode === 'social' && viewMode === 'social_compose');
         const onClick = mode === 'config'
           ? openConfig
@@ -346,6 +347,7 @@ function MainContent({
   handleSkipSubtitlesChange,
   handleStyleChange,
   openConfig,
+  openSocial,
   openClipSubtitleEditor,
   subtitleSessionNonce,
   subtitleTargetClip,
@@ -360,6 +362,7 @@ function MainContent({
   handleSkipSubtitlesChange: (disabled: boolean) => void;
   handleStyleChange: (styleName: string) => void;
   openConfig: () => void;
+  openSocial: () => void;
   openClipSubtitleEditor: (clip: Clip) => void;
   subtitleSessionNonce: number;
   subtitleTargetClip: Clip | null;
@@ -411,6 +414,7 @@ function MainContent({
       handleAnimationChange={handleAnimationChange}
       handleSkipSubtitlesChange={handleSkipSubtitlesChange}
       handleStyleChange={handleStyleChange}
+      openSocial={openSocial}
       openClipSubtitleEditor={openClipSubtitleEditor}
       subtitlesDisabled={subtitlesDisabled}
     />
@@ -472,6 +476,7 @@ function ConfigWorkspace({
   handleAnimationChange,
   handleSkipSubtitlesChange,
   handleStyleChange,
+  openSocial,
   openClipSubtitleEditor,
   subtitlesDisabled,
 }: {
@@ -480,6 +485,7 @@ function ConfigWorkspace({
   handleAnimationChange: (animationType: SubtitleAnimationType) => void;
   handleSkipSubtitlesChange: (disabled: boolean) => void;
   handleStyleChange: (styleName: string) => void;
+  openSocial: () => void;
   openClipSubtitleEditor: (clip: Clip) => void;
   subtitlesDisabled: boolean;
 }) {
@@ -516,6 +522,16 @@ function ConfigWorkspace({
       </div>
       <div className="min-w-0">
         <ClipGallery onEditClip={openClipSubtitleEditor} />
+      </div>
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={openSocial}
+          className="inline-flex items-center gap-2 rounded-lg border border-secondary/40 bg-secondary/10 px-4 py-2 text-xs font-mono uppercase tracking-[0.16em] text-secondary"
+        >
+          <Share2 className="w-3 h-3" />
+          {t('app.social.openWorkspace')}
+        </button>
       </div>
       <div className="min-w-0">
         <AccountDeletionCard />

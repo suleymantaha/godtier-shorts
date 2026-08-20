@@ -11,14 +11,26 @@ import { resolveWatchConfig } from './build/watchConfig'
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 export default defineConfig({
-  // Repo kökündeki .env içinden VITE_* değişkenlerini oku (backend ile aynı dosya).
+  // Repo kökündeki .env içinden VITE_* ve NEXT_PUBLIC_* değişkenlerini oku (backend ile aynı dosya).
   envDir: repoRoot,
+  envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
   plugins: [
     react(),
     tailwindcss(),
   ],
   server: {
-    watch: resolveWatchConfig(),
+    watch: {
+      ignored: [
+        '**/workspace/**',
+        '**/backend/**',
+        '**/outputs/**',
+        '**/logs/**',
+        '**/temp/**',
+        '**/.venv/**',
+        '**/*.log',
+      ],
+      ...resolveWatchConfig(),
+    },
   },
   build: {
     // Three.js publishes its core as a single ESM entry; after splitting the surrounding

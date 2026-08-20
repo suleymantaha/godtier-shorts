@@ -21,6 +21,8 @@ def social_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> SocialStore
 
 @pytest.fixture(autouse=True)
 def social_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("POSTIZ_API_KEY", raising=False)
+    monkeypatch.delenv("ALLOW_ENV_POSTIZ_API_KEY_FALLBACK", raising=False)
     monkeypatch.setenv("SOCIAL_ENCRYPTION_SECRET", "test-social-encryption-secret")
     monkeypatch.setenv("SUBJECT_NAMESPACE_SECRET", "social-ownership-test-secret")
     monkeypatch.setenv("SOCIAL_CONNECTION_MODE", "managed")

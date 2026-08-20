@@ -90,6 +90,7 @@ export const en = {
     },
     social: {
       loading: 'Social workspace loading...',
+      openWorkspace: 'Open Social Workspace',
     },
   },
   socialComposePage: {
@@ -340,7 +341,8 @@ export const en = {
       layoutSplit: 'Split',
       engineLocal: 'Local (Ollama)',
       engineLmstudio: 'Local (LM Studio)',
-      engineCloud: 'Cloud (OpenAI API)',
+      engineCloud: 'Cloud (OpenRouter)',
+      engineNvidia: 'Cloud (NVIDIA NIM)',
     },
     cache: {
       title: 'CACHE INTELLIGENCE',
