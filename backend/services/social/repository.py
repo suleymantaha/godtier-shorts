@@ -454,6 +454,7 @@ class SocialRepository:
         }
         self.store.upsert_analytics_snapshot(subject, scope="overview", payload=overview)
         self.store.upsert_analytics_snapshot(subject, scope="accounts", payload={"accounts": payload["accounts"]})
+        self.store.upsert_analytics_snapshot(subject, scope="platforms", payload={"platforms": payload["platforms"]})
         self.store.upsert_analytics_snapshot(subject, scope="posts", payload={"posts": payload["posts"]})
         self.store.upsert_dashboard_cache(subject, key="overview", payload=overview)
         return payload
@@ -462,13 +463,14 @@ class SocialRepository:
         self.sync_provider_jobs_for_subject(subject)
         overview = self.store.get_analytics_snapshot(subject, scope="overview") or self.store.get_dashboard_cache(subject, key="overview")
         accounts = self.store.get_analytics_snapshot(subject, scope="accounts")
+        platforms = self.store.get_analytics_snapshot(subject, scope="platforms")
         posts = self.store.get_analytics_snapshot(subject, scope="posts")
-        if overview is None or accounts is None or posts is None:
+        if overview is None or accounts is None or platforms is None or posts is None:
             return self.refresh_analytics(subject=subject)
         return {
             "overview": overview,
             "accounts": list((accounts or {}).get("accounts") or []),
-            "platforms": self.refresh_analytics(subject=subject)["platforms"],
+            "platforms": list((platforms or {}).get("platforms") or []),
             "posts": list((posts or {}).get("posts") or []),
         }
 
