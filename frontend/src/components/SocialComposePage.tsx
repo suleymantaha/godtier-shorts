@@ -917,7 +917,7 @@ function PreviewPanel({
   const { t } = useTranslation();
 
   return (
-    <section className="glass-card border-white/10 p-5 sm:p-6 space-y-4">
+    <section className="glass-card border-accent/20 p-5 sm:p-6 space-y-4">
       <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-[0.18em] text-accent">
         <Sparkles className="h-4 w-4" />
         {t('socialComposePage.preview.title')}
@@ -969,7 +969,7 @@ function InsightsPanel({
   const ctaText = content.cta_text || defaultCtaForPlatform(selectedPlatform);
 
   return (
-    <section className="glass-card border-white/10 p-5 sm:p-6 space-y-4">
+    <section className="glass-card border-primary/20 p-5 sm:p-6 space-y-4">
       <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-[0.18em] text-primary">
         <Wand2 className="h-4 w-4" />
         {t('socialComposePage.editor.title')}
@@ -995,7 +995,7 @@ function EditorPanel({
   const ctaText = activeContent?.cta_text || defaultCtaForPlatform(controller.selectedPlatform);
 
   return (
-    <section className="glass-card border-white/10 p-5 sm:p-6 space-y-5">
+    <section className="glass-card border-accent/20 p-5 sm:p-6 space-y-5">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-[0.18em] text-accent">
           <Send className="h-4 w-4" />
@@ -1064,7 +1064,7 @@ function EditorPanel({
           <input
             value={activeContent?.hook_text ?? ''}
             onChange={(event) => controller.updateActiveContent({ hook_text: event.target.value })}
-            className="w-full rounded-xl border border-border bg-background/70 px-4 py-3 text-sm text-foreground"
+            className="w-full rounded-xl border border-accent/30 bg-accent/5 px-4 py-3 text-sm font-semibold text-foreground"
           />
         </Field>
         <Field label={t('socialComposePage.editor.cta')}>
@@ -1181,7 +1181,7 @@ function ActionPanel({
   const { t } = useTranslation();
 
   return (
-    <section className="glass-card border-white/10 p-5 sm:p-6 space-y-4">
+    <section className="glass-card border-primary/20 p-5 sm:p-6 space-y-4">
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto_auto_auto] md:items-end">
         <Field label={t('socialComposePage.editor.schedule')}>
           <DateTimePicker value={controller.scheduleAt} onChange={controller.setScheduleAt} />
@@ -1232,7 +1232,7 @@ function RecentJobsPanel({
   const jobs = controller.jobs;
 
   return (
-    <section className="glass-card border-white/10 p-5 sm:p-6 space-y-4">
+    <section className="glass-card border-accent/20 p-5 sm:p-6 space-y-4">
       <div className="text-xs font-mono uppercase tracking-[0.18em] text-accent">{t('socialComposePage.status.recentJobs')}</div>
       {jobs.length === 0 ? (
         <div className="rounded-xl border border-border bg-foreground/5 px-4 py-3 text-sm text-muted-foreground">
