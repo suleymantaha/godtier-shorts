@@ -1,4 +1,3 @@
-import { render } from '@testing-library/react';
 import { vi } from 'vitest';
 
 import type { Clip, ShareDraftContent, SharePrefillResponse, SocialPlatform } from '../../types';
@@ -103,18 +102,4 @@ export function resetShareComposerMocks() {
   mockApproveJob.mockResolvedValue({ status: 'approved' });
   mockCancelJob.mockResolvedValue({ status: 'cancelled' });
   mockStartConnection.mockResolvedValue({ launch_url: 'https://postiz.example/connect', session_id: 'sess_1', status: 'launch_ready' });
-}
-
-export async function renderShareComposerModal(
-  overrides: Partial<{ clip: Clip | null; onClose: () => void; open: boolean }> = {},
-) {
-  const { ShareComposerModal } = await import('../../components/ShareComposerModal');
-
-  return render(
-    <ShareComposerModal
-      clip={overrides.clip ?? shareComposerClip}
-      onClose={overrides.onClose ?? vi.fn()}
-      open={overrides.open ?? true}
-    />,
-  );
 }

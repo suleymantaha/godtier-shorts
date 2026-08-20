@@ -68,7 +68,6 @@ export const en = {
       ariaLabel: 'Main navigation',
       autoCut: 'AUTO CUT',
       configure: 'CONFIGURE',
-      socialCompose: 'COMPOSE',
       social: 'SOCIAL',
       subtitleEdit: 'SUBTITLE EDIT',
     },
@@ -91,7 +90,6 @@ export const en = {
     },
     social: {
       loading: 'Social workspace loading...',
-      openComposer: 'Open Social Composer',
       openWorkspace: 'Open Social Workspace',
     },
   },

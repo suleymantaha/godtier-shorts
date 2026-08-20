@@ -64,7 +64,6 @@ export const tr: TranslationSchema = {
       ariaLabel: 'Ana navigasyon',
       autoCut: 'OTOMATİK KES',
       configure: 'YAPILANDIR',
-      socialCompose: 'COMPOSE',
       social: 'SOSYAL',
       subtitleEdit: 'ALTYAZI DÜZENLE',
     },
@@ -87,7 +86,6 @@ export const tr: TranslationSchema = {
     },
     social: {
       loading: 'Sosyal çalışma alanı yükleniyor...',
-      openComposer: 'Sosyal Composer Aç',
       openWorkspace: 'Sosyal Merkezi Aç',
     },
   },

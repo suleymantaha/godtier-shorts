@@ -19,7 +19,6 @@ import {
   markManagedConnectPending,
   mergeDraftContent,
   nowPlusHourLocal,
-  openSocialComposeWindow,
   parseLocalDraftBuffer,
   readSocialConnectStatusFromQuery,
   readSocialOAuthStatusFromQuery,
@@ -657,20 +656,6 @@ export function useShareComposerController({ clip, open }: UseShareComposerContr
     handleManagedConnectionFlow,
     projectId,
     publishing: state.publishing,
-    openSocialWorkspace: () => {
-      if (typeof window === 'undefined') {
-        return;
-      }
-      const params = new URLSearchParams({ tab: 'social' });
-      if (projectId && clip) {
-        params.set('project_id', projectId);
-        params.set('clip_name', clip.name);
-      }
-      window.open(`/?${params.toString()}`, '_blank', 'noopener,noreferrer');
-    },
-    openSocialComposePage: () => {
-      openSocialComposeWindow(clip);
-    },
     scheduleAt: state.scheduleAt,
     selectedAccountIds: state.selectedAccountIds,
     selectedPlatform: state.selectedPlatform,
