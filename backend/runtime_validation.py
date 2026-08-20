@@ -6,8 +6,33 @@ import os
 from urllib.parse import urlparse
 
 
+APP_ENV_CHOICES = {"development", "test", "production"}
+WORKER_MODE_CHOICES = {"local", "api", "gpu"}
+PRODUCTION_API_REQUIRED_ENV = frozenset(
+    {
+        "CLERK_AUDIENCE",
+        "CLERK_ISSUER_URL",
+        "DATABASE_URL",
+        "FRONTEND_URL",
+        "IYZICO_API_BASE_URL",
+        "IYZICO_API_KEY",
+        "IYZICO_SECRET_KEY",
+        "R2_ACCESS_KEY_ID",
+        "R2_BUCKET_NAME",
+        "R2_ENDPOINT_URL",
+        "R2_SECRET_ACCESS_KEY",
+        "REDIS_URL",
+        "SOCIAL_ENCRYPTION_SECRET",
+        "TURNSTILE_SECRET_KEY",
+        "TURNSTILE_SITE_KEY",
+    }
+)
+
+
 def validate_runtime_configuration() -> None:
     """Fail fast on malformed runtime configuration values."""
+    app_env = _validate_choice("APP_ENV", "development", APP_ENV_CHOICES)
+    worker_mode = _validate_choice("WORKER_MODE", "local", WORKER_MODE_CHOICES)
     _validate_optional_port("API_PORT")
     upload_limit = _validate_optional_positive_int("UPLOAD_MAX_FILE_SIZE")
     request_limit = _validate_optional_positive_int("REQUEST_BODY_HARD_LIMIT_BYTES")
@@ -36,6 +61,56 @@ def validate_runtime_configuration() -> None:
     _validate_optional_http_url("SOCIAL_OAUTH_RETURN_URL")
     _validate_optional_positive_int("SOCIAL_OAUTH_STATE_TTL_SECONDS")
     _validate_optional_url_list("CORS_ORIGINS")
+
+    if app_env == "production" and worker_mode == "api":
+        _validate_production_api_configuration()
+
+
+def _validate_choice(name: str, default: str, choices: set[str]) -> str:
+    value = os.getenv(name, default).strip().lower() or default
+    if value not in choices:
+        allowed = ", ".join(sorted(choices))
+        raise RuntimeError(f"{name} su degerlerden biri olmali: {allowed}")
+    return value
+
+
+def _validate_production_api_configuration() -> None:
+    missing = sorted(
+        name for name in PRODUCTION_API_REQUIRED_ENV if not os.getenv(name, "").strip()
+    )
+    if missing:
+        raise RuntimeError(
+            "Production API configuration eksik: " + ", ".join(missing)
+        )
+
+    _validate_url_schemes(
+        "DATABASE_URL",
+        os.environ["DATABASE_URL"],
+        {"postgresql", "postgresql+asyncpg"},
+    )
+    _validate_url_schemes("REDIS_URL", os.environ["REDIS_URL"], {"redis", "rediss"})
+    for name in (
+        "R2_ENDPOINT_URL",
+        "IYZICO_API_BASE_URL",
+        "CLERK_ISSUER_URL",
+        "FRONTEND_URL",
+    ):
+        _validate_https_url(name, os.environ[name])
+
+
+def _validate_url_schemes(name: str, value: str, schemes: set[str]) -> None:
+    parsed = urlparse(value)
+    if parsed.scheme not in schemes or not parsed.netloc:
+        allowed = ", ".join(sorted(schemes))
+        raise RuntimeError(f"{name} su URL semalarindan birini kullanmali: {allowed}")
+
+
+def _validate_https_url(name: str, value: str) -> None:
+    parsed = urlparse(value)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise RuntimeError(f"{name} mutlak bir https URL olmali")
+    if parsed.query or parsed.fragment:
+        raise RuntimeError(f"{name} query veya fragment icermemeli")
 
 
 def _validate_optional_port(name: str) -> int | None:

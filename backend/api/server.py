@@ -15,9 +15,10 @@ from loguru import logger
 
 from backend.config import (
     CORS_ORIGINS, OUTPUTS_DIR, LOGS_DIR, MASTER_VIDEO, REQUEST_BODY_HARD_LIMIT_BYTES,
+    WORKER_MODE,
 )
 from backend.api.websocket import manager, set_main_loop
-from backend.api.routes import account, auth, clerk, jobs, clips, editor, social, settings
+from backend.api.routes import health
 from backend.api.error_handlers import register_exception_handlers
 from backend.api.security import authenticate_websocket_token, validate_auth_configuration
 from backend.runtime_validation import validate_runtime_configuration
@@ -38,6 +39,7 @@ logger.add(
 async def lifespan(app: FastAPI):
     """Uygulama yaşam döngüsü yönetimi."""
     # Startup
+    app.state.ready = False
     validate_runtime_configuration()
     validate_accelerator_support_configuration()
     validate_auth_configuration()
@@ -63,10 +65,12 @@ async def lifespan(app: FastAPI):
             logger.error(f"🔗 Sembolik bağ oluşturulamadı: {e}")
     
     logger.info("🚀 Uygulama başlatıldı.")
-    
+
+    app.state.ready = True
     yield  # App runs here
 
     # Shutdown
+    app.state.ready = False
     await social_scheduler.stop()
     await manager.stop_cleanup_task()
     logger.info("👋 Uygulama kapatılıyor...")
@@ -80,6 +84,7 @@ def create_app() -> FastAPI:
         description="AI destekli viral short video üretimi",
         lifespan=lifespan,
     )
+    app.state.ready = False
 
     @app.middleware("http")
     async def attach_trace_id(request: Request, call_next):
@@ -126,15 +131,24 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # --- Router'ları kaydet ---
-    app.include_router(jobs.router)
-    app.include_router(clips.router)
-    app.include_router(editor.router)
+    # --- Control-plane router'larını kaydet ---
+    from backend.api.routes import account, auth, clerk, social, settings
+
     app.include_router(social.router)
     app.include_router(settings.router)
     app.include_router(account.router)
     app.include_router(auth.router)
     app.include_router(clerk.router)
+    app.include_router(health.router)
+
+    # Mevcut lokal GPU akislarini yalniz local modda yukle. Production API
+    # control-plane, queue/worker siniri kurulmadan GPU runtime import etmez.
+    if WORKER_MODE == "local":
+        from backend.api.routes import clips, editor, jobs
+
+        app.include_router(jobs.router)
+        app.include_router(clips.router)
+        app.include_router(editor.router)
 
     # --- WebSocket endpoint ---
     @app.websocket("/ws/progress")
