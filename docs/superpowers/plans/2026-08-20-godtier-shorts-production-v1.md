@@ -462,11 +462,11 @@ frontend/src/test/integration/billing-flow.test.tsx
 
 **Produces:** `get_or_create_user(clerk_subject)` ve DB user identity.
 
-- [ ] Valid JWT -> internal `user_id` mapping testi.
-- [ ] User A'nın User B project/job/asset endpoint'inden 404 aldığını test et.
-- [ ] Admin/support/user role mapping ekle.
-- [ ] Admin için step-up/MFA claim kontrolü ekle.
-- [ ] Clerk bot protection dashboard ayarını launch checklist'e ekle.
+- [x] Valid JWT -> internal `user_id` mapping testi.
+- [x] User A'nın User B project/job/asset endpoint'inden 404 aldığını test et.
+- [x] Admin/support/user role mapping ekle.
+- [x] Admin için step-up/MFA claim kontrolü ekle.
+- [x] Clerk bot protection dashboard ayarını launch checklist'e ekle.
 
 **Commit:** `feat: persist users and enforce ownership`
 
@@ -483,11 +483,11 @@ async def settle(user_id: UUID, job_id: UUID, actual_amount: int, idempotency_ke
 async def release(user_id: UUID, job_id: UUID, idempotency_key: str) -> None
 ```
 
-- [ ] Aynı idempotency key iki kere balance değiştirmemeli.
-- [ ] `reserve` DB transaction + row lock ile concurrent overspend'i engellemeli.
-- [ ] 100 balance ile eşzamanlı iki `80` reservation'dan yalnız biri başarılı olmalı.
-- [ ] Failed/cancelled job reservation release etmeli.
-- [ ] Ledger satırları update/delete edilmemeli; düzeltmeler adjustment/refund satırı olmalı.
+- [x] Aynı idempotency key iki kere balance değiştirmemeli.
+- [x] `reserve` DB transaction + row lock ile concurrent overspend'i engellemeli.
+- [x] 100 balance ile eşzamanlı iki `80` reservation'dan yalnız biri başarılı olmalı.
+- [x] Failed/cancelled job reservation release etmeli.
+- [x] Ledger satırları update/delete edilmemeli; düzeltmeler adjustment/refund satırı olmalı.
 
 **Commit:** `feat: add atomic credit ledger`
 

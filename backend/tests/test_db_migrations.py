@@ -32,10 +32,10 @@ def _offline_sql(revision: str, *, downgrade: bool = False) -> str:
     return output.getvalue().lower()
 
 
-def test_initial_migration_is_the_only_schema_head() -> None:
+def test_immutable_ledger_migration_is_the_schema_head() -> None:
     script = ScriptDirectory.from_config(_alembic_config())
 
-    assert script.get_heads() == ["0001_production_schema"]
+    assert script.get_heads() == ["0002_immutable_credit_ledger"]
 
 
 def test_initial_upgrade_creates_every_production_table() -> None:
