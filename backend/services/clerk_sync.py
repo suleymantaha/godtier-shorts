@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from typing import Any
 
@@ -59,9 +60,14 @@ def resolve_roles_for_email(email: str | None) -> list[str]:
 def verify_clerk_webhook(payload: bytes, headers: dict[str, str]) -> dict[str, Any]:
     signing_secret = _read_required_env("CLERK_WEBHOOK_SIGNING_SECRET")
     try:
-        verified = Webhook(signing_secret).verify(payload, headers)
+        Webhook(signing_secret).verify(payload, headers)
     except WebhookVerificationError as exc:
         raise ClerkWebhookVerificationError("Clerk webhook imzasi dogrulanamadi") from exc
+
+    try:
+        verified = json.loads(payload)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ClerkWebhookVerificationError("Clerk webhook payload formati gecersiz") from exc
     if not isinstance(verified, dict):
         raise ClerkWebhookVerificationError("Clerk webhook payload formati gecersiz")
     return verified

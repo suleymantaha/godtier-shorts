@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from svix.webhooks import Webhook
 
 from backend.api.routes import clerk as clerk_routes
+from backend.services import clerk_sync
 
 
 def _signed_headers(secret: str, payload_text: str) -> dict[str, str]:
@@ -18,6 +19,27 @@ def _signed_headers(secret: str, payload_text: str) -> dict[str, str]:
         "svix-id": message_id,
         "svix-timestamp": str(int(timestamp.timestamp())),
         "svix-signature": signature,
+    }
+
+
+def test_verify_clerk_webhook_parses_payload_after_svix_2_signature_check(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("CLERK_WEBHOOK_SIGNING_SECRET", "whsec_test_secret")
+    payload = b'{"type":"user.created","data":{"id":"user_123"}}'
+
+    def _verify_without_parsed_payload(
+        _self: Webhook,
+        _payload: bytes,
+        _headers: dict[str, str],
+    ) -> None:
+        return None
+
+    monkeypatch.setattr(Webhook, "verify", _verify_without_parsed_payload)
+
+    assert clerk_sync.verify_clerk_webhook(payload, {}) == {
+        "type": "user.created",
+        "data": {"id": "user_123"},
     }
 
 
