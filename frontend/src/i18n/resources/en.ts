@@ -671,25 +671,33 @@ export const en = {
       synced: 'Connections synchronized.',
       connectionStarted: '{{platform}} connection flow opened in a new tab.',
     },
+    attention: {
+      title: 'Needs Attention',
+      empty: 'Nothing needs your attention right now.',
+      pendingApproval: 'Pending approval',
+      failed: 'Failed',
+      stalled: 'Stalled in queue',
+    },
     queue: {
-      title: 'Queue',
-      empty: 'No social publish jobs yet.',
       approve: 'Approve',
       openCompose: 'Open compose',
     },
+    week: {
+      title: 'This Week',
+    },
     calendar: {
-      title: 'Calendar',
       empty: 'No scheduled posts yet.',
       updated: 'Calendar item updated.',
       openCompose: 'Open compose',
     },
+    performance: {
+      title: 'Performance',
+      empty: 'No data yet.',
+    },
     analytics: {
-      title: 'Analytics',
       platforms: 'Platforms',
       accounts: 'Accounts',
-      posts: 'Posts',
       refreshed: 'Analytics refreshed.',
-      publishedShort: 'published',
     },
     errors: {
       loadFailed: 'Social workspace could not be loaded.',
