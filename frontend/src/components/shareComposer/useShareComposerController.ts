@@ -33,7 +33,7 @@ interface ShareComposerState {
   accounts: SocialAccount[];
   apiKey: string;
   connected: boolean;
-  connectionMode: SocialConnectionMode;
+  connectionMode: SocialConnectionMode | null;
   contentByPlatform: ShareComposerContentMap | null;
   draftState: DraftState;
   error: string | null;
@@ -67,7 +67,7 @@ function useShareComposerState(): [ShareComposerState, Dispatch<SetStateAction<S
     accounts: [],
     apiKey: '',
     connected: false,
-    connectionMode: 'manual_api_key',
+    connectionMode: null,
     contentByPlatform: null,
     draftState: { hasLocalBuffer: false, hasServerDrafts: false },
     error: null,
@@ -161,7 +161,7 @@ function useManagedConnectionSync({
   open,
   setState,
 }: {
-  connectionMode: SocialConnectionMode;
+  connectionMode: SocialConnectionMode | null;
   loadData: () => Promise<LoadedShareComposerData | null>;
   managedConnectionPending: boolean;
   open: boolean;
@@ -215,7 +215,7 @@ function useManagedOAuthCallbackSignal({
   open,
   setState,
 }: {
-  connectionMode: SocialConnectionMode;
+  connectionMode: SocialConnectionMode | null;
   loadData: () => Promise<LoadedShareComposerData | null>;
   open: boolean;
   setState: Dispatch<SetStateAction<ShareComposerState>>;
