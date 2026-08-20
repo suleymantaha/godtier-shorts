@@ -148,9 +148,11 @@ function useBackendIdentitySync({
       }
       clearBackendIdentity();
       resetProtectedRequests();
-      setAuthError(null);
-      setBackendIdentity(null);
-      return;
+      const resetLocalStateTimer = window.setTimeout(() => {
+        setAuthError(null);
+        setBackendIdentity(null);
+      }, 0);
+      return () => window.clearTimeout(resetLocalStateTimer);
     }
 
     let cancelled = false;

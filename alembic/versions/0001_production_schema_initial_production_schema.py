@@ -1,7 +1,7 @@
 """initial production schema
 
 Revision ID: 0001_production_schema
-Revises: 
+Revises:
 Create Date: 2026-08-20 21:24:07.330840
 
 """
