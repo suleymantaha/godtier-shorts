@@ -61,8 +61,8 @@ export function SocialWorkspace() {
         overview={controller.overview}
         t={controller.t}
       />
-      <section className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-6 items-start">
-        <div className="space-y-6 min-w-0">
+      <section className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-6 items-stretch">
+        <div className="flex flex-col gap-6 min-w-0">
           <AttentionPanel
             items={attentionItems}
             onApprove={(job) => void controller.handleQueueAction(job, 'approve')}
@@ -77,18 +77,22 @@ export function SocialWorkspace() {
             t={controller.t}
             weekStrip={weekStrip}
           />
-          <PerformancePanel
-            accountAnalytics={controller.accountAnalytics}
-            platformAnalytics={controller.platformAnalytics}
+          <div className="flex flex-1 flex-col">
+            <PerformancePanel
+              accountAnalytics={controller.accountAnalytics}
+              platformAnalytics={controller.platformAnalytics}
+              t={controller.t}
+            />
+          </div>
+        </div>
+        <div className="flex flex-col">
+          <ConnectionsRail
+            onDeleteConnection={controller.handleDeleteConnection}
+            onStartConnection={controller.handleStartConnection}
+            providers={controller.providers}
             t={controller.t}
           />
         </div>
-        <ConnectionsRail
-          onDeleteConnection={controller.handleDeleteConnection}
-          onStartConnection={controller.handleStartConnection}
-          providers={controller.providers}
-          t={controller.t}
-        />
       </section>
     </main>
   );
@@ -554,7 +558,7 @@ function Panel({
   const titleClass = accent === 'amber' ? 'text-amber-300' : 'text-accent';
 
   return (
-    <section className={`glass-card p-5 sm:p-6 space-y-4 ${accentClass}`}>
+    <section className={`glass-card h-full p-5 sm:p-6 space-y-4 ${accentClass}`}>
       <div className={`flex items-center gap-2 text-xs font-mono uppercase tracking-[0.18em] ${titleClass}`}>
         {icon}
         {title}
