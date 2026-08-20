@@ -448,11 +448,11 @@ frontend/src/test/integration/billing-flow.test.tsx
 
 **Produces:** `get_db_session()` async session factory ve ilk schema migration.
 
-- [ ] Önce model constraints için failing tests yaz.
-- [ ] UUID PK, unique webhook/payment/idempotency constraints ve FK'leri oluştur.
-- [ ] İlk migration'ı oluştur ve boş DB'ye uygula.
-- [ ] Migration downgrade/upgrade smoke test çalıştır.
-- [ ] Lokal Docker Compose ile DB restart sonrası verinin kaldığını doğrula.
+- [x] Önce model constraints için failing tests yaz.
+- [x] UUID PK, unique webhook/payment/idempotency constraints ve FK'leri oluştur.
+- [x] İlk migration'ı oluştur ve boş DB'ye uygula.
+- [x] Migration downgrade/upgrade smoke test çalıştır.
+- [x] Lokal Docker Compose ile DB restart sonrası verinin kaldığını doğrula.
 
 **Commit:** `feat: add postgres persistence model`
 

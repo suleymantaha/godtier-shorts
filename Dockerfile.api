@@ -16,6 +16,8 @@ RUN python -m pip install --upgrade pip \
     && python -m pip install -r requirements-api.txt
 
 COPY backend ./backend
+COPY alembic.ini ./alembic.ini
+COPY alembic ./alembic
 
 RUN mkdir -p /app/workspace/downloads \
         /app/workspace/temp \
