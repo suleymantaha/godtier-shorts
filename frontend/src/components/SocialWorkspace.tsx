@@ -550,7 +550,7 @@ function Panel({
   icon: ReactNode;
   title: string;
 }) {
-  const accentClass = accent === 'amber' ? 'border-amber-500/25' : 'border-white/10';
+  const accentClass = accent === 'amber' ? 'border-amber-500/25' : 'border-accent/20';
   const titleClass = accent === 'amber' ? 'text-amber-300' : 'text-accent';
 
   return (
