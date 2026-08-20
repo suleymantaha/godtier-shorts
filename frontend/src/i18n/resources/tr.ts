@@ -667,25 +667,33 @@ export const tr: TranslationSchema = {
       synced: 'Bağlantılar senkronize edildi.',
       connectionStarted: '{{platform}} bağlantı akışı yeni sekmede açıldı.',
     },
+    attention: {
+      title: 'Dikkat Gerektiriyor',
+      empty: 'Şu anda dikkat gerektiren bir iş yok.',
+      pendingApproval: 'Onay bekliyor',
+      failed: 'Başarısız',
+      stalled: 'Kuyrukta bekliyor',
+    },
     queue: {
-      title: 'Kuyruk',
-      empty: 'Henüz sosyal yayın işi yok.',
       approve: 'Onayla',
       openCompose: 'Compose aç',
     },
+    week: {
+      title: 'Bu Hafta',
+    },
     calendar: {
-      title: 'Takvim',
       empty: 'Henüz takvimli gönderi yok.',
       updated: 'Takvim öğesi güncellendi.',
       openCompose: 'Compose aç',
     },
+    performance: {
+      title: 'Performans',
+      empty: 'Henüz veri yok.',
+    },
     analytics: {
-      title: 'Analitik',
       platforms: 'Platformlar',
       accounts: 'Hesaplar',
-      posts: 'Gönderiler',
       refreshed: 'Analitik yenilendi.',
-      publishedShort: 'yayınlandı',
     },
     errors: {
       loadFailed: 'Sosyal çalışma alanı yüklenemedi.',
