@@ -378,7 +378,7 @@ export function ReadyState({
   }
 
   return (
-    <div className="grid grid-cols-[repeat(auto-fit,minmax(228px,1fr))] items-start gap-3 sm:gap-4">
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(228px,280px))] items-start gap-3 sm:gap-4">
       {clips.map((clip) => (
         <ClipCard
           key={`${clip.project ?? 'legacy'}:${clip.name}`}
