@@ -57,14 +57,6 @@ export function buildSocialComposeUrl(clip: Clip | null): string {
   return `${SOCIAL_COMPOSE_PATH}${query ? `?${query}` : ''}`;
 }
 
-export function openSocialComposeWindow(clip: Clip | null): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  window.open(buildSocialComposeUrl(clip), '_blank', 'noopener,noreferrer');
-}
-
 export function getShareComposerIdentityScope(): string {
   if (typeof window === 'undefined') {
     return 'anonymous';

@@ -253,3 +253,47 @@ def test_social_analytics_endpoints_aggregate_jobs_and_accounts(
     assert len(accounts.json()["accounts"]) == 2
     assert posts.status_code == 200
     assert posts.json()["posts"][0]["clip_name"] == "clip_1.mp4"
+
+
+def test_social_read_analytics_uses_cache_without_forcing_refresh(
+    social_store: SocialStore,
+):
+    subject = _static_subject("editor-token")
+    social_store.replace_account_cache(
+        subject,
+        [{"id": "acc_1", "platform": "youtube_shorts", "provider": "youtube", "name": "YT Main"}],
+    )
+    jobs = social_store.create_publish_jobs(
+        subject=subject,
+        provider="postiz",
+        project_id="proj_social",
+        clip_name="clip_1.mp4",
+        mode="now",
+        timezone_name="UTC",
+        scheduled_at=None,
+        approval_required=False,
+        targets=[{"account_id": "acc_1", "platform": "youtube_shorts", "provider": "youtube"}],
+        content_by_platform={"youtube_shorts": {"title": "Title", "text": "Body", "hashtags": []}},
+    )
+    social_store.update_publish_job(jobs[0]["id"], state="published", message="Published", delivery_status="published")
+
+    repository = SocialRepository(social_store)
+    warm = repository.refresh_analytics(subject=subject)
+    assert warm["platforms"][0]["platform"] == "youtube_shorts"
+
+    refresh_calls = 0
+    original_refresh = repository.refresh_analytics
+
+    def _counting_refresh(*, subject):
+        nonlocal refresh_calls
+        refresh_calls += 1
+        return original_refresh(subject=subject)
+
+    repository.refresh_analytics = _counting_refresh
+
+    cached = repository.read_analytics(subject=subject)
+
+    assert refresh_calls == 0, "read_analytics must serve from cache instead of forcing a full refresh"
+    assert cached["platforms"] == warm["platforms"]
+    assert cached["accounts"] == warm["accounts"]
+    assert cached["posts"] == warm["posts"]

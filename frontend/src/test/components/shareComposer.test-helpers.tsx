@@ -105,16 +105,8 @@ export function resetShareComposerMocks() {
   mockStartConnection.mockResolvedValue({ launch_url: 'https://postiz.example/connect', session_id: 'sess_1', status: 'launch_ready' });
 }
 
-export async function renderShareComposerModal(
-  overrides: Partial<{ clip: Clip | null; onClose: () => void; open: boolean }> = {},
-) {
-  const { ShareComposerModal } = await import('../../components/ShareComposerModal');
+export async function renderSocialComposePage() {
+  const { SocialComposePage } = await import('../../components/SocialComposePage');
 
-  return render(
-    <ShareComposerModal
-      clip={overrides.clip ?? shareComposerClip}
-      onClose={overrides.onClose ?? vi.fn()}
-      open={overrides.open ?? true}
-    />,
-  );
+  return render(<SocialComposePage />);
 }

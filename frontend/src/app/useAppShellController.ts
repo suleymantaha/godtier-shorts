@@ -44,7 +44,6 @@ function useAppShellNavigation({
   const openConfig = useCallback(() => openViewMode('config'), [openViewMode]);
   const openManual = useCallback(() => openViewMode('manual'), [openViewMode]);
   const openSocial = useCallback(() => openViewMode('social'), [openViewMode]);
-  const openSocialCompose = useCallback(() => openViewMode('social_compose'), [openViewMode]);
   const openSubtitle = useCallback(() => {
     openViewMode('subtitle');
     setSubtitleSessionNonce((nonce) => nonce + 1);
@@ -60,7 +59,6 @@ function useAppShellNavigation({
     openClipSubtitleEditor,
     openConfig,
     openManual,
-    openSocialCompose,
     openSocial,
     openSubtitle,
   };
@@ -132,7 +130,6 @@ export function useAppShellController(canUseBackend = true, identityKey: string 
     openClipSubtitleEditor,
     openConfig,
     openManual,
-    openSocialCompose,
     openSocial,
     openSubtitle,
   } = useAppShellNavigation({
@@ -168,7 +165,6 @@ export function useAppShellController(canUseBackend = true, identityKey: string 
     openClipSubtitleEditor,
     openConfig,
     openManual,
-    openSocialCompose,
     openSocial,
     openSubtitle,
     locale,

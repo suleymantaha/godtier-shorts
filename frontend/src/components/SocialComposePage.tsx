@@ -896,7 +896,7 @@ export function SocialComposePage() {
             platformAccounts={selectedPlatformAccounts}
           />
           <ActionPanel clip={clip} controller={controller} />
-          <RecentJobsPanel jobs={controller.jobs} />
+          <RecentJobsPanel controller={controller} />
         </div>
       </section>
     </main>
@@ -1023,6 +1023,25 @@ function EditorPanel({
         </div>
       ) : null}
 
+      {controller.connectionMode === 'manual_api_key' ? <ManualConnectionCard controller={controller} /> : null}
+
+      {controller.draftState.hasServerDrafts || controller.draftState.hasLocalBuffer ? (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-100 flex flex-wrap items-center justify-between gap-3">
+          <span className="flex items-center gap-2 min-w-0">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            {t('shareComposer.content.draftLoaded')}
+          </span>
+          <button
+            type="button"
+            onClick={() => void controller.handleResetDrafts()}
+            disabled={controller.loading}
+            className="shrink-0 rounded-lg border border-amber-300/30 bg-background/50 px-3 py-1.5 text-[11px] font-mono uppercase tracking-[0.14em] hover:bg-background/70 disabled:opacity-50"
+          >
+            {t('shareComposer.content.resetToAi')}
+          </button>
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap gap-2">
         {(['youtube_shorts', 'tiktok', 'instagram_reels', 'facebook_reels', 'x', 'linkedin'] as SocialPlatform[]).map((platform) => (
           <button
@@ -1106,6 +1125,52 @@ function EditorPanel({
   );
 }
 
+function ManualConnectionCard({
+  controller,
+}: {
+  controller: ReturnType<typeof useShareComposerController>;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="rounded-xl border border-border bg-foreground/5 p-4 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+          {t('shareComposer.connection.title')}
+        </span>
+        <span className={`text-[11px] ${controller.connected ? 'text-emerald-400' : 'text-muted-foreground'}`}>
+          {controller.connected ? t('shareComposer.connection.connected') : t('shareComposer.connection.disconnected')}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <input
+          value={controller.apiKey}
+          onChange={(event) => controller.setApiKey(event.target.value)}
+          placeholder={t('shareComposer.connection.apiKeyPlaceholder')}
+          autoComplete="off"
+          className="min-w-[220px] flex-1 rounded-lg border border-border bg-background/70 px-3 py-2 text-xs text-foreground"
+        />
+        <button
+          type="button"
+          onClick={controller.handleConnect}
+          disabled={controller.loading}
+          className="rounded-lg border border-primary/40 bg-primary/15 px-3 py-2 text-[11px] font-mono uppercase tracking-[0.14em] text-primary disabled:opacity-50"
+        >
+          {controller.loading ? t('shareComposer.connection.connecting') : t('shareComposer.connection.connect')}
+        </button>
+        <button
+          type="button"
+          onClick={() => void controller.handleDisconnect()}
+          disabled={controller.loading || !controller.connected}
+          className="rounded-lg border border-border bg-foreground/5 px-3 py-2 text-[11px] font-mono uppercase tracking-[0.14em] disabled:opacity-50"
+        >
+          {t('shareComposer.connection.remove')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ActionPanel({
   clip,
   controller,
@@ -1158,8 +1223,13 @@ function ActionPanel({
   );
 }
 
-function RecentJobsPanel({ jobs }: { jobs: ReturnType<typeof useShareComposerController>['jobs'] }) {
+function RecentJobsPanel({
+  controller,
+}: {
+  controller: ReturnType<typeof useShareComposerController>;
+}) {
   const { t } = useTranslation();
+  const jobs = controller.jobs;
 
   return (
     <section className="glass-card border-white/10 p-5 sm:p-6 space-y-4">
@@ -1177,7 +1247,27 @@ function RecentJobsPanel({ jobs }: { jobs: ReturnType<typeof useShareComposerCon
                   <div className="text-sm font-semibold text-foreground">{job.platform}</div>
                   <div className="text-xs text-muted-foreground">{job.state}</div>
                 </div>
-                <div className="text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">{job.mode}</div>
+                <div className="flex items-center gap-2">
+                  <div className="text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">{job.mode}</div>
+                  {job.state === 'pending_approval' ? (
+                    <button
+                      type="button"
+                      onClick={() => void controller.handleApprove(job.id)}
+                      className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[11px] font-mono uppercase text-emerald-100"
+                    >
+                      {t('socialComposePage.status.approve')}
+                    </button>
+                  ) : null}
+                  {!['published', 'failed', 'cancelled', 'publishing'].includes(job.state) ? (
+                    <button
+                      type="button"
+                      onClick={() => void controller.handleCancel(job.id)}
+                      className="rounded-lg border border-border bg-foreground/5 px-2 py-1 text-[11px] font-mono uppercase text-muted-foreground"
+                    >
+                      {t('common.actions.cancel')}
+                    </button>
+                  ) : null}
+                </div>
               </div>
               {job.timeline?.length ? (
                 <div className="mt-3 space-y-1">

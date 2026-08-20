@@ -19,7 +19,6 @@ import {
   markManagedConnectPending,
   mergeDraftContent,
   nowPlusHourLocal,
-  openSocialComposeWindow,
   parseLocalDraftBuffer,
   readSocialConnectStatusFromQuery,
   readSocialOAuthStatusFromQuery,
@@ -35,7 +34,6 @@ interface ShareComposerState {
   apiKey: string;
   connected: boolean;
   connectionMode: SocialConnectionMode;
-  connectUrl: string | null;
   contentByPlatform: ShareComposerContentMap | null;
   draftState: DraftState;
   error: string | null;
@@ -54,7 +52,6 @@ interface LoadedShareComposerData {
   accounts: SocialAccount[];
   connected: boolean;
   connectionMode: SocialConnectionMode;
-  connectUrl: string | null;
   contentByPlatform: ShareComposerContentMap;
   draftState: DraftState;
   jobs: PublishJob[];
@@ -71,7 +68,6 @@ function useShareComposerState(): [ShareComposerState, Dispatch<SetStateAction<S
     apiKey: '',
     connected: false,
     connectionMode: 'manual_api_key',
-    connectUrl: null,
     contentByPlatform: null,
     draftState: { hasLocalBuffer: false, hasServerDrafts: false },
     error: null,
@@ -104,7 +100,6 @@ async function fetchShareComposerData(projectId: string, clipName: string): Prom
     accounts: accountResp.accounts ?? [],
     connected: accountResp.connected,
     connectionMode: accountResp.connection_mode ?? 'managed',
-    connectUrl: accountResp.connect_url ? resolveApiUrl(accountResp.connect_url) : null,
     contentByPlatform: mergeDraftContent(prefillResp.platforms, parsedBuffer.buffer),
     draftState: buildDraftState(prefillResp, parsedBuffer.buffer),
     jobs: jobsResp.jobs ?? [],
@@ -635,7 +630,6 @@ export function useShareComposerController({ clip, open }: UseShareComposerContr
     accounts: state.accounts,
     connected: state.connected,
     connectionMode: state.connectionMode,
-    connectUrl: state.connectUrl,
     draftState: state.draftState,
     error: state.error,
     handleApprove,
@@ -646,31 +640,9 @@ export function useShareComposerController({ clip, open }: UseShareComposerContr
     jobs: state.jobs,
     loading: state.loading,
     managedConnectionPending: state.managedConnectionPending,
-    handleManagedConnectOpen: () => {
-      markManagedConnectPending();
-      setState((current) => ({
-        ...current,
-        managedConnectionPending: true,
-        success: null,
-      }));
-    },
     handleManagedConnectionFlow,
     projectId,
     publishing: state.publishing,
-    openSocialWorkspace: () => {
-      if (typeof window === 'undefined') {
-        return;
-      }
-      const params = new URLSearchParams({ tab: 'social' });
-      if (projectId && clip) {
-        params.set('project_id', projectId);
-        params.set('clip_name', clip.name);
-      }
-      window.open(`/?${params.toString()}`, '_blank', 'noopener,noreferrer');
-    },
-    openSocialComposePage: () => {
-      openSocialComposeWindow(clip);
-    },
     scheduleAt: state.scheduleAt,
     selectedAccountIds: state.selectedAccountIds,
     selectedPlatform: state.selectedPlatform,
@@ -682,5 +654,3 @@ export function useShareComposerController({ clip, open }: UseShareComposerContr
     ...draftActions,
   };
 }
-
-export type ShareComposerController = ReturnType<typeof useShareComposerController>;

@@ -1,20 +1,30 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { localDraftKey } from '../../components/shareComposer/helpers';
 import {
   createPrefillResponse,
   mockDeleteDrafts,
   mockGetPrefill,
-  renderShareComposerModal,
+  renderSocialComposePage,
   resetShareComposerMocks,
   shareComposerClip,
 } from './shareComposer.test-helpers';
 
-describe('ShareComposerModal drafts', () => {
+vi.mock('../../components/ui/protectedMedia', () => ({
+  useResolvedMediaState: (src?: string) => ({
+    error: null,
+    resolvedSrc: src,
+  }),
+}));
+
+const CLIP_QUERY = '/social-compose?project_id=proj_1&clip_name=clip_1.mp4';
+
+describe('SocialComposePage drafts', () => {
   beforeEach(() => {
     resetShareComposerMocks();
+    window.history.replaceState({}, '', CLIP_QUERY);
   });
 
   it('clears stale drafts and reloads the AI suggestion', async () => {
@@ -29,7 +39,7 @@ describe('ShareComposerModal drafts', () => {
       }))
       .mockResolvedValueOnce(createPrefillResponse());
 
-    await renderShareComposerModal();
+    await renderSocialComposePage();
 
     expect(await screen.findByText(/a saved share draft was loaded/i)).toBeInTheDocument();
 
@@ -46,7 +56,7 @@ describe('ShareComposerModal drafts', () => {
       youtube_shorts: { hashtags: ['local'], text: 'LOCAL TEXT', title: 'LOCAL TITLE' },
     }));
 
-    await renderShareComposerModal();
+    await renderSocialComposePage();
 
     expect(await screen.findByDisplayValue('LOCAL TITLE')).toBeInTheDocument();
     expect(screen.getByDisplayValue('LOCAL TEXT')).toBeInTheDocument();
