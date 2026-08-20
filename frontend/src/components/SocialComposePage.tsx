@@ -454,7 +454,7 @@ function ProtectedPreviewVideo({ clip }: { clip: Clip | null }) {
 
   if (!clip) {
     return (
-      <div className="flex aspect-[9/16] items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(0,242,255,0.12),_transparent_40%),linear-gradient(180deg,_rgba(10,10,16,0.96),_rgba(3,3,6,0.98))] px-8 text-center">
+      <div className="flex aspect-[9/16] max-h-[720px] items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(0,242,255,0.12),_transparent_40%),linear-gradient(180deg,_rgba(10,10,16,0.96),_rgba(3,3,6,0.98))] px-8 text-center">
         <div className="space-y-3">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-secondary/30 bg-secondary/12">
             <Sparkles className="h-6 w-6 text-secondary" />
@@ -468,7 +468,7 @@ function ProtectedPreviewVideo({ clip }: { clip: Clip | null }) {
 
   if (error) {
     return (
-      <div className="flex aspect-[9/16] items-center justify-center bg-black/60 px-8 text-center text-sm text-red-200">
+      <div className="flex aspect-[9/16] max-h-[720px] items-center justify-center bg-black/60 px-8 text-center text-sm text-red-200">
         {t('socialComposePage.preview.unavailable')}
       </div>
     );
@@ -476,7 +476,7 @@ function ProtectedPreviewVideo({ clip }: { clip: Clip | null }) {
 
   if (!resolvedSrc) {
     return (
-      <div className="flex aspect-[9/16] items-center justify-center bg-black/60">
+      <div className="flex aspect-[9/16] max-h-[720px] items-center justify-center bg-black/60">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
           {t('socialComposePage.preview.loading')}
