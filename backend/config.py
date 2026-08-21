@@ -161,6 +161,9 @@ MODELS_DIR      = ROOT / "models"
 # Sunucu ayarları
 # ---------------------------------------------------------------------------
 
+APP_ENV = os.getenv("APP_ENV", "development").strip().lower() or "development"
+WORKER_MODE = os.getenv("WORKER_MODE", "local").strip().lower() or "local"
+
 def _env_int(name: str, default: int) -> int:
     raw = os.getenv(name, "").strip()
     if not raw:

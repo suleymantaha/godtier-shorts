@@ -3,6 +3,7 @@ interface ClerkSessionLike {
 }
 
 interface ClerkLike {
+  isLoaded?: boolean;
   session?: ClerkSessionLike | null;
 }
 

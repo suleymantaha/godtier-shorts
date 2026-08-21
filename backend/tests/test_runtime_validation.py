@@ -4,11 +4,44 @@ import pytest
 from fastapi.testclient import TestClient
 
 import backend.api.server as server_module
+import backend.config as config_module
 from backend.api.server import create_app
 from backend.runtime_validation import validate_runtime_configuration
 
 
+PRODUCTION_API_ENV = {
+    "APP_ENV": "production",
+    "WORKER_MODE": "api",
+    "DATABASE_URL": "postgresql+asyncpg://godtier:test-password@postgres:5432/godtier",
+    "REDIS_URL": "redis://redis:6379/0",
+    "R2_ENDPOINT_URL": "https://test-account.r2.cloudflarestorage.com",
+    "R2_BUCKET_NAME": "godtier-private",
+    "R2_ACCESS_KEY_ID": "test-r2-access-key",
+    "R2_SECRET_ACCESS_KEY": "test-r2-secret-key",
+    "IYZICO_API_BASE_URL": "https://api.iyzipay.com",
+    "IYZICO_API_KEY": "test-iyzico-api-key",
+    "IYZICO_CALLBACK_URL": "https://api.godtier.example/api/billing/callback",
+    "IYZICO_MERCHANT_ID": "3404590",
+    "IYZICO_PLAN_REFERENCES_JSON": '{"creator":{"product_reference_code":"product",'
+    '"monthly":"monthly","yearly":"yearly"}}',
+    "IYZICO_SECRET_KEY": "test-iyzico-secret-key",
+    "TURNSTILE_SITE_KEY": "test-turnstile-site-key",
+    "TURNSTILE_SECRET_KEY": "test-turnstile-secret-key",
+    "CLERK_ISSUER_URL": "https://test.clerk.accounts.dev",
+    "CLERK_AUDIENCE": "godtier-api",
+    "FRONTEND_URL": "https://app.godtier.example",
+    "SOCIAL_ENCRYPTION_SECRET": "test-social-encryption-secret",
+}
+
+
+def _set_production_api_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name, value in PRODUCTION_API_ENV.items():
+        monkeypatch.setenv(name, value)
+
+
 def test_validate_runtime_configuration_accepts_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv("WORKER_MODE", raising=False)
     monkeypatch.delenv("API_PORT", raising=False)
     monkeypatch.delenv("UPLOAD_MAX_FILE_SIZE", raising=False)
     monkeypatch.delenv("REQUEST_BODY_HARD_LIMIT_BYTES", raising=False)
@@ -32,6 +65,99 @@ def test_validate_runtime_configuration_accepts_defaults(monkeypatch: pytest.Mon
     monkeypatch.delenv("LOG_ACCELERATOR_STATUS_ON_STARTUP", raising=False)
 
     validate_runtime_configuration()
+
+
+def test_config_defaults_preserve_local_development_runtime() -> None:
+    assert getattr(config_module, "APP_ENV", None) == "development"
+    assert getattr(config_module, "WORKER_MODE", None) == "local"
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("APP_ENV", "prod"),
+        ("WORKER_MODE", "worker"),
+    ],
+)
+def test_validate_runtime_configuration_rejects_invalid_runtime_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    value: str,
+) -> None:
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises(RuntimeError, match=name):
+        validate_runtime_configuration()
+
+
+@pytest.mark.parametrize(
+    "missing_name",
+    sorted(PRODUCTION_API_ENV.keys() - {"APP_ENV", "WORKER_MODE"}),
+)
+def test_production_api_requires_complete_runtime_contract(
+    monkeypatch: pytest.MonkeyPatch,
+    missing_name: str,
+) -> None:
+    _set_production_api_env(monkeypatch)
+    monkeypatch.delenv(missing_name)
+
+    with pytest.raises(RuntimeError, match=missing_name):
+        validate_runtime_configuration()
+
+
+def test_production_api_accepts_complete_runtime_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_production_api_env(monkeypatch)
+
+    validate_runtime_configuration()
+
+
+def test_production_api_rejects_malformed_iyzico_plan_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_production_api_env(monkeypatch)
+    monkeypatch.setenv("IYZICO_PLAN_REFERENCES_JSON", '{"creator":{"monthly":"only-one"}}')
+
+    with pytest.raises(RuntimeError, match="IYZICO_PLAN_REFERENCES_JSON"):
+        validate_runtime_configuration()
+
+
+def test_production_api_rejects_sandbox_iyzico_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_production_api_env(monkeypatch)
+    monkeypatch.setenv("IYZICO_API_BASE_URL", "https://sandbox-api.iyzipay.com")
+    with pytest.raises(RuntimeError, match="api.iyzipay.com"):
+        validate_runtime_configuration()
+
+
+def test_runtime_rejects_invalid_checkout_cooldown(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BILLING_CHECKOUT_COOLDOWN_SECONDS", "0")
+    with pytest.raises(RuntimeError, match="BILLING_CHECKOUT_COOLDOWN_SECONDS"):
+        validate_runtime_configuration()
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("DATABASE_URL", "sqlite:///godtier.db"),
+        ("REDIS_URL", "http://redis:6379/0"),
+        ("R2_ENDPOINT_URL", "http://r2.example.com"),
+        ("IYZICO_API_BASE_URL", "http://api.iyzipay.com"),
+        ("IYZICO_CALLBACK_URL", "http://api.godtier.example/api/billing/callback"),
+        ("CLERK_ISSUER_URL", "http://clerk.example.com"),
+        ("FRONTEND_URL", "http://app.godtier.example"),
+    ],
+)
+def test_production_api_rejects_unsafe_service_urls(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    value: str,
+) -> None:
+    _set_production_api_env(monkeypatch)
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises(RuntimeError, match=name):
+        validate_runtime_configuration()
 
 
 def test_validate_runtime_configuration_rejects_invalid_port(monkeypatch: pytest.MonkeyPatch) -> None:

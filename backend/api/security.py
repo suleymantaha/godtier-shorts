@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import os
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any, Callable
+from uuid import UUID
 
 import jwt
 from jwt import ExpiredSignatureError, InvalidTokenError, PyJWKClient
@@ -20,7 +21,12 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
 
 from backend.core.log_sanitizer import sanitize_subject
-from backend.services.ownership import resolve_project_access
+from backend.db.models import UserRole, UserStatus
+from backend.services.ownership import (
+    IdentityStoreError,
+    get_or_create_user,
+    resolve_project_access,
+)
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -31,9 +37,13 @@ class AuthContext:
     roles: set[str]
     token_type: str
     auth_mode: str = "static_token"
+    claims: dict[str, Any] = field(default_factory=dict)
+    user_id: UUID | None = None
+    database_role: UserRole | None = None
 
 
 POLICY_ROLES: dict[str, set[str]] = {
+    "admin": {"admin"},
     "start_job": {"admin", "member", "producer", "operator"},
     "upload": {"admin", "member", "uploader", "producer"},
     "process_manual": {"admin", "member", "editor", "producer"},
@@ -141,6 +151,23 @@ def _extract_roles(payload: dict[str, Any]) -> set[str]:
     return set()
 
 
+def map_clerk_roles(roles: set[str]) -> UserRole:
+    normalized = {role.strip().lower() for role in roles if role.strip()}
+    if "admin" in normalized:
+        return UserRole.ADMIN
+    if "support" in normalized:
+        return UserRole.SUPPORT
+    return UserRole.USER
+
+
+def _policy_roles_for_database_role(role: UserRole) -> set[str]:
+    if role is UserRole.ADMIN:
+        return {"admin"}
+    if role is UserRole.SUPPORT:
+        return {"support", "viewer"}
+    return {"member", "user"}
+
+
 def _default_clerk_roles() -> set[str]:
     raw = os.getenv("CLERK_DEFAULT_USER_ROLES", "").strip()
     if not raw:
@@ -213,7 +240,13 @@ def _decode_jwt(token: str, issuer: str, audience: str | list[str]) -> AuthConte
 
     subject = str(payload.get("sub") or "jwt-user")
     roles = _extract_roles(payload) or _default_clerk_roles()
-    return AuthContext(subject=subject, roles=roles, token_type="jwt", auth_mode="clerk_jwt")
+    return AuthContext(
+        subject=subject,
+        roles=roles,
+        token_type="jwt",
+        auth_mode="clerk_jwt",
+        claims=payload,
+    )
 
 
 def _authenticate_token(token: str, *, interactive_browser: bool = False) -> AuthContext:
@@ -324,7 +357,7 @@ def _auth_exception(status_code: int, code: str, message: str) -> HTTPException:
     )
 
 
-def authenticate_request(
+async def authenticate_request(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> AuthContext:
@@ -333,13 +366,55 @@ def authenticate_request(
         raise _auth_exception(status.HTTP_401_UNAUTHORIZED, "unauthorized", "Bearer token gerekli")
 
     try:
-        return _authenticate_token(
+        auth = _authenticate_token(
             credentials.credentials,
             interactive_browser=_is_interactive_browser_request(request.headers),
         )
     except HTTPException as exc:
         _security_log(request, event="auth_failed", reason=f"{exc.detail}")
         raise
+
+    if auth.auth_mode != "clerk_jwt" or not os.getenv("DATABASE_URL", "").strip():
+        return auth
+
+    try:
+        email_claim = auth.claims.get("email")
+        identity = await get_or_create_user(
+            auth.subject,
+            email_normalized=email_claim if isinstance(email_claim, str) else None,
+            role=map_clerk_roles(auth.roles),
+        )
+    except IdentityStoreError as exc:
+        _security_log(request, event="auth_failed", reason="identity_store_unavailable")
+        raise _auth_exception(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "identity_store_unavailable",
+            "Kullanici kimligi su anda dogrulanamiyor",
+        ) from exc
+
+    if identity.status is not UserStatus.ACTIVE:
+        _security_log(request, event="auth_failed", reason=f"user_status={identity.status.value}")
+        raise _auth_exception(
+            status.HTTP_403_FORBIDDEN,
+            "account_inactive",
+            "Kullanici hesabi aktif degil",
+        )
+
+    auth.user_id = identity.id
+    auth.database_role = identity.role
+    auth.roles = _policy_roles_for_database_role(identity.role)
+    return auth
+
+
+def _has_recent_second_factor(auth: AuthContext) -> bool:
+    factor_age = auth.claims.get("fva")
+    if not isinstance(factor_age, list) or len(factor_age) != 2:
+        return False
+    second_factor_age = factor_age[1]
+    if isinstance(second_factor_age, bool) or not isinstance(second_factor_age, int):
+        return False
+    max_age = _read_positive_int_env("ADMIN_MFA_MAX_AGE_MINUTES", 10)
+    return 0 <= second_factor_age <= max_age
 
 
 def authenticate_websocket_token(token: str | None, headers: Any | None = None) -> AuthContext:
@@ -434,6 +509,19 @@ def require_policy(policy_name: str) -> Callable[[Request, AuthContext], AuthCon
                 roles=auth.roles,
             )
             raise _auth_exception(status.HTTP_403_FORBIDDEN, "forbidden", "Bu işlem için yetkiniz yok")
+        if policy_name == "admin" and auth.auth_mode == "clerk_jwt" and not _has_recent_second_factor(auth):
+            _security_log(
+                request,
+                event="authorization_failed",
+                reason="admin policy icin guncel ikinci faktor gerekli",
+                subject=auth.subject,
+                roles=auth.roles,
+            )
+            raise _auth_exception(
+                status.HTTP_403_FORBIDDEN,
+                "admin_mfa_required",
+                "Bu islem icin guncel MFA dogrulamasi gerekli",
+            )
         return auth
 
     return _dependency

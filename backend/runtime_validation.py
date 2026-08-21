@@ -2,12 +2,41 @@
 
 from __future__ import annotations
 
+import json
 import os
 from urllib.parse import urlparse
 
 
+APP_ENV_CHOICES = {"development", "test", "production"}
+WORKER_MODE_CHOICES = {"local", "api", "gpu"}
+PRODUCTION_API_REQUIRED_ENV = frozenset(
+    {
+        "CLERK_AUDIENCE",
+        "CLERK_ISSUER_URL",
+        "DATABASE_URL",
+        "FRONTEND_URL",
+        "IYZICO_API_BASE_URL",
+        "IYZICO_API_KEY",
+        "IYZICO_CALLBACK_URL",
+        "IYZICO_MERCHANT_ID",
+        "IYZICO_PLAN_REFERENCES_JSON",
+        "IYZICO_SECRET_KEY",
+        "R2_ACCESS_KEY_ID",
+        "R2_BUCKET_NAME",
+        "R2_ENDPOINT_URL",
+        "R2_SECRET_ACCESS_KEY",
+        "REDIS_URL",
+        "SOCIAL_ENCRYPTION_SECRET",
+        "TURNSTILE_SECRET_KEY",
+        "TURNSTILE_SITE_KEY",
+    }
+)
+
+
 def validate_runtime_configuration() -> None:
     """Fail fast on malformed runtime configuration values."""
+    app_env = _validate_choice("APP_ENV", "development", APP_ENV_CHOICES)
+    worker_mode = _validate_choice("WORKER_MODE", "local", WORKER_MODE_CHOICES)
     _validate_optional_port("API_PORT")
     upload_limit = _validate_optional_positive_int("UPLOAD_MAX_FILE_SIZE")
     request_limit = _validate_optional_positive_int("REQUEST_BODY_HARD_LIMIT_BYTES")
@@ -18,6 +47,8 @@ def validate_runtime_configuration() -> None:
     _validate_optional_positive_int("YTDLP_DOWNLOAD_IDLE_TIMEOUT_SECONDS")
     _validate_optional_positive_int("YTDLP_DOWNLOAD_TOTAL_TIMEOUT_SECONDS")
     _validate_optional_positive_int("YTDLP_PROGRESS_MIN_EMIT_INTERVAL_MS")
+    _validate_optional_positive_int("BILLING_CHECKOUT_COOLDOWN_SECONDS")
+    _validate_optional_positive_int("BILLING_PAST_DUE_GRACE_DAYS")
     _validate_optional_choice("SOCIAL_CONNECTION_MODE", {"managed", "manual_api_key"})
     _validate_optional_bool("ALLOW_ENV_POSTIZ_API_KEY_FALLBACK")
     _validate_optional_bool("REQUIRE_CUDA_FOR_APP")
@@ -36,6 +67,82 @@ def validate_runtime_configuration() -> None:
     _validate_optional_http_url("SOCIAL_OAUTH_RETURN_URL")
     _validate_optional_positive_int("SOCIAL_OAUTH_STATE_TTL_SECONDS")
     _validate_optional_url_list("CORS_ORIGINS")
+
+    if app_env == "production" and worker_mode == "api":
+        _validate_production_api_configuration()
+
+
+def _validate_choice(name: str, default: str, choices: set[str]) -> str:
+    value = os.getenv(name, default).strip().lower() or default
+    if value not in choices:
+        allowed = ", ".join(sorted(choices))
+        raise RuntimeError(f"{name} su degerlerden biri olmali: {allowed}")
+    return value
+
+
+def _validate_production_api_configuration() -> None:
+    missing = sorted(
+        name for name in PRODUCTION_API_REQUIRED_ENV if not os.getenv(name, "").strip()
+    )
+    if missing:
+        raise RuntimeError(
+            "Production API configuration eksik: " + ", ".join(missing)
+        )
+
+    _validate_url_schemes(
+        "DATABASE_URL",
+        os.environ["DATABASE_URL"],
+        {"postgresql", "postgresql+asyncpg"},
+    )
+    _validate_url_schemes("REDIS_URL", os.environ["REDIS_URL"], {"redis", "rediss"})
+    for name in (
+        "R2_ENDPOINT_URL",
+        "IYZICO_API_BASE_URL",
+        "IYZICO_CALLBACK_URL",
+        "CLERK_ISSUER_URL",
+        "FRONTEND_URL",
+    ):
+        _validate_https_url(name, os.environ[name])
+    _validate_iyzico_plan_references(os.environ["IYZICO_PLAN_REFERENCES_JSON"])
+    if urlparse(os.environ["IYZICO_API_BASE_URL"]).hostname != "api.iyzipay.com":
+        raise RuntimeError("IYZICO_API_BASE_URL production ortaminda api.iyzipay.com olmali")
+
+
+def _validate_iyzico_plan_references(raw: str) -> None:
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("IYZICO_PLAN_REFERENCES_JSON gecerli JSON olmali") from exc
+    if not isinstance(payload, dict) or not payload:
+        raise RuntimeError("IYZICO_PLAN_REFERENCES_JSON en az bir plan icermeli")
+    required = {"product_reference_code", "monthly", "yearly"}
+    pricing_references: list[str] = []
+    for plan_code, references in payload.items():
+        if (
+            not isinstance(plan_code, str)
+            or not plan_code.strip()
+            or not isinstance(references, dict)
+            or any(not str(references.get(name) or "").strip() for name in required)
+        ):
+            raise RuntimeError("IYZICO_PLAN_REFERENCES_JSON plan mapping eksik")
+        pricing_references.extend(str(references[name]).strip() for name in ("monthly", "yearly"))
+    if len(pricing_references) != len(set(pricing_references)):
+        raise RuntimeError("IYZICO_PLAN_REFERENCES_JSON pricing referanslari benzersiz olmali")
+
+
+def _validate_url_schemes(name: str, value: str, schemes: set[str]) -> None:
+    parsed = urlparse(value)
+    if parsed.scheme not in schemes or not parsed.netloc:
+        allowed = ", ".join(sorted(schemes))
+        raise RuntimeError(f"{name} su URL semalarindan birini kullanmali: {allowed}")
+
+
+def _validate_https_url(name: str, value: str) -> None:
+    parsed = urlparse(value)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise RuntimeError(f"{name} mutlak bir https URL olmali")
+    if parsed.query or parsed.fragment:
+        raise RuntimeError(f"{name} query veya fragment icermemeli")
 
 
 def _validate_optional_port(name: str) -> int | None:

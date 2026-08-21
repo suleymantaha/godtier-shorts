@@ -80,7 +80,7 @@ async function waitForClerkSession(timeoutMs: number): Promise<ClerkSessionLike 
         return immediateSession;
     }
 
-    if (typeof window !== 'undefined' && (window as any).Clerk?.isLoaded && !(window as any).Clerk?.session) {
+    if (typeof window !== 'undefined' && window.Clerk?.isLoaded && !window.Clerk.session) {
         return null;
     }
 

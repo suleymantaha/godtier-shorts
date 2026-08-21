@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import os
+
 from loguru import logger
 
 from fastapi import APIRouter, HTTPException, Request, status
 
+from backend.api.security import map_clerk_roles
 from backend.services.clerk_sync import (
     ClerkMetadataSyncError,
     ClerkWebhookConfigError,
@@ -13,6 +16,7 @@ from backend.services.clerk_sync import (
     sync_user_roles,
     verify_clerk_webhook,
 )
+from backend.services.ownership import IdentityStoreError, get_or_create_user
 
 
 router = APIRouter(prefix="/api/clerk", tags=["clerk"])
@@ -58,10 +62,18 @@ async def handle_clerk_webhook(request: Request) -> dict[str, object]:
     if event_type != "user.created":
         return {"status": "ignored", "event_type": event_type or "unknown"}
 
+    internal_user_id: str | None = None
     try:
         user_id, primary_email = extract_user_identity(event)
         roles = resolve_roles_for_email(primary_email)
         await sync_user_roles(user_id=user_id, roles=roles)
+        if os.getenv("DATABASE_URL", "").strip():
+            identity = await get_or_create_user(
+                user_id,
+                email_normalized=primary_email,
+                role=map_clerk_roles(set(roles)),
+            )
+            internal_user_id = str(identity.id)
     except ClerkWebhookVerificationError as exc:
         raise _verification_error(exc) from exc
     except ClerkWebhookConfigError as exc:
@@ -77,6 +89,17 @@ async def handle_clerk_webhook(request: Request) -> dict[str, object]:
                 }
             },
         ) from exc
+    except IdentityStoreError as exc:
+        logger.error("Clerk identity persistence failed for user_id={}", user_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": {
+                    "code": "identity_store_unavailable",
+                    "message": "Kullanici kimligi su anda kaydedilemiyor",
+                }
+            },
+        ) from exc
 
     logger.info(
         "Clerk user.created sync tamamlandi user_id={} email={} roles={}",
@@ -84,9 +107,12 @@ async def handle_clerk_webhook(request: Request) -> dict[str, object]:
         primary_email or "-",
         roles,
     )
-    return {
+    response: dict[str, object] = {
         "status": "synced",
         "event_type": event_type,
         "roles": roles,
         "user_id": user_id,
     }
+    if internal_user_id is not None:
+        response["internal_user_id"] = internal_user_id
+    return response

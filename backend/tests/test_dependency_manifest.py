@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 REQUIREMENTS_PATH = Path(__file__).resolve().parents[2] / "requirements.txt"
+API_REQUIREMENTS_PATH = Path(__file__).resolve().parents[2] / "requirements-api.txt"
 DIARIZATION_REQUIREMENTS_PATH = Path(__file__).resolve().parents[2] / "requirements-diarization.txt"
 
 
@@ -32,6 +33,40 @@ def test_requirements_cover_critical_runtime_dependencies() -> None:
     assert "pyjwt" in requirement_names
     assert "cryptography" in requirement_names
     assert "huggingface-hub" in requirement_names
+
+
+def test_requirements_cover_production_runtime_dependencies() -> None:
+    requirement_names = _normalized_requirement_names(REQUIREMENTS_PATH)
+
+    assert {
+        "alembic",
+        "arq",
+        "asyncpg",
+        "boto3",
+        "redis",
+        "sqlalchemy",
+    } <= requirement_names
+
+
+def test_api_requirements_keep_gpu_packages_out_of_control_plane() -> None:
+    requirement_names = _normalized_requirement_names(API_REQUIREMENTS_PATH)
+
+    assert {
+        "alembic",
+        "arq",
+        "asyncpg",
+        "boto3",
+        "redis",
+        "sqlalchemy",
+    } <= requirement_names
+    assert {
+        "ctranslate2",
+        "faster-whisper",
+        "opencv-python",
+        "torch",
+        "torchvision",
+        "ultralytics",
+    }.isdisjoint(requirement_names)
 
 
 
