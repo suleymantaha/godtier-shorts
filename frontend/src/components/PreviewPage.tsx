@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { previewApi } from '../api/preview';
 import type { PreviewAnalyzeResponse, ViralCandidate } from '../types/preview';
+import { TurnstileGate } from './security/TurnstileGate';
 
 
 function timestamp(seconds: number): string {
@@ -34,18 +35,26 @@ export function PreviewPage() {
   const [result, setResult] = useState<PreviewAnalyzeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileResetNonce, setTurnstileResetNonce] = useState(0);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (!turnstileToken) {
+      setError('Security verification is required.');
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      setResult(await previewApi.analyze(url.trim()));
+      setResult(await previewApi.analyze(url.trim(), turnstileToken));
     } catch (caught) {
       setResult(null);
       setError(caught instanceof Error ? caught.message : t('previewPage.error'));
     } finally {
       setLoading(false);
+      setTurnstileToken(null);
+      setTurnstileResetNonce((value) => value + 1);
     }
   }
 
@@ -58,24 +67,31 @@ export function PreviewPage() {
         </div>
         <h2 className="mt-4 text-2xl font-bold text-foreground">{t('previewPage.title')}</h2>
         <p className="mt-2 text-sm text-muted-foreground">{t('previewPage.description')}</p>
-        <form onSubmit={submit} className="mt-6 flex flex-col gap-3 sm:flex-row">
+        <form onSubmit={submit} className="mt-6 flex flex-col gap-3">
           <label className="sr-only" htmlFor="preview-url">{t('previewPage.urlLabel')}</label>
-          <input
-            id="preview-url"
-            type="url"
-            required
-            value={url}
-            onChange={(event) => setUrl(event.target.value)}
-            placeholder="https://youtube.com/watch?v=..."
-            className="min-w-0 flex-1 rounded-xl border border-border bg-background/60 px-4 py-3 text-sm text-foreground"
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <input
+              id="preview-url"
+              type="url"
+              required
+              value={url}
+              onChange={(event) => setUrl(event.target.value)}
+              placeholder="https://youtube.com/watch?v=..."
+              className="min-w-0 flex-1 rounded-xl border border-border bg-background/60 px-4 py-3 text-sm text-foreground"
+            />
+            <button
+              type="submit"
+              disabled={loading || !turnstileToken}
+              className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+            >
+              {loading ? t('previewPage.loading') : t('previewPage.submit')}
+            </button>
+          </div>
+          <TurnstileGate
+            action="preview_analyze"
+            onToken={setTurnstileToken}
+            resetNonce={turnstileResetNonce}
           />
-          <button
-            type="submit"
-            disabled={loading}
-            className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground disabled:opacity-60"
-          >
-            {loading ? t('previewPage.loading') : t('previewPage.submit')}
-          </button>
         </form>
         {error ? <p role="alert" className="mt-4 text-sm text-red-300">{error}</p> : null}
       </section>

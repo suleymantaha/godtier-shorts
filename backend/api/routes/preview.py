@@ -3,11 +3,12 @@ from __future__ import annotations
 import os
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.security import AuthContext, authenticate_request
+from backend.api.routes.security_gate import get_turnstile_verifier, verify_or_raise
 from backend.db.session import get_db_session
 from backend.services.preview.adapters import (
     DisabledLimitedTranscriber,
@@ -25,6 +26,7 @@ from backend.services.preview.service import (
     PreviewResult,
     PreviewService,
 )
+from backend.services.abuse.turnstile import TurnstileVerifier
 
 
 router = APIRouter(prefix="/api/preview", tags=["preview"])
@@ -33,6 +35,7 @@ router = APIRouter(prefix="/api/preview", tags=["preview"])
 class PreviewAnalyzeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     url: str = Field(min_length=1, max_length=2048)
+    turnstile_token: str = Field(min_length=1, max_length=2048)
 
 
 class PreviewAnalyzeResponse(BaseModel):
@@ -79,18 +82,26 @@ async def get_preview_service(
 
 @router.post("/analyze", response_model=PreviewAnalyzeResponse)
 async def analyze_preview(
-    request: PreviewAnalyzeRequest,
+    payload: PreviewAnalyzeRequest,
+    request: Request,
     auth: Annotated[AuthContext, Depends(authenticate_request)],
     service: Annotated[PreviewService, Depends(get_preview_service)],
+    verifier: Annotated[TurnstileVerifier, Depends(get_turnstile_verifier)],
 ) -> PreviewResult:
     if auth.user_id is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Preview identity unavailable",
         )
+    await verify_or_raise(
+        verifier,
+        token=payload.turnstile_token,
+        action="preview_analyze",
+        remote_ip=request.client.host if request.client else None,
+    )
     try:
         return await service.analyze(
-            url=request.url, user_id=auth.user_id, identity=auth.subject
+            url=payload.url, user_id=auth.user_id, identity=auth.subject
         )
     except (PreviewAlreadyUsedError, PreviewRateLimitedError) as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc

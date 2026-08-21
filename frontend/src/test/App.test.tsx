@@ -27,6 +27,7 @@ const resilientAuthState: ResilientAuthState = {
 
 vi.mock('@clerk/clerk-react', () => ({
   SignIn: () => <div>SignIn</div>,
+  SignUp: () => <div>SignUp</div>,
   UserButton: () => <div>UserButton</div>,
   useUser: () => ({ user: { delete: vi.fn() } }),
 }));

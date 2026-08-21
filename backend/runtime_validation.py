@@ -54,6 +54,7 @@ def validate_runtime_configuration() -> None:
     _validate_optional_positive_int("PREVIEW_METADATA_TIMEOUT_SECONDS")
     _validate_optional_positive_int("PREVIEW_REQUEST_WINDOW_SECONDS")
     _validate_optional_positive_int("PREVIEW_TRANSCRIPTION_TIMEOUT_SECONDS")
+    _validate_optional_positive_int("TURNSTILE_TIMEOUT_SECONDS")
     _validate_optional_choice("SOCIAL_CONNECTION_MODE", {"managed", "manual_api_key"})
     _validate_optional_bool("ALLOW_ENV_POSTIZ_API_KEY_FALLBACK")
     _validate_optional_bool("REQUIRE_CUDA_FOR_APP")
