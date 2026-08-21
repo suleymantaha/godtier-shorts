@@ -86,6 +86,9 @@ def test_extract_youtube_video_id_supports_common_url_shapes() -> None:
 
 def test_extract_youtube_video_id_returns_none_for_non_youtube_urls() -> None:
     assert extract_youtube_video_id("https://example.com/watch?v=mvYVI3wbY_g") is None
+    assert extract_youtube_video_id("https://youtube.com.evil.example/watch?v=mvYVI3wbY_g") is None
+    assert extract_youtube_video_id("http://youtube.com/watch?v=mvYVI3wbY_g") is None
+    assert extract_youtube_video_id("https://user:pass@youtube.com/watch?v=mvYVI3wbY_g") is None
     assert extract_youtube_video_id("https://www.youtube.com/watch?v=short") is None
 
 

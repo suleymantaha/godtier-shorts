@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 
+from backend.core.source_url_policy import SourceUrlPolicy
 from backend.services.preview.service import (
     PreviewAlreadyUsedError,
     PreviewMetadata,
@@ -108,6 +109,7 @@ def build_service(*, duration=120, captions=TRANSCRIPT, claim=True, analyzer=Non
         transcriber=transcriber,
         analyzer=analyzer,
         rate_limiter=rate_limiter,
+        source_url_policy=SourceUrlPolicy(resolver=lambda _host: ("142.250.184.206",)),
         max_source_seconds=3600,
         max_transcription_seconds=900,
     )

@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from backend.core.source_url_policy import DEFAULT_SOURCE_URL_POLICY, SourceUrlPolicy
 from backend.services.preview.service import PreviewMetadata
 from backend.services.viral_analyzer import ViralAnalyzer
 
@@ -27,8 +28,24 @@ def _parse_json3(path: Path) -> list[dict[str, Any]]:
 
 
 class YtDlpCaptionSource:
-    def __init__(self, *, timeout_seconds: int = 30) -> None:
+    def __init__(
+        self,
+        *,
+        timeout_seconds: int = 30,
+        source_url_policy: SourceUrlPolicy = DEFAULT_SOURCE_URL_POLICY,
+    ) -> None:
         self._timeout_seconds = timeout_seconds
+        self._source_url_policy = source_url_policy
+
+    def validate_result_redirects(self, requested_url: str, info: dict[str, Any]) -> None:
+        redirect_destinations = [
+            str(info[key])
+            for key in ("original_url", "webpage_url")
+            if info.get(key) and str(info[key]) != requested_url
+        ]
+        self._source_url_policy.validate_redirect_chain(
+            requested_url, redirect_destinations
+        )
 
     async def inspect(self, url: str):
         try:
@@ -61,6 +78,7 @@ class YtDlpCaptionSource:
                 info = ydl.extract_info(url, download=True)
             if not isinstance(info, dict):
                 raise RuntimeError("YouTube metadata could not be read")
+            self.validate_result_redirects(url, info)
             subtitle_files = sorted(Path(temp_dir).glob("*.json3"))
             captions = _parse_json3(subtitle_files[0]) if subtitle_files else None
             metadata = PreviewMetadata(

@@ -11,6 +11,7 @@ from loguru import logger
 
 from backend.config import ProjectPaths
 from backend.core.external_tools import ytdlp as resolve_ytdlp
+from backend.core.source_url_policy import DEFAULT_SOURCE_URL_POLICY, SourceUrlPolicyError
 from backend.core.workflow_common import run_blocking, write_json_atomic
 
 YOUTUBE_VIDEO_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]{11}$")
@@ -24,15 +25,20 @@ def extract_youtube_video_id(youtube_url: str) -> str | None:
     if YOUTUBE_VIDEO_ID_PATTERN.fullmatch(normalized):
         return normalized
 
-    parsed = urlparse(normalized)
-    host = (parsed.netloc or "").lower()
+    try:
+        validated = DEFAULT_SOURCE_URL_POLICY.validate_structure(normalized)
+    except SourceUrlPolicyError:
+        return None
+
+    parsed = urlparse(validated.url)
+    host = validated.host
     path = parsed.path or ""
 
-    if host.endswith("youtu.be"):
+    if host == "youtu.be":
         candidate = path.strip("/").split("/", 1)[0]
         return candidate if YOUTUBE_VIDEO_ID_PATTERN.fullmatch(candidate) else None
 
-    if "youtube.com" not in host:
+    if host not in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
         return None
 
     if path == "/watch":
