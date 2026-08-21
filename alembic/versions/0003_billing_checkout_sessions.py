@@ -33,7 +33,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.CheckConstraint(
             "status IN ('initializing', 'ready', 'consumed', 'failed')",
-            name="ck_billing_checkout_sessions_billing_checkout_status",
+            name=op.f("ck_billing_checkout_sessions_billing_checkout_status"),
         ),
         sa.ForeignKeyConstraint(["plan_id"], ["plans.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="RESTRICT"),
