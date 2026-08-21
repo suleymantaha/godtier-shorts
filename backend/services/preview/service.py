@@ -6,14 +6,11 @@ from typing import Any, Protocol
 from urllib.parse import parse_qs, urlparse
 from uuid import UUID
 
-
-ALLOWED_YOUTUBE_HOSTS = {
-    "youtube.com",
-    "www.youtube.com",
-    "m.youtube.com",
-    "youtu.be",
-}
-
+from backend.core.source_url_policy import (
+    DEFAULT_SOURCE_URL_POLICY,
+    SourceUrlPolicy,
+    SourceUrlPolicyError,
+)
 
 class PreviewError(ValueError):
     pass
@@ -80,20 +77,15 @@ class PreviewRateLimiter(Protocol):
     async def allow(self, *, identity_key_hash: str) -> bool: ...
 
 
-def validate_preview_url(url: str) -> str:
-    parsed = urlparse(url.strip())
+def validate_preview_url(
+    url: str,
+    source_url_policy: SourceUrlPolicy = DEFAULT_SOURCE_URL_POLICY,
+) -> str:
     try:
-        port = parsed.port
-    except ValueError as exc:
-        raise PreviewUrlError("Gecersiz YouTube URL portu") from exc
-    if (
-        parsed.scheme != "https"
-        or parsed.hostname not in ALLOWED_YOUTUBE_HOSTS
-        or parsed.username is not None
-        or parsed.password is not None
-        or port not in (None, 443)
-    ):
-        raise PreviewUrlError("Yalnizca HTTPS YouTube video URL'leri desteklenir")
+        safe_url = source_url_policy.validate(url).url
+    except SourceUrlPolicyError as exc:
+        raise PreviewUrlError(str(exc)) from exc
+    parsed = urlparse(safe_url)
 
     if parsed.hostname == "youtu.be":
         video_id = parsed.path.strip("/").split("/", 1)[0]
@@ -106,7 +98,7 @@ def validate_preview_url(url: str) -> str:
         )
     if not video_id or len(video_id) > 32 or not all(c.isalnum() or c in "-_" for c in video_id):
         raise PreviewUrlError("Gecerli bir YouTube video kimligi gerekli")
-    return url.strip()
+    return safe_url
 
 
 class PreviewService:
@@ -118,6 +110,7 @@ class PreviewService:
         transcriber: LimitedTranscriber,
         analyzer: PreviewAnalyzer,
         rate_limiter: PreviewRateLimiter,
+        source_url_policy: SourceUrlPolicy = DEFAULT_SOURCE_URL_POLICY,
         max_source_seconds: int,
         max_transcription_seconds: int,
     ) -> None:
@@ -126,11 +119,12 @@ class PreviewService:
         self._transcriber = transcriber
         self._analyzer = analyzer
         self._rate_limiter = rate_limiter
+        self._source_url_policy = source_url_policy
         self._max_source_seconds = max_source_seconds
         self._max_transcription_seconds = max_transcription_seconds
 
     async def analyze(self, *, url: str, user_id: UUID, identity: str) -> PreviewResult:
-        safe_url = validate_preview_url(url)
+        safe_url = validate_preview_url(url, self._source_url_policy)
         identity_hash = hashlib.sha256(f"preview-v1:{identity}".encode()).hexdigest()
         if not await self._rate_limiter.allow(identity_key_hash=identity_hash):
             raise PreviewRateLimitedError("Cok sik analiz istegi gonderildi")

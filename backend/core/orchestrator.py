@@ -2,7 +2,6 @@
 from __future__ import annotations
 import asyncio
 import json
-import re
 import threading
 from contextlib import asynccontextmanager
 from typing import Any, Callable, Optional
@@ -10,6 +9,7 @@ from loguru import logger
 from backend.config import LOGS_DIR, OUTPUTS_DIR, VIDEO_METADATA, YOLO_MODEL_PATH, ProjectPaths
 from backend.core.clip_events import ClipEventPort, NullClipEventPort
 from backend.core.command_runner import CommandRunner
+from backend.core.source_url_policy import SourceUrlPolicyError, validate_source_url
 from backend.core.media_ops import cut_and_burn_clip, download_full_video_async as download_video_assets_async, shift_timestamps
 from backend.core.workflows import BatchClipWorkflow, CutPointsWorkflow, ManualClipWorkflow, PipelineWorkflow, ReburnWorkflow
 from backend.services.subtitle_renderer import SubtitleRenderer
@@ -50,15 +50,12 @@ class GodTierShortsCreator:
         if self.cancel_event.is_set():
             raise RuntimeError("Job cancelled by user")
     def _validate_youtube_url(self, url: str) -> None:
-        if re.match(r"^[0-9A-Za-z_-]{11}$", url):
+        if len(url) == 11 and all(character.isalnum() or character in "-_" for character in url):
             return
-        youtube_regex = re.compile(
-            r"^(https?://)?(www\.)?"
-            r"(youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)"
-            r"([0-9A-Za-z_-]{11})(&.*)?$"
-        )
-        if not youtube_regex.match(url):
-            raise ValueError(f"Geçersiz veya güvensiz YouTube URL formatı: {url}")
+        try:
+            validate_source_url(url)
+        except SourceUrlPolicyError as exc:
+            raise ValueError(f"Geçersiz veya güvensiz YouTube URL formatı: {exc}") from exc
     async def _run_command_with_cancel_async(
         self,
         cmd: list[str],
