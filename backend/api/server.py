@@ -132,7 +132,7 @@ def create_app() -> FastAPI:
     )
 
     # --- Control-plane router'larını kaydet ---
-    from backend.api.routes import account, auth, billing, clerk, preview, social, settings, webhooks
+    from backend.api.routes import account, auth, billing, clerk, preview, security_gate, social, settings, webhooks
 
     app.include_router(social.router)
     app.include_router(settings.router)
@@ -142,6 +142,7 @@ def create_app() -> FastAPI:
     app.include_router(webhooks.router)
     app.include_router(clerk.router)
     app.include_router(preview.router)
+    app.include_router(security_gate.router)
     app.include_router(health.router)
 
     # Mevcut lokal GPU akislarini yalniz local modda yukle. Production API

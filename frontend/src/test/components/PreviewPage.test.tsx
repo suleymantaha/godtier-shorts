@@ -9,6 +9,12 @@ vi.mock('../../api/preview', () => ({
   previewApi: { analyze: (...args: unknown[]) => analyzeMock(...args) },
 }));
 
+vi.mock('../../components/security/TurnstileGate', () => ({
+  TurnstileGate: ({ onToken }: { onToken: (token: string) => void }) => (
+    <button type="button" onClick={() => onToken('turnstile-token')}>Verify human</button>
+  ),
+}));
+
 describe('PreviewPage', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('tr');
@@ -31,12 +37,13 @@ describe('PreviewPage', () => {
     render(<PreviewPage />);
 
     await user.type(screen.getByLabelText('YouTube video URL'), 'https://youtu.be/abc123DEF45');
+    await user.click(screen.getByRole('button', { name: 'Verify human' }));
     await user.click(screen.getByRole('button', { name: 'Ücretsiz analiz et' }));
 
     expect(await screen.findByText('Birinci aday')).toBeInTheDocument();
     expect(screen.getByText('00:00 – 00:20')).toBeInTheDocument();
     expect(screen.getByText('Ikinci aday')).toBeInTheDocument();
-    expect(analyzeMock).toHaveBeenCalledWith('https://youtu.be/abc123DEF45');
+    expect(analyzeMock).toHaveBeenCalledWith('https://youtu.be/abc123DEF45', 'turnstile-token');
     expect(screen.queryByRole('video')).not.toBeInTheDocument();
   });
 });

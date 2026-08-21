@@ -1,4 +1,4 @@
-import { SignIn, UserButton } from '@clerk/clerk-react';
+import { SignIn, SignUp, UserButton } from '@clerk/clerk-react';
 import {
   ChevronLeft,
   Github,
@@ -13,7 +13,7 @@ import {
   Twitter,
   type LucideIcon,
 } from 'lucide-react';
-import { Suspense } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ClipGallery } from '../components/ClipGallery';
@@ -31,6 +31,8 @@ import type { Clip, WsStatus } from '../types';
 import { AutoCutEditor, Editor, PreviewPage, SocialComposePage, SocialWorkspace, SubtitleEditor, ThreeCanvas } from './lazyComponents';
 import type { AppViewMode } from './helpers';
 import type { ResilientAuthState, ResilientAuthStatus } from '../auth/useResilientAuth';
+import { TurnstileGate } from '../components/security/TurnstileGate';
+import { turnstileApi } from '../api/turnstile';
 
 const SIGN_IN_APPEARANCE = {
   elements: {
@@ -89,9 +91,66 @@ export function AppBackground() {
 }
 
 export function SignedOutScreen() {
+  if (window.location.pathname === '/sign-up') {
+    return <SignupGateScreen />;
+  }
   return (
     <div className="flex w-full h-[80vh] items-center justify-center animate-in fade-in duration-1000">
-      <SignIn appearance={SIGN_IN_APPEARANCE} />
+      <SignIn appearance={SIGN_IN_APPEARANCE} signUpUrl="/sign-up" />
+    </div>
+  );
+}
+
+function SignupGateScreen() {
+  const [token, setToken] = useState<string | null>(null);
+  const [verified, setVerified] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [resetNonce, setResetNonce] = useState(0);
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+    let active = true;
+    void turnstileApi.verifySignup(token)
+      .then((result) => {
+        if (!active) {
+          return;
+        }
+        if (result.verified) {
+          setError(null);
+          setVerified(true);
+          return;
+        }
+        setError('Security verification failed. Please try again.');
+        setToken(null);
+        setResetNonce((value) => value + 1);
+      })
+      .catch(() => {
+        if (active) {
+          setError('Security verification failed. Please try again.');
+          setToken(null);
+          setResetNonce((value) => value + 1);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [token]);
+
+  if (verified) {
+    return (
+      <div className="flex w-full h-[80vh] items-center justify-center animate-in fade-in duration-1000">
+        <SignUp appearance={SIGN_IN_APPEARANCE} signInUrl="/" />
+      </div>
+    );
+  }
+  return (
+    <div className="flex w-full h-[80vh] items-center justify-center animate-in fade-in duration-1000">
+      <div className="glass-card rounded-2xl border border-foreground/10 p-6">
+        <TurnstileGate action="signup" onToken={setToken} resetNonce={resetNonce} />
+        {error ? <p role="alert" className="mt-3 text-sm text-red-300">{error}</p> : null}
+      </div>
     </div>
   );
 }

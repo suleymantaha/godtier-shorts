@@ -35,6 +35,8 @@ export const CLERK_JWT_TEMPLATE =
   (import.meta.env.VITE_CLERK_JWT_TEMPLATE as string | undefined) ||
   (import.meta.env.NEXT_PUBLIC_CLERK_JWT_TEMPLATE as string | undefined) ||
   '';
+export const TURNSTILE_SITE_KEY =
+  (import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined) || '';
 
 export const MAX_UPLOAD_BYTES = Number((import.meta.env.VITE_MAX_UPLOAD_BYTES as string | undefined) ?? 5 * 1024 * 1024 * 1024);
 export const API_REQUEST_TIMEOUT_MS = readNumberEnv(import.meta.env.VITE_API_REQUEST_TIMEOUT_MS as string | undefined, 15000);
