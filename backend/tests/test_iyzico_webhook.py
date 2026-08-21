@@ -380,11 +380,14 @@ def test_postgres_webhook_replay_grants_once_and_failure_sets_grace_window() -> 
                 max_clips_per_job=10, max_active_jobs=2, retention_days=30,
                 priority=0, active=True,
             )
+            session.add_all([user, plan])
+            await session.commit()
+
             subscription = Subscription(
                 id=uuid4(), user_id=user.id, provider_subscription_ref="sub-1",
                 plan_id=plan.id, status=SubscriptionStatus.PENDING,
             )
-            session.add_all([user, plan, subscription])
+            session.add(subscription)
             await session.commit()
 
             repository = SqlAlchemyWebhookRepository(session)
