@@ -203,6 +203,7 @@ class Subscription(Base):
     period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    entitlement_grace_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 

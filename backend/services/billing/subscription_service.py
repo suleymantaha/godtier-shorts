@@ -49,6 +49,7 @@ class LocalSubscription:
     plan_code: str
     status: SubscriptionStatus
     plan_id: UUID | None = None
+    grace_until: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +57,14 @@ class SubscriptionSnapshot:
     plan_code: str
     interval: BillingInterval
     status: SubscriptionStatus
+    grace_until: datetime | None = None
+
+    @property
+    def entitlement_active(self) -> bool:
+        return paid_entitlement_is_active(
+            self.status,
+            grace_until=self.grace_until,
+        )
 
 
 @dataclass(slots=True)
@@ -231,6 +240,7 @@ class SqlAlchemySubscriptionRepository:
             plan_code=plan_code,
             status=subscription.status,
             plan_id=subscription.plan_id,
+            grace_until=subscription.entitlement_grace_until,
         )
 
     async def set_status(self, subscription_id: UUID, status: SubscriptionStatus) -> None:
@@ -462,6 +472,20 @@ PROVIDER_STATUS_MAP = {
 }
 
 
+def paid_entitlement_is_active(
+    status: SubscriptionStatus,
+    *,
+    grace_until: datetime | None,
+    now: datetime | None = None,
+) -> bool:
+    if status is SubscriptionStatus.ACTIVE:
+        return True
+    if status is not SubscriptionStatus.PAST_DUE or grace_until is None:
+        return False
+    current = now or datetime.now(timezone.utc)
+    return grace_until > current
+
+
 class SubscriptionService:
     def __init__(
         self,
@@ -552,9 +576,19 @@ class SubscriptionService:
             status = PROVIDER_STATUS_MAP[provider.status]
         except KeyError as exc:
             raise SubscriptionServiceError("provider subscription status gecersiz") from exc
+        if (
+            subscription.status is SubscriptionStatus.PAST_DUE
+            and status is SubscriptionStatus.ACTIVE
+        ):
+            status = SubscriptionStatus.PAST_DUE
         if status is not subscription.status:
             await self._repository.set_status(subscription.id, status)
-        return SubscriptionSnapshot(subscription.plan_code, interval, status)
+        return SubscriptionSnapshot(
+            subscription.plan_code,
+            interval,
+            status,
+            grace_until=subscription.grace_until,
+        )
 
     async def confirm_checkout(self, token: str) -> SubscriptionSnapshot:
         token_hash = hashlib.sha256(token.strip().encode()).hexdigest()

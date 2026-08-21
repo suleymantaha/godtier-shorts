@@ -21,6 +21,7 @@ PRODUCTION_API_ENV = {
     "IYZICO_API_BASE_URL": "https://api.iyzipay.com",
     "IYZICO_API_KEY": "test-iyzico-api-key",
     "IYZICO_CALLBACK_URL": "https://api.godtier.example/api/billing/callback",
+    "IYZICO_MERCHANT_ID": "3404590",
     "IYZICO_PLAN_REFERENCES_JSON": '{"creator":{"product_reference_code":"product",'
     '"monthly":"monthly","yearly":"yearly"}}',
     "IYZICO_SECRET_KEY": "test-iyzico-secret-key",

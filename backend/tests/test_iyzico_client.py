@@ -93,10 +93,21 @@ def test_subscription_query_and_cancel_use_provider_endpoints() -> None:
             json={
                 "status": "success",
                 "data": {
-                    "referenceCode": "sub-1",
-                    "productReferenceCode": "product-creator",
-                    "pricingPlanReferenceCode": "pricing-monthly",
-                    "subscriptionStatus": "CANCELED",
+                    "totalCount": 1,
+                    "items": [{
+                        "referenceCode": "sub-1",
+                        "productReferenceCode": "product-creator",
+                        "customerReferenceCode": "customer-1",
+                        "pricingPlanReferenceCode": "pricing-monthly",
+                        "subscriptionStatus": "CANCELED",
+                        "orders": [{
+                            "referenceCode": "order-1",
+                            "price": 99.90,
+                            "currencyCode": "TRY",
+                            "orderStatus": "SUCCESS",
+                            "paymentAttempts": [{"paymentStatus": "SUCCESS"}],
+                        }],
+                    }],
                 },
             },
         )
@@ -118,6 +129,11 @@ def test_subscription_query_and_cancel_use_provider_endpoints() -> None:
     ]
     assert queried.reference_code == "sub-1"
     assert queried.status == "CANCELED"
+    assert queried.customer_reference_code == "customer-1"
+    assert queried.order_references == frozenset({"order-1"})
+    assert queried.orders["order-1"].amount_minor == 9990
+    assert queried.orders["order-1"].order_status == "SUCCESS"
+    assert queried.orders["order-1"].payment_statuses == ("SUCCESS",)
 
 
 def test_checkout_result_is_retrieved_from_provider_by_token() -> None:

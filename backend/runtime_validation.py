@@ -18,6 +18,7 @@ PRODUCTION_API_REQUIRED_ENV = frozenset(
         "IYZICO_API_BASE_URL",
         "IYZICO_API_KEY",
         "IYZICO_CALLBACK_URL",
+        "IYZICO_MERCHANT_ID",
         "IYZICO_PLAN_REFERENCES_JSON",
         "IYZICO_SECRET_KEY",
         "R2_ACCESS_KEY_ID",
@@ -47,6 +48,7 @@ def validate_runtime_configuration() -> None:
     _validate_optional_positive_int("YTDLP_DOWNLOAD_TOTAL_TIMEOUT_SECONDS")
     _validate_optional_positive_int("YTDLP_PROGRESS_MIN_EMIT_INTERVAL_MS")
     _validate_optional_positive_int("BILLING_CHECKOUT_COOLDOWN_SECONDS")
+    _validate_optional_positive_int("BILLING_PAST_DUE_GRACE_DAYS")
     _validate_optional_choice("SOCIAL_CONNECTION_MODE", {"managed", "manual_api_key"})
     _validate_optional_bool("ALLOW_ENV_POSTIZ_API_KEY_FALLBACK")
     _validate_optional_bool("REQUIRE_CUDA_FOR_APP")

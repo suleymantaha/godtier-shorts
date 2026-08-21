@@ -130,6 +130,10 @@ def test_enum_columns_persist_contract_values_instead_of_python_member_names() -
         assert Base.metadata.tables[table_name].c[column_name].type.enums == values
 
 
+def test_subscription_schema_tracks_past_due_grace_window() -> None:
+    assert "entitlement_grace_until" in Base.metadata.tables["subscriptions"].c
+
+
 def test_session_factory_creates_one_non_expiring_async_session_per_call() -> None:
     factory = create_session_factory("postgresql+asyncpg://godtier:test@localhost:5432/godtier")
 

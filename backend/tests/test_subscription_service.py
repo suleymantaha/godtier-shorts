@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
@@ -22,6 +23,7 @@ from backend.services.billing.subscription_service import (
     SubscriptionService,
     SqlAlchemySubscriptionRepository,
     SubscriptionServiceError,
+    paid_entitlement_is_active,
 )
 
 
@@ -359,6 +361,62 @@ def test_plan_mapping_rejects_duplicate_pricing_references() -> None:
             '{"creator":{"product_reference_code":"p1","monthly":"same","yearly":"y1"},'
             '"pro":{"product_reference_code":"p2","monthly":"same","yearly":"y2"}}'
         )
+
+
+def test_past_due_entitlement_is_available_only_inside_grace_window() -> None:
+    now = datetime(2026, 8, 21, tzinfo=timezone.utc)
+
+    assert paid_entitlement_is_active(
+        SubscriptionStatus.PAST_DUE,
+        grace_until=now + timedelta(days=1),
+        now=now,
+    )
+    assert not paid_entitlement_is_active(
+        SubscriptionStatus.PAST_DUE,
+        grace_until=now,
+        now=now,
+    )
+    assert paid_entitlement_is_active(
+        SubscriptionStatus.ACTIVE,
+        grace_until=None,
+        now=now,
+    )
+
+
+def test_subscription_snapshot_exposes_grace_entitlement_to_production_callers() -> None:
+    user_id = uuid4()
+    repository = FakeRepository(
+        LocalPlan(id=uuid4(), code="creator", active=True),
+        subscription=LocalSubscription(
+            id=uuid4(),
+            user_id=user_id,
+            provider_reference="sub-1",
+            plan_code="creator",
+            status=SubscriptionStatus.PAST_DUE,
+            grace_until=datetime.now(timezone.utc) + timedelta(days=1),
+        ),
+    )
+    provider = FakeIyzicoClient()
+    provider.subscription = ProviderSubscription(
+        reference_code="sub-1",
+        product_reference_code="product-creator",
+        pricing_plan_reference_code="creator-monthly",
+        status="ACTIVE",
+    )
+    service = SubscriptionService(
+        repository,
+        provider,
+        _references(),
+        "https://api.example.com/callback",
+        "test-checkout-secret",
+    )
+
+    snapshot = asyncio.run(service.get_status(user_id))
+
+    assert snapshot.status is SubscriptionStatus.PAST_DUE
+    assert snapshot.grace_until == repository.subscription.grace_until
+    assert snapshot.entitlement_active is True
+    assert repository.status_writes == []
 
 
 def test_sql_repository_checkout_replay_is_idempotent_and_cannot_rebind_owner() -> None:

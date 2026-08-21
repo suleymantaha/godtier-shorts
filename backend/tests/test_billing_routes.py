@@ -130,4 +130,5 @@ def test_callback_confirms_token_with_provider_without_browser_auth() -> None:
         "plan_code": "creator",
         "interval": "monthly",
         "status": "active",
+        "entitlement_active": True,
     }

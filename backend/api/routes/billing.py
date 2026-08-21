@@ -92,6 +92,7 @@ class BillingStatusResponse(BaseModel):
     plan_code: str
     interval: BillingInterval
     status: str
+    entitlement_active: bool
 
 
 def get_iyzico_client() -> IyzicoClient:
@@ -168,6 +169,7 @@ async def get_billing_status(
         plan_code=snapshot.plan_code,
         interval=snapshot.interval,
         status=snapshot.status.value,
+        entitlement_active=snapshot.entitlement_active,
     )
 
 
@@ -184,6 +186,7 @@ async def confirm_checkout(
         plan_code=snapshot.plan_code,
         interval=snapshot.interval,
         status=snapshot.status.value,
+        entitlement_active=snapshot.entitlement_active,
     )
 
 
@@ -200,4 +203,5 @@ async def cancel_subscription(
         plan_code=snapshot.plan_code,
         interval=snapshot.interval,
         status=snapshot.status.value,
+        entitlement_active=snapshot.entitlement_active,
     )

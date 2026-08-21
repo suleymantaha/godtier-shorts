@@ -7,7 +7,8 @@ import json
 import secrets
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from urllib.parse import quote
 
@@ -26,11 +27,23 @@ class CheckoutSession:
 
 
 @dataclass(frozen=True, slots=True)
+class ProviderOrder:
+    reference_code: str
+    amount_minor: int
+    currency: str
+    order_status: str
+    payment_statuses: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ProviderSubscription:
     reference_code: str
     pricing_plan_reference_code: str
     status: str
     product_reference_code: str = ""
+    customer_reference_code: str = ""
+    order_references: frozenset[str] = frozenset()
+    orders: dict[str, ProviderOrder] = field(default_factory=dict)
 
 
 class IyzicoClient:
@@ -145,11 +158,60 @@ class IyzicoClient:
         data = result.get("data")
         if not isinstance(data, dict):
             raise IyzicoError("iyzico subscription yaniti eksik")
+        if not data.get("referenceCode"):
+            items = data.get("items")
+            if not isinstance(items, list):
+                raise IyzicoError("iyzico subscription yaniti eksik")
+            data = next(
+                (
+                    item
+                    for item in items
+                    if isinstance(item, dict)
+                    and str(item.get("referenceCode") or "").strip() == reference_code
+                ),
+                {},
+            )
+        orders: dict[str, ProviderOrder] = {}
+        for order in data.get("orders", []):
+            if not isinstance(order, dict):
+                continue
+            reference = str(order.get("referenceCode") or "").strip()
+            currency = str(order.get("currencyCode") or "").strip().upper()
+            try:
+                minor_decimal = Decimal(str(order.get("price"))) * 100
+            except (InvalidOperation, TypeError, ValueError):
+                continue
+            if (
+                not reference
+                or len(currency) != 3
+                or minor_decimal != minor_decimal.to_integral_value()
+                or minor_decimal < 0
+            ):
+                continue
+            orders[reference] = ProviderOrder(
+                reference_code=reference,
+                amount_minor=int(minor_decimal),
+                currency=currency,
+                order_status=str(order.get("orderStatus") or "").strip().upper(),
+                payment_statuses=tuple(
+                    str(attempt.get("paymentStatus") or "").strip().upper()
+                    for attempt in order.get("paymentAttempts", [])
+                    if isinstance(attempt, dict)
+                    and str(attempt.get("paymentStatus") or "").strip()
+                ),
+            )
         subscription = ProviderSubscription(
             reference_code=str(data.get("referenceCode") or "").strip(),
             product_reference_code=str(data.get("productReferenceCode") or "").strip(),
             pricing_plan_reference_code=str(data.get("pricingPlanReferenceCode") or "").strip(),
             status=str(data.get("subscriptionStatus") or "").strip().upper(),
+            customer_reference_code=str(data.get("customerReferenceCode") or "").strip(),
+            order_references=frozenset(
+                str(order.get("referenceCode") or "").strip()
+                for order in data.get("orders", [])
+                if isinstance(order, dict) and str(order.get("referenceCode") or "").strip()
+            ),
+            orders=orders,
         )
         if not all(
             (

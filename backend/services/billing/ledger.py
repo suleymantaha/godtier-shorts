@@ -134,18 +134,31 @@ async def grant(
     idempotency_key = _key(idempotency_key)
     factory = get_session_factory()
     async with factory() as session, session.begin():
-        claimed = await _claim_entry(
-            session,
-            user_id=user_id,
-            kind=LedgerKind.GRANT,
-            amount=amount,
-            idempotency_key=idempotency_key,
-            metadata=metadata,
-        )
-        if not claimed:
-            return
-        wallet = await _lock_wallet(session, user_id)
-        wallet.available += amount
+        await grant_in_session(session, user_id, amount, idempotency_key, metadata)
+
+
+async def grant_in_session(
+    session: AsyncSession,
+    user_id: UUID,
+    amount: int,
+    idempotency_key: str,
+    metadata: dict[str, Any],
+) -> bool:
+    amount = _positive_amount(amount)
+    idempotency_key = _key(idempotency_key)
+    claimed = await _claim_entry(
+        session,
+        user_id=user_id,
+        kind=LedgerKind.GRANT,
+        amount=amount,
+        idempotency_key=idempotency_key,
+        metadata=metadata,
+    )
+    if not claimed:
+        return False
+    wallet = await _lock_wallet(session, user_id)
+    wallet.available += amount
+    return True
 
 
 async def reserve(
