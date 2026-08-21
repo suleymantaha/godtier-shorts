@@ -132,12 +132,13 @@ def create_app() -> FastAPI:
     )
 
     # --- Control-plane router'larını kaydet ---
-    from backend.api.routes import account, auth, clerk, social, settings
+    from backend.api.routes import account, auth, billing, clerk, social, settings
 
     app.include_router(social.router)
     app.include_router(settings.router)
     app.include_router(account.router)
     app.include_router(auth.router)
+    app.include_router(billing.router)
     app.include_router(clerk.router)
     app.include_router(health.router)
 

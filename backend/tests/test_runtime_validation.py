@@ -18,8 +18,11 @@ PRODUCTION_API_ENV = {
     "R2_BUCKET_NAME": "godtier-private",
     "R2_ACCESS_KEY_ID": "test-r2-access-key",
     "R2_SECRET_ACCESS_KEY": "test-r2-secret-key",
-    "IYZICO_API_BASE_URL": "https://sandbox-api.iyzipay.com",
+    "IYZICO_API_BASE_URL": "https://api.iyzipay.com",
     "IYZICO_API_KEY": "test-iyzico-api-key",
+    "IYZICO_CALLBACK_URL": "https://api.godtier.example/api/billing/callback",
+    "IYZICO_PLAN_REFERENCES_JSON": '{"creator":{"product_reference_code":"product",'
+    '"monthly":"monthly","yearly":"yearly"}}',
     "IYZICO_SECRET_KEY": "test-iyzico-secret-key",
     "TURNSTILE_SITE_KEY": "test-turnstile-site-key",
     "TURNSTILE_SECRET_KEY": "test-turnstile-secret-key",
@@ -109,6 +112,29 @@ def test_production_api_accepts_complete_runtime_contract(
     validate_runtime_configuration()
 
 
+def test_production_api_rejects_malformed_iyzico_plan_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_production_api_env(monkeypatch)
+    monkeypatch.setenv("IYZICO_PLAN_REFERENCES_JSON", '{"creator":{"monthly":"only-one"}}')
+
+    with pytest.raises(RuntimeError, match="IYZICO_PLAN_REFERENCES_JSON"):
+        validate_runtime_configuration()
+
+
+def test_production_api_rejects_sandbox_iyzico_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_production_api_env(monkeypatch)
+    monkeypatch.setenv("IYZICO_API_BASE_URL", "https://sandbox-api.iyzipay.com")
+    with pytest.raises(RuntimeError, match="api.iyzipay.com"):
+        validate_runtime_configuration()
+
+
+def test_runtime_rejects_invalid_checkout_cooldown(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BILLING_CHECKOUT_COOLDOWN_SECONDS", "0")
+    with pytest.raises(RuntimeError, match="BILLING_CHECKOUT_COOLDOWN_SECONDS"):
+        validate_runtime_configuration()
+
+
 @pytest.mark.parametrize(
     ("name", "value"),
     [
@@ -116,6 +142,7 @@ def test_production_api_accepts_complete_runtime_contract(
         ("REDIS_URL", "http://redis:6379/0"),
         ("R2_ENDPOINT_URL", "http://r2.example.com"),
         ("IYZICO_API_BASE_URL", "http://api.iyzipay.com"),
+        ("IYZICO_CALLBACK_URL", "http://api.godtier.example/api/billing/callback"),
         ("CLERK_ISSUER_URL", "http://clerk.example.com"),
         ("FRONTEND_URL", "http://app.godtier.example"),
     ],

@@ -13,6 +13,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Identity,
+    Index,
     Integer,
     JSON,
     SmallInteger,
@@ -47,6 +48,13 @@ class SubscriptionStatus(str, enum.Enum):
     PAST_DUE = "past_due"
     CANCELLED = "cancelled"
     EXPIRED = "expired"
+
+
+class BillingCheckoutStatus(str, enum.Enum):
+    INITIALIZING = "initializing"
+    READY = "ready"
+    CONSUMED = "consumed"
+    FAILED = "failed"
 
 
 class PaymentStatus(str, enum.Enum):
@@ -173,7 +181,16 @@ class Plan(Base):
 
 class Subscription(Base):
     __tablename__ = "subscriptions"
-    __table_args__ = (_enum_check("status", SubscriptionStatus, "subscription_status"),)
+    __table_args__ = (
+        _enum_check("status", SubscriptionStatus, "subscription_status"),
+        Index(
+            "uq_subscriptions_one_current_per_user",
+            "user_id",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'active', 'past_due')"),
+            sqlite_where=text("status IN ('pending', 'active', 'past_due')"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = _uuid_primary_key()
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
@@ -186,6 +203,34 @@ class Subscription(Base):
     period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class BillingCheckoutSession(Base):
+    __tablename__ = "billing_checkout_sessions"
+    __table_args__ = (
+        _enum_check("status", BillingCheckoutStatus, "billing_checkout_status"),
+        UniqueConstraint("idempotency_key_hash", name="uq_billing_checkout_idempotency_key_hash"),
+        UniqueConstraint("provider_token_hash", name="uq_billing_checkout_provider_token_hash"),
+        Index("ix_billing_checkout_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_primary_key()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    plan_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("plans.id", ondelete="RESTRICT"), nullable=False)
+    interval: Mapped[str] = mapped_column(String(16), nullable=False)
+    idempotency_key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider_token_hash: Mapped[str | None] = mapped_column(String(64))
+    response_ciphertext: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[BillingCheckoutStatus] = mapped_column(
+        _enum(BillingCheckoutStatus, "billing_checkout_status"),
+        nullable=False,
+        default=BillingCheckoutStatus.INITIALIZING,
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 

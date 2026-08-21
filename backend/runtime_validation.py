@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from urllib.parse import urlparse
 
@@ -16,6 +17,8 @@ PRODUCTION_API_REQUIRED_ENV = frozenset(
         "FRONTEND_URL",
         "IYZICO_API_BASE_URL",
         "IYZICO_API_KEY",
+        "IYZICO_CALLBACK_URL",
+        "IYZICO_PLAN_REFERENCES_JSON",
         "IYZICO_SECRET_KEY",
         "R2_ACCESS_KEY_ID",
         "R2_BUCKET_NAME",
@@ -43,6 +46,7 @@ def validate_runtime_configuration() -> None:
     _validate_optional_positive_int("YTDLP_DOWNLOAD_IDLE_TIMEOUT_SECONDS")
     _validate_optional_positive_int("YTDLP_DOWNLOAD_TOTAL_TIMEOUT_SECONDS")
     _validate_optional_positive_int("YTDLP_PROGRESS_MIN_EMIT_INTERVAL_MS")
+    _validate_optional_positive_int("BILLING_CHECKOUT_COOLDOWN_SECONDS")
     _validate_optional_choice("SOCIAL_CONNECTION_MODE", {"managed", "manual_api_key"})
     _validate_optional_bool("ALLOW_ENV_POSTIZ_API_KEY_FALLBACK")
     _validate_optional_bool("REQUIRE_CUDA_FOR_APP")
@@ -92,10 +96,36 @@ def _validate_production_api_configuration() -> None:
     for name in (
         "R2_ENDPOINT_URL",
         "IYZICO_API_BASE_URL",
+        "IYZICO_CALLBACK_URL",
         "CLERK_ISSUER_URL",
         "FRONTEND_URL",
     ):
         _validate_https_url(name, os.environ[name])
+    _validate_iyzico_plan_references(os.environ["IYZICO_PLAN_REFERENCES_JSON"])
+    if urlparse(os.environ["IYZICO_API_BASE_URL"]).hostname != "api.iyzipay.com":
+        raise RuntimeError("IYZICO_API_BASE_URL production ortaminda api.iyzipay.com olmali")
+
+
+def _validate_iyzico_plan_references(raw: str) -> None:
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("IYZICO_PLAN_REFERENCES_JSON gecerli JSON olmali") from exc
+    if not isinstance(payload, dict) or not payload:
+        raise RuntimeError("IYZICO_PLAN_REFERENCES_JSON en az bir plan icermeli")
+    required = {"product_reference_code", "monthly", "yearly"}
+    pricing_references: list[str] = []
+    for plan_code, references in payload.items():
+        if (
+            not isinstance(plan_code, str)
+            or not plan_code.strip()
+            or not isinstance(references, dict)
+            or any(not str(references.get(name) or "").strip() for name in required)
+        ):
+            raise RuntimeError("IYZICO_PLAN_REFERENCES_JSON plan mapping eksik")
+        pricing_references.extend(str(references[name]).strip() for name in ("monthly", "yearly"))
+    if len(pricing_references) != len(set(pricing_references)):
+        raise RuntimeError("IYZICO_PLAN_REFERENCES_JSON pricing referanslari benzersiz olmali")
 
 
 def _validate_url_schemes(name: str, value: str, schemes: set[str]) -> None:

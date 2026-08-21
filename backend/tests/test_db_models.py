@@ -12,6 +12,7 @@ from backend.db.session import create_session_factory
 EXPECTED_TABLES = {
     "assets",
     "audit_logs",
+    "billing_checkout_sessions",
     "credit_ledger",
     "credit_wallets",
     "job_events",
@@ -73,6 +74,8 @@ def test_financial_and_provider_idempotency_is_enforced_by_unique_constraints() 
     assert frozenset({"idempotency_key"}) in _unique_column_sets("credit_ledger")
     assert frozenset({"provider", "provider_event_key"}) in _unique_column_sets("webhook_events")
     assert frozenset({"storage_key"}) in _unique_column_sets("assets")
+    assert frozenset({"idempotency_key_hash"}) in _unique_column_sets("billing_checkout_sessions")
+    assert frozenset({"provider_token_hash"}) in _unique_column_sets("billing_checkout_sessions")
 
 
 def test_ownership_and_billing_foreign_keys_cannot_be_bypassed() -> None:
@@ -85,6 +88,8 @@ def test_ownership_and_billing_foreign_keys_cannot_be_bypassed() -> None:
         ("assets", "job_id"): "jobs.id",
         ("subscriptions", "user_id"): "users.id",
         ("subscriptions", "plan_id"): "plans.id",
+        ("billing_checkout_sessions", "user_id"): "users.id",
+        ("billing_checkout_sessions", "plan_id"): "plans.id",
         ("payments", "user_id"): "users.id",
         ("credit_wallets", "user_id"): "users.id",
         ("credit_ledger", "user_id"): "users.id",
