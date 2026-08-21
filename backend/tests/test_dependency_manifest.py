@@ -67,6 +67,7 @@ def test_api_requirements_keep_gpu_packages_out_of_control_plane() -> None:
         "torchvision",
         "ultralytics",
     }.isdisjoint(requirement_names)
+    assert "yt-dlp" in requirement_names
 
 
 

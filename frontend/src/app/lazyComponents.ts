@@ -16,3 +16,6 @@ export const SocialWorkspace = lazy(() =>
 export const SocialComposePage = lazy(() =>
   import('../components/SocialComposePage').then((module) => ({ default: module.SocialComposePage })),
 );
+export const PreviewPage = lazy(() =>
+  import('../components/PreviewPage').then((module) => ({ default: module.PreviewPage })),
+);

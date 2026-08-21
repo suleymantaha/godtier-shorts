@@ -1,7 +1,7 @@
 import type { Clip } from '../types';
 import { readStored } from '../utils/storage';
 
-export type AppViewMode = 'config' | 'manual' | 'subtitle' | 'social' | 'social_compose';
+export type AppViewMode = 'config' | 'preview' | 'manual' | 'subtitle' | 'social' | 'social_compose';
 export type SubtitleSessionMode = 'project' | 'clip';
 export type SubtitleSessionJobKind = 'reburn' | 'clip_recovery' | 'project_transcript' | 'range_render' | 'unknown';
 
@@ -118,7 +118,7 @@ export function clearSubtitleSessionSnapshot() {
 }
 
 function normalizeViewMode(viewMode?: string): AppViewMode {
-  if (viewMode === 'manual' || viewMode === 'subtitle' || viewMode === 'social' || viewMode === 'social_compose') {
+  if (viewMode === 'preview' || viewMode === 'manual' || viewMode === 'subtitle' || viewMode === 'social' || viewMode === 'social_compose') {
     return viewMode;
   }
 
@@ -172,6 +172,9 @@ export function syncViewModeToUrl(viewMode: AppViewMode): void {
 }
 
 function queryTabForViewMode(viewMode: AppViewMode): string | null {
+  if (viewMode === 'preview') {
+    return 'preview';
+  }
   if (viewMode === 'manual') {
     return 'manual';
   }
@@ -193,6 +196,9 @@ function pathnameForViewMode(viewMode: AppViewMode): string {
 }
 
 function normalizeQueryTab(tab: string | null): AppViewMode | null {
+  if (tab === 'preview') {
+    return 'preview';
+  }
   if (tab === 'manual') {
     return 'manual';
   }

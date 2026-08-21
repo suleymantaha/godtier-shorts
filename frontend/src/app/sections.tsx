@@ -5,6 +5,7 @@ import {
   Layers,
   Moon,
   Scissors,
+  ScanSearch,
   Settings,
   Share2,
   Subtitles,
@@ -27,7 +28,7 @@ import { Select } from '../components/ui/Select';
 import type { SubtitleAnimationType } from '../config/subtitleStyles';
 import type { AppLocale } from '../i18n';
 import type { Clip, WsStatus } from '../types';
-import { AutoCutEditor, Editor, SocialComposePage, SocialWorkspace, SubtitleEditor, ThreeCanvas } from './lazyComponents';
+import { AutoCutEditor, Editor, PreviewPage, SocialComposePage, SocialWorkspace, SubtitleEditor, ThreeCanvas } from './lazyComponents';
 import type { AppViewMode } from './helpers';
 import type { ResilientAuthState, ResilientAuthStatus } from '../auth/useResilientAuth';
 
@@ -62,6 +63,7 @@ interface SignedInShellProps {
   openClipSubtitleEditor: (clip: Clip) => void;
   openConfig: () => void;
   openManual: () => void;
+  openPreview: () => void;
   openSocial: () => void;
   openSubtitle: () => void;
   pauseReason: ResilientAuthState['pauseReason'];
@@ -108,6 +110,7 @@ export function SignedInShell({
   openClipSubtitleEditor,
   openConfig,
   openManual,
+  openPreview,
   openSocial,
   openSubtitle,
   pauseReason,
@@ -129,6 +132,7 @@ export function SignedInShell({
         authStatus={authStatus}
         openConfig={openConfig}
         openManual={openManual}
+        openPreview={openPreview}
         openSocial={openSocial}
         openSubtitle={openSubtitle}
         locale={locale}
@@ -170,6 +174,7 @@ function AppHeader({
   locale,
   openConfig,
   openManual,
+  openPreview,
   openSocial,
   openSubtitle,
   setLocale,
@@ -182,6 +187,7 @@ function AppHeader({
   locale: AppLocale;
   openConfig: () => void;
   openManual: () => void;
+  openPreview: () => void;
   openSocial: () => void;
   openSubtitle: () => void;
   setLocale: (locale: AppLocale) => void;
@@ -197,6 +203,7 @@ function AppHeader({
         <ViewNavigation
           openConfig={openConfig}
           openManual={openManual}
+          openPreview={openPreview}
           openSocial={openSocial}
           openSubtitle={openSubtitle}
           viewMode={viewMode}
@@ -237,12 +244,14 @@ function BrandPanel() {
 function ViewNavigation({
   openConfig,
   openManual,
+  openPreview,
   openSocial,
   openSubtitle,
   viewMode,
 }: {
   openConfig: () => void;
   openManual: () => void;
+  openPreview: () => void;
   openSocial: () => void;
   openSubtitle: () => void;
   viewMode: AppViewMode;
@@ -255,6 +264,7 @@ function ViewNavigation({
     mode: AppViewMode;
   }> = [
     { activeClass: 'bg-accent/20 text-foreground shadow-lg shadow-accent/10 border border-accent/30', icon: Settings, label: t('app.nav.configure'), mode: 'config' },
+    { activeClass: 'bg-primary/20 text-foreground shadow-lg shadow-primary/10 border border-primary/30', icon: ScanSearch, label: t('app.nav.preview'), mode: 'preview' },
     { activeClass: 'bg-primary/20 text-foreground shadow-lg shadow-primary/10 border border-primary/30', icon: Scissors, label: t('app.nav.autoCut'), mode: 'manual' },
     { activeClass: 'bg-accent/20 text-foreground shadow-lg shadow-accent/10 border border-accent/30', icon: Subtitles, label: t('app.nav.subtitleEdit'), mode: 'subtitle' },
     { activeClass: 'bg-secondary/20 text-foreground shadow-lg shadow-secondary/10 border border-secondary/30', icon: Share2, label: t('app.nav.social'), mode: 'social' },
@@ -266,6 +276,8 @@ function ViewNavigation({
         const isActive = viewMode === mode || (mode === 'social' && viewMode === 'social_compose');
         const onClick = mode === 'config'
           ? openConfig
+          : mode === 'preview'
+            ? openPreview
           : mode === 'manual'
             ? openManual
             : mode === 'subtitle'
@@ -377,6 +389,10 @@ function MainContent({
 
   if (viewMode === 'manual') {
     return <FullWidthWorkspace fallback={t('app.autoCut.loading')}><AutoCutEditor onOpenLibrary={openConfig} /></FullWidthWorkspace>;
+  }
+
+  if (viewMode === 'preview') {
+    return <FullWidthWorkspace fallback="Viral Scan yükleniyor…"><PreviewPage /></FullWidthWorkspace>;
   }
 
   if (viewMode === 'subtitle') {

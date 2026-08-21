@@ -57,3 +57,8 @@ def test_production_api_is_cpu_control_plane_with_readiness_probe() -> None:
     assert "/health/ready" in " ".join(api["healthcheck"]["test"])
     assert "gpus" not in api
     assert "deploy" not in api
+
+
+def test_production_api_image_has_bounded_preview_media_tooling() -> None:
+    dockerfile = (ROOT / "Dockerfile.api").read_text(encoding="utf-8")
+    assert "ffmpeg" in dockerfile
