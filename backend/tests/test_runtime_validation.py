@@ -136,6 +136,22 @@ def test_runtime_rejects_invalid_checkout_cooldown(monkeypatch: pytest.MonkeyPat
         validate_runtime_configuration()
 
 
+def test_runtime_rejects_invalid_preview_request_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PREVIEW_REQUEST_WINDOW_SECONDS", "0")
+    with pytest.raises(RuntimeError, match="PREVIEW_REQUEST_WINDOW_SECONDS"):
+        validate_runtime_configuration()
+
+
+def test_runtime_requires_transcription_provider_when_preview_fallback_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PREVIEW_LIMITED_TRANSCRIPTION_ENABLED", "true")
+    monkeypatch.delenv("PREVIEW_TRANSCRIPTION_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("PREVIEW_TRANSCRIPTION_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="PREVIEW_TRANSCRIPTION_ENDPOINT_URL"):
+        validate_runtime_configuration()
+
+
 @pytest.mark.parametrize(
     ("name", "value"),
     [

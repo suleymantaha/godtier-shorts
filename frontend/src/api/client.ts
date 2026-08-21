@@ -536,7 +536,7 @@ async function requestJson<T>(path: string, init?: RequestInit, options?: ApiFet
     }
 }
 
-async function apiFetch<T>(path: string, init?: RequestInit, options?: ApiFetchOptions): Promise<T> {
+export async function apiFetch<T>(path: string, init?: RequestInit, options?: ApiFetchOptions): Promise<T> {
     return requestJson<T>(path, {
         headers: { 'Content-Type': 'application/json', ...(init?.headers as Record<string, string> | undefined) },
         ...init,

@@ -49,11 +49,28 @@ def validate_runtime_configuration() -> None:
     _validate_optional_positive_int("YTDLP_PROGRESS_MIN_EMIT_INTERVAL_MS")
     _validate_optional_positive_int("BILLING_CHECKOUT_COOLDOWN_SECONDS")
     _validate_optional_positive_int("BILLING_PAST_DUE_GRACE_DAYS")
+    _validate_optional_positive_int("PREVIEW_MAX_SOURCE_SECONDS")
+    _validate_optional_positive_int("PREVIEW_MAX_TRANSCRIPTION_SECONDS")
+    _validate_optional_positive_int("PREVIEW_METADATA_TIMEOUT_SECONDS")
+    _validate_optional_positive_int("PREVIEW_REQUEST_WINDOW_SECONDS")
+    _validate_optional_positive_int("PREVIEW_TRANSCRIPTION_TIMEOUT_SECONDS")
     _validate_optional_choice("SOCIAL_CONNECTION_MODE", {"managed", "manual_api_key"})
     _validate_optional_bool("ALLOW_ENV_POSTIZ_API_KEY_FALLBACK")
     _validate_optional_bool("REQUIRE_CUDA_FOR_APP")
     _validate_optional_bool("REQUIRE_NVENC_FOR_APP")
     _validate_optional_bool("LOG_ACCELERATOR_STATUS_ON_STARTUP")
+    _validate_optional_bool("PREVIEW_LIMITED_TRANSCRIPTION_ENABLED")
+
+    preview_transcription_enabled = os.getenv(
+        "PREVIEW_LIMITED_TRANSCRIPTION_ENABLED", ""
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    if preview_transcription_enabled:
+        endpoint = os.getenv("PREVIEW_TRANSCRIPTION_ENDPOINT_URL", "").strip()
+        if not endpoint:
+            raise RuntimeError("PREVIEW_TRANSCRIPTION_ENDPOINT_URL gerekli")
+        if not os.getenv("PREVIEW_TRANSCRIPTION_API_KEY", "").strip():
+            raise RuntimeError("PREVIEW_TRANSCRIPTION_API_KEY gerekli")
+        _validate_https_url("PREVIEW_TRANSCRIPTION_ENDPOINT_URL", endpoint)
 
     if upload_limit is not None and request_limit is not None and request_limit < upload_limit:
         raise RuntimeError(
