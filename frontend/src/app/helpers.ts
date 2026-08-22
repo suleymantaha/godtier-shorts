@@ -2,7 +2,7 @@ import type { Clip } from '../types';
 import { readStored } from '../utils/storage';
 import { readPendingPreviewUrl } from '../marketing/funnel';
 
-export type AppViewMode = 'config' | 'preview' | 'manual' | 'subtitle' | 'social' | 'social_compose' | 'billing';
+export type AppViewMode = 'config' | 'preview' | 'manual' | 'subtitle' | 'social' | 'social_compose' | 'billing' | 'admin';
 export type SubtitleSessionMode = 'project' | 'clip';
 export type SubtitleSessionJobKind = 'reburn' | 'clip_recovery' | 'project_transcript' | 'range_render' | 'unknown';
 
@@ -119,7 +119,7 @@ export function clearSubtitleSessionSnapshot() {
 }
 
 function normalizeViewMode(viewMode?: string): AppViewMode {
-  if (viewMode === 'preview' || viewMode === 'manual' || viewMode === 'subtitle' || viewMode === 'social' || viewMode === 'social_compose' || viewMode === 'billing') {
+  if (viewMode === 'preview' || viewMode === 'manual' || viewMode === 'subtitle' || viewMode === 'social' || viewMode === 'social_compose' || viewMode === 'billing' || viewMode === 'admin') {
     return viewMode;
   }
 
@@ -185,6 +185,9 @@ function queryTabForViewMode(viewMode: AppViewMode): string | null {
   if (viewMode === 'billing') {
     return 'billing';
   }
+  if (viewMode === 'admin') {
+    return 'admin';
+  }
   return null;
 }
 
@@ -217,6 +220,9 @@ function normalizeQueryTab(tab: string | null): AppViewMode | null {
   }
   if (tab === 'billing') {
     return 'billing';
+  }
+  if (tab === 'admin') {
+    return 'admin';
   }
   return null;
 }

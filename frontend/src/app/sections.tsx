@@ -8,6 +8,7 @@ import {
   Scissors,
   ScanSearch,
   Settings,
+  ShieldCheck,
   Share2,
   Subtitles,
   Sun,
@@ -29,13 +30,14 @@ import { Select } from '../components/ui/Select';
 import type { SubtitleAnimationType } from '../config/subtitleStyles';
 import type { AppLocale } from '../i18n';
 import type { Clip, WsStatus } from '../types';
-import { AutoCutEditor, Editor, PreviewPage, SocialComposePage, SocialWorkspace, SubtitleEditor, ThreeCanvas } from './lazyComponents';
+import { AdminPage, AutoCutEditor, Editor, PreviewPage, SocialComposePage, SocialWorkspace, SubtitleEditor, ThreeCanvas } from './lazyComponents';
 import type { AppViewMode } from './helpers';
 import type { ResilientAuthState, ResilientAuthStatus } from '../auth/useResilientAuth';
 import { TurnstileGate } from '../components/security/TurnstileGate';
 import { turnstileApi } from '../api/turnstile';
 import { LandingPage } from '../pages/LandingPage';
 import { BillingPage } from '../pages/BillingPage';
+import { useAuthRuntimeStore } from '../auth/runtime';
 
 const SIGN_IN_APPEARANCE = {
   elements: {
@@ -66,6 +68,7 @@ interface SignedInShellProps {
   handleSkipSubtitlesChange: (disabled: boolean) => void;
   handleStyleChange: (styleName: string) => void;
   openClipSubtitleEditor: (clip: Clip) => void;
+  openAdmin: () => void;
   openBilling: () => void;
   openConfig: () => void;
   openManual: () => void;
@@ -170,6 +173,7 @@ export function SignedInShell({
   handleSkipSubtitlesChange,
   handleStyleChange,
   openClipSubtitleEditor,
+  openAdmin,
   openBilling,
   openConfig,
   openManual,
@@ -193,6 +197,7 @@ export function SignedInShell({
     <>
       <AppHeader
         authStatus={authStatus}
+        openAdmin={openAdmin}
         openBilling={openBilling}
         openConfig={openConfig}
         openManual={openManual}
@@ -236,6 +241,7 @@ export function SignedInShell({
 function AppHeader({
   authStatus,
   locale,
+  openAdmin,
   openBilling,
   openConfig,
   openManual,
@@ -250,6 +256,7 @@ function AppHeader({
 }: {
   authStatus: ResilientAuthStatus;
   locale: AppLocale;
+  openAdmin: () => void;
   openBilling: () => void;
   openConfig: () => void;
   openManual: () => void;
@@ -267,6 +274,7 @@ function AppHeader({
       <BrandPanel />
       <div className="flex items-center gap-4 sm:gap-6">
         <ViewNavigation
+          openAdmin={openAdmin}
           openBilling={openBilling}
           openConfig={openConfig}
           openManual={openManual}
@@ -309,6 +317,7 @@ function BrandPanel() {
 }
 
 function ViewNavigation({
+  openAdmin,
   openBilling,
   openConfig,
   openManual,
@@ -317,6 +326,7 @@ function ViewNavigation({
   openSubtitle,
   viewMode,
 }: {
+  openAdmin: () => void;
   openBilling: () => void;
   openConfig: () => void;
   openManual: () => void;
@@ -326,6 +336,7 @@ function ViewNavigation({
   viewMode: AppViewMode;
 }) {
   const { t } = useTranslation();
+  const isAdmin = useAuthRuntimeStore((state) => state.backendIdentity?.roles?.includes('admin') ?? false);
   const navItems: Array<{
     activeClass: string;
     icon: LucideIcon;
@@ -338,13 +349,16 @@ function ViewNavigation({
     { activeClass: 'bg-accent/20 text-foreground shadow-lg shadow-accent/10 border border-accent/30', icon: Subtitles, label: t('app.nav.subtitleEdit'), mode: 'subtitle' },
     { activeClass: 'bg-secondary/20 text-foreground shadow-lg shadow-secondary/10 border border-secondary/30', icon: Share2, label: t('app.nav.social'), mode: 'social' },
     { activeClass: 'bg-primary/20 text-foreground shadow-lg shadow-primary/10 border border-primary/30', icon: CreditCard, label: 'Hesap', mode: 'billing' },
+    ...(isAdmin ? [{ activeClass: 'bg-red-500/20 text-foreground shadow-lg shadow-red-500/10 border border-red-500/30', icon: ShieldCheck, label: 'Admin', mode: 'admin' as AppViewMode }] : []),
   ];
   return (
     <nav className="flex p-1 glass-card rounded-xl border-accent/20" aria-label={t('app.nav.ariaLabel')}>
       {navItems.map(({ activeClass, icon: Icon, label, mode }) => {
         // Social Compose is a sub-flow reached from a clip, not a standalone destination — it keeps the Social tab highlighted.
         const isActive = viewMode === mode || (mode === 'social' && viewMode === 'social_compose');
-        const onClick = mode === 'billing'
+        const onClick = mode === 'admin'
+          ? openAdmin
+          : mode === 'billing'
           ? openBilling
           : mode === 'config'
           ? openConfig
@@ -497,6 +511,10 @@ function MainContent({
 
   if (viewMode === 'billing') {
     return <FullWidthWorkspace fallback="Faturalandırma hesabı yükleniyor…"><BillingPage /></FullWidthWorkspace>;
+  }
+
+  if (viewMode === 'admin') {
+    return <FullWidthWorkspace fallback="Admin paneli yükleniyor…"><AdminPage /></FullWidthWorkspace>;
   }
 
   return (

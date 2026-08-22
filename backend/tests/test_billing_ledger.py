@@ -156,6 +156,56 @@ def test_grant_is_idempotent_and_changes_balance_once(prepared_database) -> None
 
 
 @pytest.mark.integration
+def test_admin_adjustment_is_signed_idempotent_and_cannot_overdraw(prepared_database) -> None:
+    async def scenario() -> None:
+        database_url = _database_url()
+        user_id, _ = await _create_user_and_jobs(database_url)
+        await ledger.grant(user_id, 100, "grant:adjustment", {})
+        factory = create_session_factory(database_url)
+
+        async with factory() as session, session.begin():
+            balance = await ledger.adjust_in_session(
+                session,
+                user_id,
+                -25,
+                "admin-adjust:1",
+                {"reason": "support correction"},
+            )
+        assert balance == 75
+
+        async with factory() as session, session.begin():
+            balance = await ledger.adjust_in_session(
+                session,
+                user_id,
+                -25,
+                "admin-adjust:1",
+                {"reason": "support correction"},
+            )
+        assert balance == 75
+
+        async with factory() as session:
+            with pytest.raises(ledger.AdjustmentWouldOverdraw):
+                async with session.begin():
+                    await ledger.adjust_in_session(
+                        session,
+                        user_id,
+                        -100,
+                        "admin-adjust:2",
+                        {"reason": "invalid correction"},
+                    )
+
+        wallet, entries = await _wallet_and_entries(database_url, user_id)
+        assert wallet.available == 75
+        assert [(entry.kind, entry.amount) for entry in entries] == [
+            (LedgerKind.GRANT, 100),
+            (LedgerKind.ADJUSTMENT, -25),
+        ]
+        await factory.kw["bind"].dispose()
+
+    prepared_database(scenario())
+
+
+@pytest.mark.integration
 def test_concurrent_reservations_cannot_overspend_one_wallet(prepared_database) -> None:
     async def scenario() -> None:
         database_url = _database_url()

@@ -19,3 +19,6 @@ export const SocialComposePage = lazy(() =>
 export const PreviewPage = lazy(() =>
   import('../components/PreviewPage').then((module) => ({ default: module.PreviewPage })),
 );
+export const AdminPage = lazy(() =>
+  import('../pages/AdminPage').then((module) => ({ default: module.AdminPage })),
+);

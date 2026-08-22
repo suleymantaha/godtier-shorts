@@ -32,10 +32,17 @@ def _offline_sql(revision: str, *, downgrade: bool = False) -> str:
     return output.getvalue().lower()
 
 
-def test_job_usage_metrics_migration_is_the_schema_head() -> None:
+def test_audit_log_immutability_migration_is_the_schema_head() -> None:
     script = ScriptDirectory.from_config(_alembic_config())
 
-    assert script.get_heads() == ["0006_job_usage_metrics"]
+    assert script.get_heads() == ["0007_immutable_audit_logs"]
+
+
+def test_audit_logs_are_append_only() -> None:
+    sql = _offline_sql("head")
+
+    assert "create trigger audit_logs_append_only" in sql
+    assert "before update or delete on audit_logs" in sql
 
 
 def test_initial_upgrade_creates_every_production_table() -> None:

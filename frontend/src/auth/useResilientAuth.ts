@@ -220,6 +220,7 @@ async function syncBackendIdentity({
   onIdentity: (identity: { subject: string } | null) => void;
   onIdentityDetails: (identity: {
     authMode: 'clerk_jwt' | 'static_token';
+    roles: string[];
     subject: string;
     subjectHash: string;
     tokenType: 'jwt' | 'bearer';
@@ -243,6 +244,7 @@ async function syncBackendIdentity({
     }));
     onIdentityDetails({
       authMode: whoami.auth_mode,
+      roles: whoami.roles,
       subject: whoami.subject,
       subjectHash: whoami.subject_hash,
       tokenType: whoami.token_type,
