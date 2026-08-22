@@ -132,7 +132,7 @@ def create_app() -> FastAPI:
     )
 
     # --- Control-plane router'larını kaydet ---
-    from backend.api.routes import account, auth, billing, clerk, preview, security_gate, social, settings, uploads, webhooks
+    from backend.api.routes import account, admin_metrics, auth, billing, clerk, preview, security_gate, social, settings, uploads, webhooks
 
     app.include_router(social.router)
     app.include_router(settings.router)
@@ -145,6 +145,7 @@ def create_app() -> FastAPI:
     app.include_router(security_gate.router)
     app.include_router(uploads.router)
     app.include_router(health.router)
+    app.include_router(admin_metrics.router)
 
     if WORKER_MODE == "api":
         from backend.api.routes import production_jobs

@@ -6,6 +6,8 @@ import json
 import os
 from urllib.parse import urlparse
 
+from backend.core.usage_metering import gpu_hourly_cost_from_env
+
 
 APP_ENV_CHOICES = {"development", "test", "production"}
 WORKER_MODE_CHOICES = {"local", "api", "gpu"}
@@ -34,6 +36,7 @@ PRODUCTION_API_REQUIRED_ENV = frozenset(
 PRODUCTION_GPU_REQUIRED_ENV = frozenset(
     {
         "DATABASE_URL",
+        "GPU_HOURLY_COST_USD",
         "R2_ACCESS_KEY_ID",
         "R2_BUCKET_NAME",
         "R2_ENDPOINT_URL",
@@ -71,6 +74,7 @@ def validate_runtime_configuration() -> None:
     _validate_optional_bool("REQUIRE_NVENC_FOR_APP")
     _validate_optional_bool("LOG_ACCELERATOR_STATUS_ON_STARTUP")
     _validate_optional_bool("PREVIEW_LIMITED_TRANSCRIPTION_ENABLED")
+    gpu_hourly_cost_from_env()
 
     preview_transcription_enabled = os.getenv(
         "PREVIEW_LIMITED_TRANSCRIPTION_ENABLED", ""

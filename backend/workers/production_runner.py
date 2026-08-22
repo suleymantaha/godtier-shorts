@@ -2,12 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
-import math
 import mimetypes
 import os
 import shutil
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Protocol
@@ -15,7 +12,8 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
-from backend.db.models import Asset, AssetKind, Job, JobEvent, Project, SourceType
+from backend.core.usage_metering import UsageMeter, UsageSnapshot
+from backend.db.models import Asset, AssetKind, Job, JobEvent, JobUsageMetric, Project, SourceType
 from backend.db.session import get_session_factory
 from backend.workers.gpu_tasks import DeterministicJobError, TransientJobError
 
@@ -30,6 +28,7 @@ class ProductionJobContext:
     project_id: UUID
     source_url: str | None
     source_storage_key: str | None
+    source_seconds: int
 
 
 class ProductionJobRepository(Protocol):
@@ -49,9 +48,7 @@ class ProductionJobRepository(Protocol):
         self,
         *,
         job_id: UUID,
-        gpu_model: str,
-        gpu_seconds: int,
-        peak_vram_mb: int | None,
+        snapshot: UsageSnapshot,
     ) -> None: ...
 
 
@@ -96,29 +93,51 @@ class GpuObjectLifecycleRunner:
         if scratch_dir.exists():
             shutil.rmtree(scratch_dir)
         scratch_dir.mkdir(parents=True)
-        started = time.monotonic()
+        meter = UsageMeter(
+            source_seconds=context.source_seconds,
+            retry_count=int(request.get("_retry_count") or 0),
+        )
+
+        async def metered_report(progress: int, message: str) -> None:
+            meter.observe(progress, message)
+            await report(progress, message)
+
+        published_count = 0
         try:
-            source = await self._resolve_source(context, scratch_dir, report)
+            source = await self._resolve_source(context, scratch_dir, metered_report)
             output_paths = await self._pipeline.run(
-                context, source, scratch_dir, request, report
+                context, source, scratch_dir, request, metered_report
             )
             if not output_paths:
                 raise DeterministicJobError("Pipeline produced no outputs")
-            await report(95, "output_upload")
+            await metered_report(95, "output_upload")
             for output_path in output_paths:
                 await self._publish_output(context, scratch_dir, output_path)
-            gpu_model, peak_vram_mb = self._gpu_probe()
-            try:
-                await self._repository.record_metrics(
-                    job_id=context.job_id,
-                    gpu_model=gpu_model,
-                    gpu_seconds=max(1, math.ceil(time.monotonic() - started)),
-                    peak_vram_mb=peak_vram_mb,
-                )
-            except Exception as exc:
-                raise TransientJobError("GPU metrics persistence failed") from exc
+                published_count += 1
+        except Exception:
+            await self._persist_metrics(context, meter, published_count)
+            raise
+        else:
+            await self._persist_metrics(context, meter, published_count)
         finally:
             shutil.rmtree(scratch_dir, ignore_errors=True)
+
+    async def _persist_metrics(
+        self,
+        context: ProductionJobContext,
+        meter: UsageMeter,
+        output_count: int,
+    ) -> None:
+        gpu_model, peak_vram_mb = self._gpu_probe()
+        snapshot = meter.finish(
+            gpu_model=gpu_model,
+            peak_vram_mb=peak_vram_mb,
+            output_count=output_count,
+        )
+        try:
+            await self._repository.record_metrics(job_id=context.job_id, snapshot=snapshot)
+        except Exception as exc:
+            raise TransientJobError("GPU metrics persistence failed") from exc
 
     async def _resolve_source(
         self,
@@ -218,6 +237,7 @@ class SqlAlchemyProductionJobRepository:
                 project_id=job.project_id,
                 source_url=source_url,
                 source_storage_key=source_key,
+                source_seconds=max(0, int(project.duration_seconds or 0)),
             )
 
     async def record_output(self, **kwargs) -> None:
@@ -245,27 +265,44 @@ class SqlAlchemyProductionJobRepository:
             )
 
     async def record_metrics(self, **kwargs) -> None:
+        snapshot: UsageSnapshot = kwargs["snapshot"]
         factory = get_session_factory()
         async with factory() as session, session.begin():
             job = await session.get(Job, kwargs["job_id"], with_for_update=True)
             if job is None:
                 raise DeterministicJobError("Job was not found for GPU metrics")
-            job.gpu_model = kwargs["gpu_model"]
-            job.gpu_seconds = kwargs["gpu_seconds"]
+            metric = await session.get(JobUsageMetric, job.id, with_for_update=True)
+            if metric is None:
+                metric = JobUsageMetric(job_id=job.id, user_id=job.user_id)
+                session.add(metric)
+                metric.transcript_seconds = 0
+                metric.tracking_seconds = 0
+                metric.render_seconds = 0
+                metric.total_wall_seconds = 0
+                metric.gpu_seconds = 0
+                metric.estimated_internal_cost_usd = 0
+                metric.retry_count = -1
+            if snapshot.retry_count <= metric.retry_count:
+                return
+            metric.source_seconds = snapshot.source_seconds
+            metric.transcript_seconds += snapshot.transcript_seconds
+            metric.tracking_seconds += snapshot.tracking_seconds
+            metric.render_seconds += snapshot.render_seconds
+            metric.total_wall_seconds += snapshot.total_wall_seconds
+            metric.gpu_model = snapshot.gpu_model
+            metric.gpu_seconds += snapshot.gpu_seconds
+            metric.output_count = snapshot.output_count
+            metric.retry_count = snapshot.retry_count
+            metric.estimated_internal_cost_usd += snapshot.estimated_internal_cost_usd
+            metric.peak_vram_mb = snapshot.peak_vram_mb
+            job.gpu_model = metric.gpu_model
+            job.gpu_seconds = metric.gpu_seconds
             session.add(
                 JobEvent(
                     job_id=job.id,
                     status=job.status,
                     progress=job.progress,
-                    message=json.dumps(
-                        {
-                            "gpu_model": kwargs["gpu_model"],
-                            "gpu_seconds": kwargs["gpu_seconds"],
-                            "peak_vram_mb": kwargs["peak_vram_mb"],
-                        },
-                        separators=(",", ":"),
-                        sort_keys=True,
-                    ),
+                    message="usage metrics persisted",
                     source="gpu-worker-metrics",
                 )
             )

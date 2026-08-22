@@ -44,8 +44,9 @@ class GpuJobWorker:
         self._runner = runner
         self._heartbeat_seconds = heartbeat_seconds
 
-    async def execute(self, job_id: UUID) -> None:
+    async def execute(self, job_id: UUID, *, retry_count: int = 0) -> None:
         request = await self._store.claim(job_id)
+        request["_retry_count"] = max(0, int(retry_count))
         await self._store.heartbeat(job_id)
         stopped = asyncio.Event()
 
@@ -163,4 +164,4 @@ class SqlAlchemyWorkerJobStore:
 
 async def run_gpu_job(ctx: dict[str, Any], job_id: str) -> None:
     worker: GpuJobWorker = ctx["gpu_job_worker"]
-    await worker.execute(UUID(job_id))
+    await worker.execute(UUID(job_id), retry_count=max(0, int(ctx.get("job_try", 1)) - 1))

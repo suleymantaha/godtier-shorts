@@ -38,7 +38,7 @@ def test_worker_loads_request_records_progress_and_completes() -> None:
     store, publisher = FakeStore(), FakePublisher()
 
     async def runner(request, report):
-        assert request == {"source": "private-object"}
+        assert request == {"source": "private-object", "_retry_count": 0}
         await report(40, "tracking")
 
     job_id = uuid4()
@@ -46,6 +46,17 @@ def test_worker_loads_request_records_progress_and_completes() -> None:
 
     assert [event[0] for event in store.events] == ["claim", "heartbeat", "progress", "settle", "complete"]
     assert publisher.events[0][1] == {"status": "processing", "progress": 40, "message": "tracking"}
+
+
+def test_worker_passes_retry_count_to_usage_instrumentation() -> None:
+    observed = {}
+
+    async def runner(request, _report):
+        observed.update(request)
+
+    asyncio.run(GpuJobWorker(FakeStore(), FakePublisher(), runner).execute(uuid4(), retry_count=3))
+
+    assert observed["_retry_count"] == 3
 
 
 def test_deterministic_failure_is_terminal_and_not_retried() -> None:
