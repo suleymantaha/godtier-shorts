@@ -102,7 +102,15 @@ class SqlAlchemyWorkerJobStore:
             job.started_at = job.started_at or datetime.now(timezone.utc)
             job.last_message = "GPU worker started"
             session.add(JobEvent(job_id=job.id, status=job.status, progress=job.progress, message=job.last_message, source="gpu-worker"))
-            return dict(job.request)
+            request = dict(job.request)
+            request.update(
+                {
+                    "_job_id": str(job.id),
+                    "_user_id": str(job.user_id),
+                    "_project_id": str(job.project_id),
+                }
+            )
+            return request
 
     async def heartbeat(self, job_id: UUID) -> None:
         factory = get_session_factory()

@@ -113,6 +113,44 @@ def test_production_api_accepts_complete_runtime_contract(
     validate_runtime_configuration()
 
 
+def test_production_gpu_requires_storage_queue_database_and_accelerator_flags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("WORKER_MODE", "gpu")
+    monkeypatch.setenv("DATABASE_URL", PRODUCTION_API_ENV["DATABASE_URL"])
+    monkeypatch.setenv("REDIS_URL", PRODUCTION_API_ENV["REDIS_URL"])
+    monkeypatch.setenv("R2_ENDPOINT_URL", PRODUCTION_API_ENV["R2_ENDPOINT_URL"])
+    monkeypatch.setenv("R2_BUCKET_NAME", PRODUCTION_API_ENV["R2_BUCKET_NAME"])
+    monkeypatch.setenv("R2_ACCESS_KEY_ID", PRODUCTION_API_ENV["R2_ACCESS_KEY_ID"])
+    monkeypatch.setenv("R2_SECRET_ACCESS_KEY", PRODUCTION_API_ENV["R2_SECRET_ACCESS_KEY"])
+    monkeypatch.setenv("REQUIRE_CUDA_FOR_APP", "1")
+    monkeypatch.delenv("REQUIRE_NVENC_FOR_APP", raising=False)
+
+    with pytest.raises(RuntimeError, match="REQUIRE_NVENC_FOR_APP"):
+        validate_runtime_configuration()
+
+
+def test_production_gpu_accepts_complete_runtime_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("WORKER_MODE", "gpu")
+    for name in (
+        "DATABASE_URL",
+        "REDIS_URL",
+        "R2_ENDPOINT_URL",
+        "R2_BUCKET_NAME",
+        "R2_ACCESS_KEY_ID",
+        "R2_SECRET_ACCESS_KEY",
+    ):
+        monkeypatch.setenv(name, PRODUCTION_API_ENV[name])
+    monkeypatch.setenv("REQUIRE_CUDA_FOR_APP", "1")
+    monkeypatch.setenv("REQUIRE_NVENC_FOR_APP", "1")
+
+    validate_runtime_configuration()
+
+
 def test_production_api_rejects_malformed_iyzico_plan_mapping(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

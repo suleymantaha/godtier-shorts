@@ -20,6 +20,9 @@ services:
       IYZICO_API_BASE_URL: ${IYZICO_API_BASE_URL:?IYZICO_API_BASE_URL is required}
       IYZICO_API_KEY: ${IYZICO_API_KEY:?IYZICO_API_KEY is required}
       IYZICO_SECRET_KEY: ${IYZICO_SECRET_KEY:?IYZICO_SECRET_KEY is required}
+      IYZICO_CALLBACK_URL: ${IYZICO_CALLBACK_URL:?IYZICO_CALLBACK_URL is required}
+      IYZICO_MERCHANT_ID: ${IYZICO_MERCHANT_ID:?IYZICO_MERCHANT_ID is required}
+      IYZICO_PLAN_REFERENCES_JSON: ${IYZICO_PLAN_REFERENCES_JSON:?IYZICO_PLAN_REFERENCES_JSON is required}
       TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:?TURNSTILE_SITE_KEY is required}
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:?TURNSTILE_SECRET_KEY is required}
       TURNSTILE_TIMEOUT_SECONDS: ${TURNSTILE_TIMEOUT_SECONDS:-8}
@@ -56,6 +59,48 @@ services:
     networks:
       - edge
       - backend
+
+  gpu-worker:
+    profiles: ["gpu"]
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      WORKER_MODE: gpu
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
+      R2_ENDPOINT_URL: ${R2_ENDPOINT_URL:?R2_ENDPOINT_URL is required}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:?R2_BUCKET_NAME is required}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID is required}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY is required}
+      REQUIRE_CUDA_FOR_APP: "1"
+      REQUIRE_NVENC_FOR_APP: "1"
+      GODTIER_WORKSPACE: /scratch/workspace
+      GPU_SCRATCH_ROOT: /scratch/jobs
+      GODTIER_MODELS_DIR: /models
+      HF_HOME: /models/huggingface
+      YOLO_CONFIG_DIR: /models/ultralytics
+      YOLO_MODEL_PATH: /models/yolo11s.pt
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - gpu_models:/models
+      - gpu_scratch:/scratch
+    networks:
+      - edge
+      - backend
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   postgres:
     image: postgres:17-alpine
@@ -101,6 +146,8 @@ services:
 
 volumes:
   postgres_data:
+  gpu_models:
+  gpu_scratch:
 
 networks:
   edge:

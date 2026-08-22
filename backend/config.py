@@ -20,7 +20,7 @@ BACKEND_DIR = Path(__file__).parent
 ROOT = BACKEND_DIR.parent
 
 # Tüm runtime artifact'ları için merkezi alan (gitignored)
-WORKSPACE = ROOT / "workspace"
+WORKSPACE = Path(os.getenv("GODTIER_WORKSPACE", str(ROOT / "workspace"))).resolve()
 
 # Alt dizinler
 DOWNLOADS_DIR = WORKSPACE / "downloads"
@@ -155,7 +155,7 @@ def _env_path(name: str, default: Path) -> Path:
 
 
 YOLO_MODEL_PATH = _env_path("YOLO_MODEL_PATH", ROOT / "yolo11x.pt")
-MODELS_DIR      = ROOT / "models"
+MODELS_DIR      = Path(os.getenv("GODTIER_MODELS_DIR", str(ROOT / "models"))).resolve()
 
 # ---------------------------------------------------------------------------
 # Sunucu ayarları

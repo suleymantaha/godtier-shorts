@@ -36,6 +36,8 @@ def run_system_dependency_checks(
         _run_cli_check("yt-dlp", ["yt-dlp", "--version"], required=True),
         _run_cli_check("nvidia-smi", ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], required=gpu_required),
         _run_probe_check("torch.cuda", _probe_torch_cuda, required=gpu_required),
+        _run_probe_check("ctranslate2.cuda", _probe_ctranslate2_cuda, required=gpu_required),
+        _run_probe_check("ultralytics", _probe_ultralytics, required=gpu_required),
     ]
     if require_nvenc:
         results.append(_run_probe_check("ffmpeg.nvenc", _probe_ffmpeg_nvenc, required=True))
@@ -131,6 +133,28 @@ def _probe_torch_cuda() -> tuple[bool, str]:
     device_name = torch.cuda.get_device_name(0)
     version = getattr(torch.version, "cuda", None) or "unknown"
     return True, f"{device_name} (torch cuda={version})"
+
+
+def _probe_ctranslate2_cuda() -> tuple[bool, str]:
+    try:
+        import ctranslate2
+    except Exception as exc:  # pragma: no cover - defensive import guard
+        return False, f"ctranslate2 import hatasi: {exc}"
+    try:
+        count = int(ctranslate2.get_cuda_device_count())
+    except Exception as exc:  # pragma: no cover - runtime driver guard
+        return False, f"ctranslate2 CUDA probe hatasi: {exc}"
+    if count <= 0:
+        return False, "ctranslate2 CUDA device bulamadi"
+    return True, f"{count} CUDA device"
+
+
+def _probe_ultralytics() -> tuple[bool, str]:
+    try:
+        import ultralytics
+    except Exception as exc:  # pragma: no cover - defensive import guard
+        return False, f"ultralytics import hatasi: {exc}"
+    return True, f"ultralytics {getattr(ultralytics, '__version__', 'unknown')}"
 
 
 def _probe_ffmpeg_nvenc() -> tuple[bool, str]:
