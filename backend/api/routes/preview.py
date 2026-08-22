@@ -7,17 +7,18 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.security import AuthContext, authenticate_request
 from backend.api.routes.security_gate import get_turnstile_verifier, verify_or_raise
+from backend.api.security import AuthContext, authenticate_request
 from backend.db.session import get_db_session
+from backend.services.abuse.turnstile import TurnstileVerifier
 from backend.services.preview.adapters import (
     DisabledLimitedTranscriber,
     LocalPreviewAnalyzer,
     RemoteLimitedTranscriber,
     YtDlpCaptionSource,
 )
-from backend.services.preview.repository import SqlAlchemyPreviewEntitlements
 from backend.services.preview.rate_limit import RedisPreviewRateLimiter
+from backend.services.preview.repository import SqlAlchemyPreviewEntitlements
 from backend.services.preview.service import (
     PreviewAlreadyUsedError,
     PreviewError,
@@ -26,8 +27,6 @@ from backend.services.preview.service import (
     PreviewResult,
     PreviewService,
 )
-from backend.services.abuse.turnstile import TurnstileVerifier
-
 
 router = APIRouter(prefix="/api/preview", tags=["preview"])
 
@@ -72,6 +71,7 @@ async def get_preview_service(
         rate_limiter=RedisPreviewRateLimiter(
             os.getenv("REDIS_URL", "redis://localhost:6379/0"),
             window_seconds=int(os.getenv("PREVIEW_REQUEST_WINDOW_SECONDS", "30")),
+            limit=int(os.getenv("PREVIEW_REQUEST_LIMIT", "1")),
         ),
         max_source_seconds=int(os.getenv("PREVIEW_MAX_SOURCE_SECONDS", "3600")),
         max_transcription_seconds=int(

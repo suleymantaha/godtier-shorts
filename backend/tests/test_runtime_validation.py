@@ -190,6 +190,28 @@ def test_runtime_rejects_invalid_preview_request_window(monkeypatch: pytest.Monk
         validate_runtime_configuration()
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        "PREVIEW_REQUEST_LIMIT",
+        "BILLING_CHECKOUT_REQUEST_LIMIT",
+        "BILLING_CHECKOUT_REQUEST_WINDOW_SECONDS",
+        "BILLING_FAILED_CHECKOUT_LIMIT",
+        "BILLING_FAILED_CHECKOUT_WINDOW_SECONDS",
+        "JOB_START_REQUEST_LIMIT",
+        "JOB_START_REQUEST_WINDOW_SECONDS",
+    ],
+)
+def test_runtime_rejects_non_positive_distributed_rate_limits(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+) -> None:
+    monkeypatch.setenv(name, "0")
+
+    with pytest.raises(RuntimeError, match=name):
+        validate_runtime_configuration()
+
+
 def test_runtime_requires_transcription_provider_when_preview_fallback_enabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

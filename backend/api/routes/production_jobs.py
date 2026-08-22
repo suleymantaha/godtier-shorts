@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import AsyncIterator
 from datetime import datetime, timezone
-from typing import Annotated, AsyncIterator
+from typing import Annotated
 from uuid import UUID
 
 from arq import create_pool
@@ -13,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.api.rate_limit import enforce_rate_limit, get_rate_limiter
 from backend.api.security import AuthContext, require_policy
 from backend.core.source_url_policy import SourceUrlPolicy
 from backend.db.models import (
@@ -31,6 +33,7 @@ from backend.db.models import (
 )
 from backend.db.session import get_db_session
 from backend.models.schemas import CancelJobRequest
+from backend.services.abuse.rate_limit import RedisFixedWindowRateLimiter
 from backend.services.billing import ledger
 from backend.services.billing.pricing import JobPricingRequest, estimate_job_cost
 from backend.services.billing.subscription_service import paid_entitlement_is_active
@@ -41,7 +44,6 @@ from backend.services.queue.job_service import (
     SqlAlchemyJobRepository,
     SubmittedJob,
 )
-
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 
@@ -261,6 +263,7 @@ async def start_job(
     payload: ProductionStartJobRequest,
     auth: Annotated[AuthContext, Depends(require_policy("start_job"))],
     gateway: Annotated[ProductionJobGateway, Depends(get_job_gateway)],
+    limiter: Annotated[RedisFixedWindowRateLimiter, Depends(get_rate_limiter)],
     idempotency_key: Annotated[
         str, Header(alias="Idempotency-Key", min_length=1, max_length=200)
     ],
@@ -268,8 +271,16 @@ async def start_job(
     idempotency_key = idempotency_key.strip()
     if not idempotency_key:
         raise HTTPException(status_code=422, detail="Idempotency-Key must not be blank")
+    user_id = _user_id(auth)
+    await enforce_rate_limit(
+        limiter,
+        scope="start_job",
+        subject=str(user_id),
+        limit=int(os.getenv("JOB_START_REQUEST_LIMIT", "10")),
+        window_seconds=int(os.getenv("JOB_START_REQUEST_WINDOW_SECONDS", "60")),
+    )
     result = await gateway.start(
-        user_id=_user_id(auth),
+        user_id=user_id,
         project_id=payload.project_id,
         payload=payload,
         idempotency_key=idempotency_key,

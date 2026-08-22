@@ -7,13 +7,15 @@ from fastapi import APIRouter, Depends, Form, Header, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.api.rate_limit import enforce_rate_limit, get_rate_limiter
 from backend.api.security import AuthContext, authenticate_request
 from backend.db.session import get_db_session
-from backend.services.billing.iyzico_client import IyzicoClient, IyzicoError
+from backend.services.abuse.rate_limit import RedisFixedWindowRateLimiter
 from backend.services.billing.account_service import (
     BillingAccountService,
     SqlAlchemyBillingAccountRepository,
 )
+from backend.services.billing.iyzico_client import IyzicoClient, IyzicoError
 from backend.services.billing.subscription_service import (
     BillingInterval,
     PlanReferenceMap,
@@ -22,7 +24,6 @@ from backend.services.billing.subscription_service import (
     SubscriptionServiceError,
     paid_entitlement_is_active,
 )
-
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
 
@@ -214,17 +215,48 @@ async def create_checkout(
     request: CheckoutRequest,
     auth: Annotated[AuthContext, Depends(authenticate_request)],
     service: Annotated[SubscriptionService, Depends(get_subscription_service)],
+    limiter: Annotated[RedisFixedWindowRateLimiter, Depends(get_rate_limiter)],
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=200)],
 ) -> CheckoutResponse:
+    user_id = _user_id(auth)
+    subject = str(user_id)
+    await enforce_rate_limit(
+        limiter,
+        scope="checkout_failed",
+        subject=subject,
+        limit=int(os.getenv("BILLING_FAILED_CHECKOUT_LIMIT", "3")),
+        window_seconds=int(
+            os.getenv("BILLING_FAILED_CHECKOUT_WINDOW_SECONDS", "600")
+        ),
+        consume=False,
+    )
+    await enforce_rate_limit(
+        limiter,
+        scope="checkout",
+        subject=subject,
+        limit=int(os.getenv("BILLING_CHECKOUT_REQUEST_LIMIT", "5")),
+        window_seconds=int(
+            os.getenv("BILLING_CHECKOUT_REQUEST_WINDOW_SECONDS", "60")
+        ),
+    )
     try:
         checkout = await service.create_checkout(
-            user_id=_user_id(auth),
+            user_id=user_id,
             plan_code=request.plan_code,
             interval=request.interval,
             customer=request.customer.provider_payload(),
             idempotency_key=idempotency_key,
         )
     except (SubscriptionServiceError, IyzicoError, ValueError) as exc:
+        await enforce_rate_limit(
+            limiter,
+            scope="checkout_failed",
+            subject=subject,
+            limit=int(os.getenv("BILLING_FAILED_CHECKOUT_LIMIT", "3")),
+            window_seconds=int(
+                os.getenv("BILLING_FAILED_CHECKOUT_WINDOW_SECONDS", "600")
+            ),
+        )
         raise _service_error(exc) from exc
     return CheckoutResponse(
         token=checkout.token,
