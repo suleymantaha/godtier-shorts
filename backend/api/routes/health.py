@@ -16,4 +16,11 @@ async def live() -> dict[str, str]:
 async def ready(request: Request):
     if not getattr(request.app.state, "ready", False):
         return JSONResponse(status_code=503, content={"status": "not_ready"})
-    return {"status": "ready"}
+    checker = getattr(request.app.state, "readiness_checker", None)
+    if checker is None:
+        return {"status": "ready"}
+    report = await checker.check()
+    content = {"status": report.status, "dependencies": report.dependencies}
+    if report.status != "ready":
+        return JSONResponse(status_code=503, content=content)
+    return content

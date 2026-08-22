@@ -70,3 +70,22 @@ def test_production_api_receives_distributed_rate_limit_contract() -> None:
     assert environment["BILLING_CHECKOUT_REQUEST_LIMIT"] == "5"
     assert environment["BILLING_FAILED_CHECKOUT_LIMIT"] == "3"
     assert environment["JOB_START_REQUEST_LIMIT"] == "10"
+
+
+def test_production_api_receives_observability_contract() -> None:
+    environment = _render_production_compose()["services"]["api"]["environment"]
+
+    assert environment["SENTRY_DSN"] == ""
+    assert environment["READINESS_TIMEOUT_SECONDS"] == "3"
+    assert environment["QUEUE_DEPTH_ALERT_THRESHOLD"] == "100"
+    assert environment["GPU_DAILY_BUDGET_USD"] == "50"
+    assert environment["DISK_FREE_ALERT_PERCENT"] == "10"
+    assert environment["TEMP_USAGE_ALERT_BYTES"] == "21474836480"
+
+
+def test_gpu_worker_receives_heartbeat_and_error_reporting_contract() -> None:
+    compose = (ROOT / "compose.production.yml").read_text(encoding="utf-8")
+
+    assert "GPU_WORKER_HEARTBEAT_SECONDS: ${GPU_WORKER_HEARTBEAT_SECONDS:-30}" in compose
+    assert "GPU_WORKER_HEARTBEAT_TTL_SECONDS: ${GPU_WORKER_HEARTBEAT_TTL_SECONDS:-90}" in compose
+    assert compose.count("SENTRY_DSN: ${SENTRY_DSN:-}") == 2

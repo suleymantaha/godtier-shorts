@@ -161,6 +161,46 @@ def test_runtime_rejects_invalid_gpu_hourly_cost(monkeypatch: pytest.MonkeyPatch
         validate_runtime_configuration()
 
 
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("READINESS_TIMEOUT_SECONDS", "0"),
+        ("OBSERVABILITY_POLL_SECONDS", "0"),
+        ("QUEUE_DEPTH_ALERT_THRESHOLD", "0"),
+        ("GPU_DAILY_BUDGET_USD", "0"),
+        ("DISK_FREE_ALERT_PERCENT", "101"),
+        ("TEMP_USAGE_ALERT_BYTES", "0"),
+        ("SENTRY_TRACES_SAMPLE_RATE", "1.1"),
+    ],
+)
+def test_runtime_rejects_invalid_observability_thresholds(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    value: str,
+) -> None:
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises(RuntimeError, match=name):
+        validate_runtime_configuration()
+
+
+def test_runtime_requires_worker_heartbeat_ttl_to_exceed_interval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GPU_WORKER_HEARTBEAT_SECONDS", "30")
+    monkeypatch.setenv("GPU_WORKER_HEARTBEAT_TTL_SECONDS", "30")
+
+    with pytest.raises(RuntimeError, match="GPU_WORKER_HEARTBEAT_TTL_SECONDS"):
+        validate_runtime_configuration()
+
+
+def test_runtime_rejects_insecure_sentry_dsn(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SENTRY_DSN", "http://public@example.ingest.sentry.io/1")
+
+    with pytest.raises(RuntimeError, match="SENTRY_DSN"):
+        validate_runtime_configuration()
+
+
 def test_production_api_rejects_malformed_iyzico_plan_mapping(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

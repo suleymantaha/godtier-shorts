@@ -48,3 +48,27 @@ def test_api_startup_does_not_initialize_gpu_processor(
 
     with TestClient(create_app()) as client:
         assert client.get("/health/ready").status_code == 200
+
+
+def test_ready_returns_503_when_a_production_dependency_is_unavailable() -> None:
+    class FailedReadiness:
+        async def check(self):
+            from backend.observability import ReadinessReport
+
+            return ReadinessReport(
+                status="not_ready",
+                dependencies={"postgres": "ok", "redis": "failed", "r2": "ok"},
+            )
+
+    app = create_app()
+    app.state.ready = True
+    app.state.readiness_checker = FailedReadiness()
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "not_ready",
+        "dependencies": {"postgres": "ok", "redis": "failed", "r2": "ok"},
+    }

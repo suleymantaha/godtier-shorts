@@ -11,6 +11,7 @@ from loguru import logger
 
 from backend.core.exceptions import AppError
 from backend.core.log_sanitizer import sanitize_log_value
+from backend.observability import capture_exception
 
 
 def _trace_id(request: Request) -> str:
@@ -97,6 +98,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     trace_id = _trace_id(request)
     sanitized_message = sanitize_log_value(str(exc))
     logger.error(f"trace_id={trace_id} code=INTERNAL_SERVER_ERROR message={sanitized_message}")
+    capture_exception(exc)
     return JSONResponse(
         status_code=500,
         content=_error_payload(

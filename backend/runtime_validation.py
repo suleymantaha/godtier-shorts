@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from decimal import Decimal, InvalidOperation
 from urllib.parse import urlparse
 
 from backend.core.usage_metering import gpu_hourly_cost_from_env
@@ -75,6 +76,28 @@ def validate_runtime_configuration() -> None:
     _validate_optional_positive_int("TURNSTILE_TIMEOUT_SECONDS")
     _validate_optional_positive_int("JOB_START_REQUEST_LIMIT")
     _validate_optional_positive_int("JOB_START_REQUEST_WINDOW_SECONDS")
+    _validate_optional_positive_int("READINESS_TIMEOUT_SECONDS")
+    _validate_optional_positive_int("OBSERVABILITY_POLL_SECONDS")
+    _validate_optional_positive_int("QUEUE_DEPTH_ALERT_THRESHOLD")
+    heartbeat_interval = _validate_optional_positive_int("GPU_WORKER_HEARTBEAT_SECONDS")
+    heartbeat_ttl = _validate_optional_positive_int("GPU_WORKER_HEARTBEAT_TTL_SECONDS")
+    _validate_optional_positive_int("TEMP_USAGE_ALERT_BYTES")
+    _validate_optional_decimal("GPU_DAILY_BUDGET_USD", minimum=Decimal("0"), minimum_inclusive=False)
+    _validate_optional_decimal(
+        "DISK_FREE_ALERT_PERCENT",
+        minimum=Decimal("0"),
+        maximum=Decimal("100"),
+        minimum_inclusive=False,
+    )
+    _validate_optional_decimal(
+        "SENTRY_TRACES_SAMPLE_RATE",
+        minimum=Decimal("0"),
+        maximum=Decimal("1"),
+    )
+    if heartbeat_interval is not None and heartbeat_ttl is not None and heartbeat_ttl <= heartbeat_interval:
+        raise RuntimeError(
+            "GPU_WORKER_HEARTBEAT_TTL_SECONDS, GPU_WORKER_HEARTBEAT_SECONDS degerinden buyuk olmali"
+        )
     _validate_optional_choice("SOCIAL_CONNECTION_MODE", {"managed", "manual_api_key"})
     _validate_optional_bool("ALLOW_ENV_POSTIZ_API_KEY_FALLBACK")
     _validate_optional_bool("REQUIRE_CUDA_FOR_APP")
@@ -104,6 +127,9 @@ def validate_runtime_configuration() -> None:
     _validate_optional_http_url("POSTIZ_API_BASE_URL")
     _validate_optional_http_url("SOCIAL_OAUTH_CALLBACK_URL")
     _validate_optional_http_url("SOCIAL_OAUTH_RETURN_URL")
+    sentry_dsn = os.getenv("SENTRY_DSN", "").strip()
+    if sentry_dsn:
+        _validate_https_url("SENTRY_DSN", sentry_dsn)
     _validate_optional_positive_int("SOCIAL_OAUTH_STATE_TTL_SECONDS")
     _validate_optional_url_list("CORS_ORIGINS")
 
@@ -254,6 +280,27 @@ def _validate_optional_positive_int(name: str) -> int | None:
         raise RuntimeError(f"{name} pozitif bir tam sayi olmali") from exc
     if value <= 0:
         raise RuntimeError(f"{name} pozitif bir tam sayi olmali")
+    return value
+
+
+def _validate_optional_decimal(
+    name: str,
+    *,
+    minimum: Decimal,
+    maximum: Decimal | None = None,
+    minimum_inclusive: bool = True,
+) -> Decimal | None:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return None
+    try:
+        value = Decimal(raw)
+    except InvalidOperation as exc:
+        raise RuntimeError(f"{name} gecerli bir sayi olmali") from exc
+    below_minimum = value < minimum if minimum_inclusive else value <= minimum
+    if not value.is_finite() or below_minimum or (maximum is not None and value > maximum):
+        upper = f"-{maximum}" if maximum is not None else ""
+        raise RuntimeError(f"{name} izin verilen {minimum}{upper} araliginda olmali")
     return value
 
 
