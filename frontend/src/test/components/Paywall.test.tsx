@@ -12,5 +12,6 @@ describe('Paywall', () => {
     expect(screen.getAllByText('Smart tracking')).toHaveLength(2);
     expect(screen.getByText('Batch render')).toBeInTheDocument();
     expect(screen.getByText('Download')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Üretim seçeneklerini aç' })).toHaveAttribute('href', '/?tab=billing');
   });
 });

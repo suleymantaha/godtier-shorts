@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { readAppState } from '../../app/helpers';
+import { readAppState, readQueryViewMode } from '../../app/helpers';
 import { PENDING_PREVIEW_URL_KEY } from '../../marketing/funnel';
 
 describe('preview funnel navigation', () => {
@@ -14,5 +14,9 @@ describe('preview funnel navigation', () => {
     sessionStorage.setItem(PENDING_PREVIEW_URL_KEY, 'https://youtu.be/abc123DEF45');
 
     expect(readAppState().viewMode).toBe('preview');
+  });
+
+  it('routes signed-in billing links to the billing account view', () => {
+    expect(readQueryViewMode('?tab=billing')).toBe('billing');
   });
 });

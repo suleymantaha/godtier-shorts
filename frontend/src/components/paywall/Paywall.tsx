@@ -11,7 +11,7 @@ export function Paywall({ candidateCount }: { candidateCount: number }) {
         <h2 className="mt-4 text-2xl font-bold text-foreground">{candidateCount} güçlü Short bulundu</h2>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">Analiz ve adaylar ücretsiz. Ağır GPU kullanan üretim özellikleri ücretli planda açılır.</p>
         <div className="mt-5 flex flex-wrap gap-2">{lockedFeatures.map((feature) => <span key={feature} className="rounded-full border border-white/10 px-3 py-1 text-xs text-foreground">{feature}</span>)}</div>
-        <a href="/?tab=config" className="mt-6 inline-flex rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground">Üretim seçeneklerini aç</a>
+        <a href="/?tab=billing" className="mt-6 inline-flex rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground">Üretim seçeneklerini aç</a>
       </div>
       <PlanCard name="Creator" note="Aktif içerik üreticileri için önerilen plan." highlighted features={['1080p render', 'Smart tracking', 'Batch üretim', 'Social publish']} />
     </section>

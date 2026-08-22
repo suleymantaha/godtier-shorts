@@ -193,6 +193,8 @@ class SubscriptionRepository(Protocol):
 
     async def set_status(self, subscription_id: UUID, status: SubscriptionStatus) -> None: ...
 
+    async def change_plan(self, subscription_id: UUID, subscription: LocalSubscription) -> None: ...
+
     async def upsert_subscription(self, subscription: LocalSubscription) -> None: ...
 
     async def reserve_checkout(self, **kwargs: Any) -> CheckoutRecord: ...
@@ -249,6 +251,23 @@ class SqlAlchemySubscriptionRepository:
             .where(Subscription.id == subscription_id)
             .values(status=status)
         )
+        await self._session.commit()
+
+    async def change_plan(self, subscription_id: UUID, subscription: LocalSubscription) -> None:
+        if subscription.plan_id is None:
+            raise SubscriptionServiceError("subscription plan kimligi eksik")
+        result = await self._session.execute(
+            update(Subscription)
+            .where(Subscription.id == subscription_id, Subscription.user_id == subscription.user_id)
+            .values(
+                provider_subscription_ref=subscription.provider_reference,
+                plan_id=subscription.plan_id,
+                status=subscription.status,
+            )
+        )
+        if result.rowcount != 1:
+            await self._session.rollback()
+            raise SubscriptionServiceError("subscription plan degisikligi kaydedilemedi")
         await self._session.commit()
 
     async def upsert_subscription(self, subscription: LocalSubscription) -> None:
@@ -589,6 +608,58 @@ class SubscriptionService:
             status,
             grace_until=subscription.grace_until,
         )
+
+    async def change_plan(
+        self,
+        user_id: UUID,
+        plan_code: str,
+        interval: BillingInterval,
+    ) -> SubscriptionSnapshot:
+        subscription = await self._repository.get_subscription(user_id)
+        if subscription is None:
+            raise SubscriptionServiceError("subscription bulunamadi")
+        target_plan = await self._repository.get_plan(plan_code)
+        if target_plan is None or not target_plan.active:
+            raise SubscriptionServiceError("aktif plan bulunamadi")
+        provider = await self._provider.get_subscription(subscription.provider_reference)
+        current_interval = self._plan_references.verify_provider_references(
+            subscription.plan_code,
+            provider.product_reference_code,
+            provider.pricing_plan_reference_code,
+        )
+        if current_interval is not interval:
+            raise SubscriptionServiceError("plan degisikligi odeme araligi ile eslesmiyor")
+        target_pricing_reference = self._plan_references.pricing_reference(plan_code, interval)
+        self._plan_references.verify_provider_references(
+            plan_code,
+            provider.product_reference_code,
+            target_pricing_reference,
+        )
+        upgraded_reference = await self._provider.upgrade_subscription(
+            subscription.provider_reference,
+            target_pricing_reference,
+        )
+        upgraded = await self._provider.get_subscription(upgraded_reference)
+        verified_interval = self._plan_references.verify_provider_references(
+            plan_code,
+            upgraded.product_reference_code,
+            upgraded.pricing_plan_reference_code,
+        )
+        try:
+            status = PROVIDER_STATUS_MAP[upgraded.status]
+        except KeyError as exc:
+            raise SubscriptionServiceError("provider subscription status gecersiz") from exc
+        changed = LocalSubscription(
+            id=subscription.id,
+            user_id=user_id,
+            provider_reference=upgraded.reference_code,
+            plan_code=plan_code,
+            status=status,
+            plan_id=target_plan.id,
+            grace_until=subscription.grace_until,
+        )
+        await self._repository.change_plan(subscription.id, changed)
+        return SubscriptionSnapshot(plan_code, verified_interval, status, subscription.grace_until)
 
     async def confirm_checkout(self, token: str) -> SubscriptionSnapshot:
         token_hash = hashlib.sha256(token.strip().encode()).hexdigest()

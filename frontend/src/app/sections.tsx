@@ -1,6 +1,7 @@
 import { SignIn, SignUp, UserButton } from '@clerk/clerk-react';
 import {
   ChevronLeft,
+  CreditCard,
   Github,
   Layers,
   Moon,
@@ -34,6 +35,7 @@ import type { ResilientAuthState, ResilientAuthStatus } from '../auth/useResilie
 import { TurnstileGate } from '../components/security/TurnstileGate';
 import { turnstileApi } from '../api/turnstile';
 import { LandingPage } from '../pages/LandingPage';
+import { BillingPage } from '../pages/BillingPage';
 
 const SIGN_IN_APPEARANCE = {
   elements: {
@@ -64,6 +66,7 @@ interface SignedInShellProps {
   handleSkipSubtitlesChange: (disabled: boolean) => void;
   handleStyleChange: (styleName: string) => void;
   openClipSubtitleEditor: (clip: Clip) => void;
+  openBilling: () => void;
   openConfig: () => void;
   openManual: () => void;
   openPreview: () => void;
@@ -167,6 +170,7 @@ export function SignedInShell({
   handleSkipSubtitlesChange,
   handleStyleChange,
   openClipSubtitleEditor,
+  openBilling,
   openConfig,
   openManual,
   openPreview,
@@ -189,6 +193,7 @@ export function SignedInShell({
     <>
       <AppHeader
         authStatus={authStatus}
+        openBilling={openBilling}
         openConfig={openConfig}
         openManual={openManual}
         openPreview={openPreview}
@@ -231,6 +236,7 @@ export function SignedInShell({
 function AppHeader({
   authStatus,
   locale,
+  openBilling,
   openConfig,
   openManual,
   openPreview,
@@ -244,6 +250,7 @@ function AppHeader({
 }: {
   authStatus: ResilientAuthStatus;
   locale: AppLocale;
+  openBilling: () => void;
   openConfig: () => void;
   openManual: () => void;
   openPreview: () => void;
@@ -260,6 +267,7 @@ function AppHeader({
       <BrandPanel />
       <div className="flex items-center gap-4 sm:gap-6">
         <ViewNavigation
+          openBilling={openBilling}
           openConfig={openConfig}
           openManual={openManual}
           openPreview={openPreview}
@@ -301,6 +309,7 @@ function BrandPanel() {
 }
 
 function ViewNavigation({
+  openBilling,
   openConfig,
   openManual,
   openPreview,
@@ -308,6 +317,7 @@ function ViewNavigation({
   openSubtitle,
   viewMode,
 }: {
+  openBilling: () => void;
   openConfig: () => void;
   openManual: () => void;
   openPreview: () => void;
@@ -327,13 +337,16 @@ function ViewNavigation({
     { activeClass: 'bg-primary/20 text-foreground shadow-lg shadow-primary/10 border border-primary/30', icon: Scissors, label: t('app.nav.autoCut'), mode: 'manual' },
     { activeClass: 'bg-accent/20 text-foreground shadow-lg shadow-accent/10 border border-accent/30', icon: Subtitles, label: t('app.nav.subtitleEdit'), mode: 'subtitle' },
     { activeClass: 'bg-secondary/20 text-foreground shadow-lg shadow-secondary/10 border border-secondary/30', icon: Share2, label: t('app.nav.social'), mode: 'social' },
+    { activeClass: 'bg-primary/20 text-foreground shadow-lg shadow-primary/10 border border-primary/30', icon: CreditCard, label: 'Hesap', mode: 'billing' },
   ];
   return (
     <nav className="flex p-1 glass-card rounded-xl border-accent/20" aria-label={t('app.nav.ariaLabel')}>
       {navItems.map(({ activeClass, icon: Icon, label, mode }) => {
         // Social Compose is a sub-flow reached from a clip, not a standalone destination — it keeps the Social tab highlighted.
         const isActive = viewMode === mode || (mode === 'social' && viewMode === 'social_compose');
-        const onClick = mode === 'config'
+        const onClick = mode === 'billing'
+          ? openBilling
+          : mode === 'config'
           ? openConfig
           : mode === 'preview'
             ? openPreview
@@ -480,6 +493,10 @@ function MainContent({
         <SocialComposePage />
       </FullWidthWorkspace>
     );
+  }
+
+  if (viewMode === 'billing') {
+    return <FullWidthWorkspace fallback="Faturalandırma hesabı yükleniyor…"><BillingPage /></FullWidthWorkspace>;
   }
 
   return (

@@ -10,12 +10,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.security import AuthContext, authenticate_request
 from backend.db.session import get_db_session
 from backend.services.billing.iyzico_client import IyzicoClient, IyzicoError
+from backend.services.billing.account_service import (
+    BillingAccountService,
+    SqlAlchemyBillingAccountRepository,
+)
 from backend.services.billing.subscription_service import (
     BillingInterval,
     PlanReferenceMap,
     SqlAlchemySubscriptionRepository,
     SubscriptionService,
     SubscriptionServiceError,
+    paid_entitlement_is_active,
 )
 
 
@@ -82,6 +87,13 @@ class CheckoutRequest(BaseModel):
     customer: CheckoutCustomer
 
 
+class PlanChangeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    plan_code: str = Field(min_length=1, max_length=50)
+    interval: BillingInterval
+
+
 class CheckoutResponse(BaseModel):
     token: str
     checkout_form_content: str
@@ -93,6 +105,52 @@ class BillingStatusResponse(BaseModel):
     interval: BillingInterval
     status: str
     entitlement_active: bool
+
+
+class BillingPlanResponse(BaseModel):
+    code: str
+    name: str
+    monthly_price_minor: int
+    currency: str
+    monthly_compute_credits: int
+    max_source_minutes_per_job: int
+    max_clips_per_job: int
+    max_active_jobs: int
+    retention_days: int
+
+
+class BillingAccountSubscriptionResponse(BaseModel):
+    plan: BillingPlanResponse
+    interval: str | None
+    status: str
+    entitlement_active: bool
+    period_start: str | None
+    period_end: str | None
+    cancel_at_period_end: bool
+    grace_until: str | None
+
+
+class BillingUsageResponse(BaseModel):
+    current_period_source_seconds: int
+    source_seconds_per_job_limit: int
+    compute_credits_used: int
+    compute_credits_available: int
+    compute_credits_reserved: int
+
+
+class BillingPaymentResponse(BaseModel):
+    id: str
+    amount_minor: int
+    currency: str
+    status: str
+    created_at: str
+
+
+class BillingAccountResponse(BaseModel):
+    subscription: BillingAccountSubscriptionResponse | None
+    plans: list[BillingPlanResponse]
+    usage: BillingUsageResponse
+    payments: list[BillingPaymentResponse]
 
 
 def get_iyzico_client() -> IyzicoClient:
@@ -116,6 +174,12 @@ async def get_subscription_service(
     )
 
 
+async def get_billing_account_service(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> BillingAccountService:
+    return BillingAccountService(SqlAlchemyBillingAccountRepository(session))
+
+
 def _user_id(auth: AuthContext):
     if auth.user_id is None:
         raise HTTPException(
@@ -129,6 +193,20 @@ def _service_error(exc: Exception) -> HTTPException:
     if isinstance(exc, IyzicoError):
         return HTTPException(status_code=502, detail="Payment provider unavailable")
     return HTTPException(status_code=400, detail=str(exc))
+
+
+def _plan_response(plan) -> BillingPlanResponse:
+    return BillingPlanResponse(
+        code=plan.code,
+        name=plan.name,
+        monthly_price_minor=plan.monthly_price_minor,
+        currency=plan.currency,
+        monthly_compute_credits=plan.monthly_compute_credits,
+        max_source_minutes_per_job=plan.max_source_minutes_per_job,
+        max_clips_per_job=plan.max_clips_per_job,
+        max_active_jobs=plan.max_active_jobs,
+        retention_days=plan.retention_days,
+    )
 
 
 @router.post("/checkout", response_model=CheckoutResponse)
@@ -173,6 +251,59 @@ async def get_billing_status(
     )
 
 
+@router.get("/account", response_model=BillingAccountResponse)
+async def get_billing_account(
+    auth: Annotated[AuthContext, Depends(authenticate_request)],
+    subscription_service: Annotated[SubscriptionService, Depends(get_subscription_service)],
+    account_service: Annotated[BillingAccountService, Depends(get_billing_account_service)],
+) -> BillingAccountResponse:
+    user_id = _user_id(auth)
+    interval = None
+    try:
+        status_snapshot = await subscription_service.get_status(user_id)
+        interval = status_snapshot.interval.value
+    except SubscriptionServiceError as exc:
+        if str(exc) != "subscription bulunamadi":
+            raise _service_error(exc) from exc
+    except (IyzicoError, ValueError) as exc:
+        raise _service_error(exc) from exc
+    account = await account_service.get_account(user_id, interval=interval)
+    subscription = None
+    if account.subscription is not None:
+        item = account.subscription
+        subscription = BillingAccountSubscriptionResponse(
+            plan=_plan_response(item.plan),
+            interval=item.interval,
+            status=item.status.value,
+            entitlement_active=paid_entitlement_is_active(item.status, grace_until=item.grace_until),
+            period_start=item.period_start.isoformat() if item.period_start else None,
+            period_end=item.period_end.isoformat() if item.period_end else None,
+            cancel_at_period_end=item.cancel_at_period_end,
+            grace_until=item.grace_until.isoformat() if item.grace_until else None,
+        )
+    return BillingAccountResponse(
+        subscription=subscription,
+        plans=[_plan_response(plan) for plan in account.plans],
+        usage=BillingUsageResponse(
+            current_period_source_seconds=account.source_seconds_used,
+            source_seconds_per_job_limit=account.source_seconds_per_job_limit,
+            compute_credits_used=account.compute_credits_used,
+            compute_credits_available=account.compute_credits_available,
+            compute_credits_reserved=account.compute_credits_reserved,
+        ),
+        payments=[
+            BillingPaymentResponse(
+                id=str(payment.id),
+                amount_minor=payment.amount_minor,
+                currency=payment.currency,
+                status=payment.status.value,
+                created_at=payment.created_at.isoformat(),
+            )
+            for payment in account.payments
+        ],
+    )
+
+
 @router.post("/callback", response_model=BillingStatusResponse)
 async def confirm_checkout(
     service: Annotated[SubscriptionService, Depends(get_subscription_service)],
@@ -197,6 +328,24 @@ async def cancel_subscription(
 ) -> BillingStatusResponse:
     try:
         snapshot = await service.cancel(_user_id(auth))
+    except (SubscriptionServiceError, IyzicoError, ValueError) as exc:
+        raise _service_error(exc) from exc
+    return BillingStatusResponse(
+        plan_code=snapshot.plan_code,
+        interval=snapshot.interval,
+        status=snapshot.status.value,
+        entitlement_active=snapshot.entitlement_active,
+    )
+
+
+@router.post("/plan", response_model=BillingStatusResponse)
+async def change_subscription_plan(
+    request: PlanChangeRequest,
+    auth: Annotated[AuthContext, Depends(authenticate_request)],
+    service: Annotated[SubscriptionService, Depends(get_subscription_service)],
+) -> BillingStatusResponse:
+    try:
+        snapshot = await service.change_plan(_user_id(auth), request.plan_code, request.interval)
     except (SubscriptionServiceError, IyzicoError, ValueError) as exc:
         raise _service_error(exc) from exc
     return BillingStatusResponse(
