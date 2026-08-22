@@ -5,6 +5,8 @@ FastAPI uygulama fabrikası.
 CORS, router kayıtları ve startup event burada.
 """
 import asyncio
+import os
+import re
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
@@ -13,18 +15,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
 
-from backend.config import (
-    CORS_ORIGINS, OUTPUTS_DIR, LOGS_DIR, MASTER_VIDEO, REQUEST_BODY_HARD_LIMIT_BYTES,
-    WORKER_MODE,
+from backend.api.error_handlers import register_exception_handlers
+from backend.api.routes import health
+from backend.api.security import (
+    authenticate_websocket_token,
+    validate_auth_configuration,
 )
 from backend.api.websocket import manager, set_main_loop
-from backend.api.routes import health
-from backend.api.error_handlers import register_exception_handlers
-from backend.api.security import authenticate_websocket_token, validate_auth_configuration
+from backend.config import (
+    LOGS_DIR,
+    MASTER_VIDEO,
+    OUTPUTS_DIR,
+    REQUEST_BODY_HARD_LIMIT_BYTES,
+    WORKER_MODE,
+    get_cors_origins,
+)
 from backend.runtime_validation import validate_runtime_configuration
-from backend.system_validation import validate_accelerator_support_configuration
 from backend.services.social.crypto import validate_social_security_configuration
 from backend.services.social.scheduler import get_social_scheduler
+from backend.system_validation import validate_accelerator_support_configuration
 
 # Loglama
 logger.add(
@@ -33,6 +42,33 @@ logger.add(
     retention="10 days",
     level="DEBUG",
 )
+
+REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,120}$")
+PRODUCTION_API_CSP = (
+    "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+)
+
+
+def _request_id(request: Request) -> str:
+    for header_name in ("x-request-id", "x-trace-id"):
+        candidate = request.headers.get(header_name, "").strip()
+        if REQUEST_ID_PATTERN.fullmatch(candidate):
+            return candidate
+    return str(uuid4())
+
+
+def _apply_response_security_headers(response, *, request_id: str, production: bool) -> None:
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Trace-ID"] = request_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = (
+        "camera=(), microphone=(), geolocation=(), payment=()"
+    )
+    if production:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000"
+        response.headers["Content-Security-Policy"] = PRODUCTION_API_CSP
 
 
 @asynccontextmanager
@@ -78,29 +114,46 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """FastAPI uygulamasını oluşturur ve yapılandırır."""
+    production = os.getenv("APP_ENV", "development").strip().lower() == "production"
     app = FastAPI(
         title="God-Tier Shorts API",
         version="2.0.0",
         description="AI destekli viral short video üretimi",
         lifespan=lifespan,
+        docs_url=None if production else "/docs",
+        redoc_url=None if production else "/redoc",
+        openapi_url=None if production else "/openapi.json",
     )
     app.state.ready = False
 
+    # Register CORS first so request/security middleware wraps preflight responses.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=get_cors_origins(),
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "Idempotency-Key",
+            "X-Request-ID",
+            "X-Trace-ID",
+        ],
+    )
+
     @app.middleware("http")
     async def attach_trace_id(request: Request, call_next):
-        request.state.trace_id = (
-            request.headers.get("x-trace-id")
-            or request.headers.get("x-request-id")
-            or str(uuid4())
-        )
+        request_id = _request_id(request)
+        request.state.request_id = request_id
+        request.state.trace_id = request_id
+        response = None
         guarded_upload_paths = {"/api/upload", "/api/manual-cut-upload"}
         if request.method == "POST" and request.url.path in guarded_upload_paths:
             content_length = request.headers.get("content-length")
             if content_length:
                 try:
                     if int(content_length) > REQUEST_BODY_HARD_LIMIT_BYTES:
-                        trace_id = request.state.trace_id
-                        return JSONResponse(
+                        response = JSONResponse(
                             status_code=413,
                             content={
                                 "code": "REQUEST_TOO_LARGE",
@@ -108,28 +161,26 @@ def create_app() -> FastAPI:
                                 "details": {
                                     "limit_bytes": REQUEST_BODY_HARD_LIMIT_BYTES,
                                 },
-                                "trace_id": trace_id,
+                                "trace_id": request_id,
                             },
                         )
                 except ValueError:
                     pass
 
-        response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        with logger.contextualize(request_id=request_id):
+            if response is None:
+                response = await call_next(request)
+            logger.info(
+                "request_completed request_id={} method={} path={} status={}",
+                request_id,
+                request.method,
+                request.url.path,
+                response.status_code,
+            )
+        _apply_response_security_headers(response, request_id=request_id, production=production)
         return response
 
     register_exception_handlers(app)
-
-    # --- CORS ---
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=CORS_ORIGINS,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
 
     # --- Control-plane router'larını kaydet ---
     from backend.api.routes import account, admin_metrics, auth, billing, clerk, preview, security_gate, social, settings, uploads, webhooks

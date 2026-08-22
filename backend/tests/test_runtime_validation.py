@@ -245,6 +245,26 @@ def test_validate_runtime_configuration_rejects_invalid_cors_origin(monkeypatch:
         validate_runtime_configuration()
 
 
+@pytest.mark.parametrize(
+    "cors_origins",
+    [
+        "http://localhost:5173",
+        "https://app.godtier.example/path",
+        "https://other.godtier.example",
+        "*",
+    ],
+)
+def test_production_rejects_non_exact_or_insecure_cors_origins(
+    monkeypatch: pytest.MonkeyPatch,
+    cors_origins: str,
+) -> None:
+    _set_production_api_env(monkeypatch)
+    monkeypatch.setenv("CORS_ORIGINS", cors_origins)
+
+    with pytest.raises(RuntimeError, match="CORS_ORIGINS"):
+        validate_runtime_configuration()
+
+
 def test_validate_runtime_configuration_rejects_smaller_request_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UPLOAD_MAX_FILE_SIZE", "1024")
     monkeypatch.setenv("REQUEST_BODY_HARD_LIMIT_BYTES", "512")

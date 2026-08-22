@@ -138,8 +138,37 @@ def _validate_production_api_configuration() -> None:
     ):
         _validate_https_url(name, os.environ[name])
     _validate_iyzico_plan_references(os.environ["IYZICO_PLAN_REFERENCES_JSON"])
+    _validate_production_cors_configuration()
     if urlparse(os.environ["IYZICO_API_BASE_URL"]).hostname != "api.iyzipay.com":
         raise RuntimeError("IYZICO_API_BASE_URL production ortaminda api.iyzipay.com olmali")
+
+
+def _validate_production_cors_configuration() -> None:
+    frontend_origin = os.environ["FRONTEND_URL"].strip().rstrip("/")
+    raw = os.getenv("CORS_ORIGINS", "").strip()
+    origins = (
+        [origin.strip().rstrip("/") for origin in raw.split(",") if origin.strip()]
+        if raw
+        else [frontend_origin]
+    )
+
+    if frontend_origin not in origins:
+        raise RuntimeError("CORS_ORIGINS production ortaminda FRONTEND_URL originini icermeli")
+
+    for origin in origins:
+        parsed = urlparse(origin)
+        if (
+            origin == "*"
+            or parsed.scheme != "https"
+            or not parsed.netloc
+            or parsed.path not in {"", "/"}
+            or parsed.params
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise RuntimeError(
+                "CORS_ORIGINS production ortaminda yalniz tam HTTPS originleri icermeli"
+            )
 
 
 def _validate_production_gpu_configuration() -> None:
