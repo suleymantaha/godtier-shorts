@@ -31,6 +31,16 @@ PRODUCTION_API_REQUIRED_ENV = frozenset(
         "TURNSTILE_SITE_KEY",
     }
 )
+PRODUCTION_GPU_REQUIRED_ENV = frozenset(
+    {
+        "DATABASE_URL",
+        "R2_ACCESS_KEY_ID",
+        "R2_BUCKET_NAME",
+        "R2_ENDPOINT_URL",
+        "R2_SECRET_ACCESS_KEY",
+        "REDIS_URL",
+    }
+)
 
 
 def validate_runtime_configuration() -> None:
@@ -88,6 +98,8 @@ def validate_runtime_configuration() -> None:
 
     if app_env == "production" and worker_mode == "api":
         _validate_production_api_configuration()
+    if app_env == "production" and worker_mode == "gpu":
+        _validate_production_gpu_configuration()
 
 
 def _validate_choice(name: str, default: str, choices: set[str]) -> str:
@@ -124,6 +136,26 @@ def _validate_production_api_configuration() -> None:
     _validate_iyzico_plan_references(os.environ["IYZICO_PLAN_REFERENCES_JSON"])
     if urlparse(os.environ["IYZICO_API_BASE_URL"]).hostname != "api.iyzipay.com":
         raise RuntimeError("IYZICO_API_BASE_URL production ortaminda api.iyzipay.com olmali")
+
+
+def _validate_production_gpu_configuration() -> None:
+    missing = sorted(
+        name for name in PRODUCTION_GPU_REQUIRED_ENV if not os.getenv(name, "").strip()
+    )
+    if missing:
+        raise RuntimeError(
+            "Production GPU configuration eksik: " + ", ".join(missing)
+        )
+    for name in ("REQUIRE_CUDA_FOR_APP", "REQUIRE_NVENC_FOR_APP"):
+        if os.getenv(name, "").strip().lower() not in {"1", "true", "yes", "on"}:
+            raise RuntimeError(f"{name} production GPU worker icin true olmali")
+    _validate_url_schemes(
+        "DATABASE_URL",
+        os.environ["DATABASE_URL"],
+        {"postgresql", "postgresql+asyncpg"},
+    )
+    _validate_url_schemes("REDIS_URL", os.environ["REDIS_URL"], {"redis", "rediss"})
+    _validate_https_url("R2_ENDPOINT_URL", os.environ["R2_ENDPOINT_URL"])
 
 
 def _validate_iyzico_plan_references(raw: str) -> None:

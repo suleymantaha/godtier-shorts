@@ -61,7 +61,9 @@ async def recover_dispatchable_jobs(queue: ArqQueueClient, *, stale_seconds: int
 async def startup(ctx: dict[str, Any]) -> None:
     runner = ctx.get("gpu_runner")
     if runner is None:
-        raise RuntimeError("GPU worker runner is not configured")
+        from backend.workers.production_runner import build_production_runner
+
+        runner = build_production_runner()
     queue = ArqQueueClient(ctx["redis"])
     ctx["gpu_job_worker"] = GpuJobWorker(SqlAlchemyWorkerJobStore(), queue, runner)
     await recover_dispatchable_jobs(queue)

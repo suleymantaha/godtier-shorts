@@ -34,7 +34,9 @@ def test_run_system_dependency_checks_treats_gpu_as_optional_by_default(monkeypa
 
     results = run_system_dependency_checks()
 
-    assert [result.required for result in results] == [True, True, False, False]
+    assert [result.required for result in results] == [
+        True, True, False, False, False, False
+    ]
     assert summarize_failures(results) == []
 
 
@@ -50,10 +52,14 @@ def test_run_system_dependency_checks_can_require_gpu(monkeypatch) -> None:
 
     results = run_system_dependency_checks(require_gpu=True)
 
-    assert [result.required for result in results] == [True, True, True, True]
+    assert [result.required for result in results] == [
+        True, True, True, True, True, True
+    ]
     assert summarize_failures(results) == [
         "nvidia-smi: stub",
         "torch.cuda: cuda unavailable",
+        "ctranslate2.cuda: cuda unavailable",
+        "ultralytics: cuda unavailable",
     ]
 
 
@@ -76,9 +82,13 @@ def test_run_system_dependency_checks_can_require_nvenc(monkeypatch) -> None:
         "yt-dlp",
         "nvidia-smi",
         "torch.cuda",
+        "ctranslate2.cuda",
+        "ultralytics",
         "ffmpeg.nvenc",
     ]
-    assert [result.required for result in results] == [True, True, True, True, True]
+    assert [result.required for result in results] == [
+        True, True, True, True, True, True, True
+    ]
     assert summarize_failures(results) == [
         "ffmpeg.nvenc: nvenc unavailable",
     ]
