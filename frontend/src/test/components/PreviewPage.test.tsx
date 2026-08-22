@@ -43,6 +43,7 @@ describe('PreviewPage', () => {
     expect(await screen.findByText('Birinci aday')).toBeInTheDocument();
     expect(screen.getByText('00:00 – 00:20')).toBeInTheDocument();
     expect(screen.getByText('Ikinci aday')).toBeInTheDocument();
+    expect(screen.getByText('2 güçlü Short bulundu')).toBeInTheDocument();
     expect(analyzeMock).toHaveBeenCalledWith('https://youtu.be/abc123DEF45', 'turnstile-token');
     expect(screen.queryByRole('video')).not.toBeInTheDocument();
   });
