@@ -39,6 +39,10 @@ class NoActiveReservation(LedgerError):
     pass
 
 
+class AdjustmentWouldOverdraw(LedgerError):
+    pass
+
+
 def _positive_amount(amount: int) -> int:
     if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0:
         raise InvalidLedgerAmount("amount pozitif bir tam sayi olmali")
@@ -161,6 +165,63 @@ async def grant_in_session(
     return True
 
 
+async def adjust_in_session(
+    session: AsyncSession,
+    user_id: UUID,
+    amount: int,
+    idempotency_key: str,
+    metadata: dict[str, Any],
+) -> int:
+    if isinstance(amount, bool) or not isinstance(amount, int) or amount == 0:
+        raise InvalidLedgerAmount("adjustment amount sifir olmayan bir tam sayi olmali")
+    idempotency_key = _key(idempotency_key)
+    claimed = await _claim_entry(
+        session,
+        user_id=user_id,
+        kind=LedgerKind.ADJUSTMENT,
+        amount=amount,
+        idempotency_key=idempotency_key,
+        metadata=metadata,
+    )
+    wallet = await _lock_wallet(session, user_id)
+    if claimed:
+        if wallet.available + amount < 0:
+            raise AdjustmentWouldOverdraw("kredi duzeltmesi bakiyeyi negatif yapamaz")
+        wallet.available += amount
+    return wallet.available
+
+
+async def reserve_in_session(
+    session: AsyncSession,
+    user_id: UUID,
+    amount: int,
+    job_id: UUID,
+    idempotency_key: str,
+) -> bool:
+    amount = _positive_amount(amount)
+    idempotency_key = _key(idempotency_key)
+    claimed = await _claim_entry(
+        session,
+        user_id=user_id,
+        kind=LedgerKind.RESERVE,
+        amount=amount,
+        job_id=job_id,
+        idempotency_key=idempotency_key,
+    )
+    if not claimed:
+        return False
+    wallet = await _lock_wallet(session, user_id)
+    job = await _lock_job(session, user_id, job_id)
+    if job.reserved_credits or job.settled_credits:
+        raise InvalidJobState("job icin daha once kredi ayrilmis veya harcanmis")
+    if wallet.available < amount:
+        raise InsufficientCredits("yetersiz kullanilabilir kredi")
+    wallet.available -= amount
+    wallet.reserved += amount
+    job.reserved_credits = amount
+    return True
+
+
 async def reserve(
     user_id: UUID,
     amount: int,
@@ -171,25 +232,7 @@ async def reserve(
     idempotency_key = _key(idempotency_key)
     factory = get_session_factory()
     async with factory() as session, session.begin():
-        claimed = await _claim_entry(
-            session,
-            user_id=user_id,
-            kind=LedgerKind.RESERVE,
-            amount=amount,
-            job_id=job_id,
-            idempotency_key=idempotency_key,
-        )
-        if not claimed:
-            return
-        wallet = await _lock_wallet(session, user_id)
-        job = await _lock_job(session, user_id, job_id)
-        if job.reserved_credits or job.settled_credits:
-            raise InvalidJobState("job icin daha once kredi ayrilmis veya harcanmis")
-        if wallet.available < amount:
-            raise InsufficientCredits("yetersiz kullanilabilir kredi")
-        wallet.available -= amount
-        wallet.reserved += amount
-        job.reserved_credits = amount
+        await reserve_in_session(session, user_id, amount, job_id, idempotency_key)
 
 
 async def settle(
@@ -236,35 +279,46 @@ async def release(
     idempotency_key = _key(idempotency_key)
     factory = get_session_factory()
     async with factory() as session, session.begin():
-        wallet = await _lock_wallet(session, user_id)
-        job = await _lock_job(session, user_id, job_id)
-        reserved_amount = job.reserved_credits
-        if reserved_amount <= 0:
-            existing = await session.scalar(
-                select(CreditLedgerEntry).where(
-                    CreditLedgerEntry.idempotency_key == idempotency_key
-                )
+        await release_in_session(session, user_id, job_id, idempotency_key)
+
+
+async def release_in_session(
+    session: AsyncSession,
+    user_id: UUID,
+    job_id: UUID,
+    idempotency_key: str,
+) -> bool:
+    idempotency_key = _key(idempotency_key)
+    wallet = await _lock_wallet(session, user_id)
+    job = await _lock_job(session, user_id, job_id)
+    reserved_amount = job.reserved_credits
+    if reserved_amount <= 0:
+        existing = await session.scalar(
+            select(CreditLedgerEntry).where(
+                CreditLedgerEntry.idempotency_key == idempotency_key
             )
-            if (
-                existing is not None
-                and existing.user_id == user_id
-                and existing.kind is LedgerKind.RELEASE
-                and existing.job_id == job_id
-            ):
-                return
-            raise NoActiveReservation("job icin aktif kredi rezervasyonu yok")
-        if job.status not in {JobStatus.ERROR, JobStatus.CANCELLED}:
-            raise InvalidJobState("yalniz failed veya cancelled job rezervasyonu release edilebilir")
-        claimed = await _claim_entry(
-            session,
-            user_id=user_id,
-            kind=LedgerKind.RELEASE,
-            amount=reserved_amount,
-            job_id=job_id,
-            idempotency_key=idempotency_key,
         )
-        if not claimed:
-            return
-        wallet.available += reserved_amount
-        wallet.reserved -= reserved_amount
-        job.reserved_credits = 0
+        if (
+            existing is not None
+            and existing.user_id == user_id
+            and existing.kind is LedgerKind.RELEASE
+            and existing.job_id == job_id
+        ):
+            return False
+        raise NoActiveReservation("job icin aktif kredi rezervasyonu yok")
+    if job.status not in {JobStatus.ERROR, JobStatus.CANCELLED}:
+        raise InvalidJobState("yalniz failed veya cancelled job rezervasyonu release edilebilir")
+    claimed = await _claim_entry(
+        session,
+        user_id=user_id,
+        kind=LedgerKind.RELEASE,
+        amount=reserved_amount,
+        job_id=job_id,
+        idempotency_key=idempotency_key,
+    )
+    if not claimed:
+        return False
+    wallet.available += reserved_amount
+    wallet.reserved -= reserved_amount
+    job.reserved_credits = 0
+    return True

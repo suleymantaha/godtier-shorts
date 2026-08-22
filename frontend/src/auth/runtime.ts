@@ -7,6 +7,7 @@ export type BackendAuthStatus = 'fresh' | 'paused' | 'refreshing';
 
 export interface BackendIdentity {
   authMode: 'clerk_jwt' | 'static_token';
+  roles?: string[];
   subject: string;
   subjectHash: string;
   tokenType: 'jwt' | 'bearer';

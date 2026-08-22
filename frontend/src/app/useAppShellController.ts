@@ -43,6 +43,7 @@ function useAppShellNavigation({
 
   const openConfig = useCallback(() => openViewMode('config'), [openViewMode]);
   const openBilling = useCallback(() => openViewMode('billing'), [openViewMode]);
+  const openAdmin = useCallback(() => openViewMode('admin'), [openViewMode]);
   const openManual = useCallback(() => openViewMode('manual'), [openViewMode]);
   const openPreview = useCallback(() => openViewMode('preview'), [openViewMode]);
   const openSocial = useCallback(() => openViewMode('social'), [openViewMode]);
@@ -59,6 +60,7 @@ function useAppShellNavigation({
 
   return {
     openClipSubtitleEditor,
+    openAdmin,
     openBilling,
     openConfig,
     openManual,
@@ -132,6 +134,7 @@ export function useAppShellController(canUseBackend = true, identityKey: string 
   const { locale, setLocale } = useLocaleStore();
   const {
     openClipSubtitleEditor,
+    openAdmin,
     openBilling,
     openConfig,
     openManual,
@@ -169,6 +172,7 @@ export function useAppShellController(canUseBackend = true, identityKey: string 
     handleSkipSubtitlesChange,
     handleStyleChange,
     openClipSubtitleEditor,
+    openAdmin,
     openBilling,
     openConfig,
     openManual,
