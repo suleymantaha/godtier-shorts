@@ -32,10 +32,10 @@ def _offline_sql(revision: str, *, downgrade: bool = False) -> str:
     return output.getvalue().lower()
 
 
-def test_subscription_grace_migration_is_the_schema_head() -> None:
+def test_job_idempotency_migration_is_the_schema_head() -> None:
     script = ScriptDirectory.from_config(_alembic_config())
 
-    assert script.get_heads() == ["0004_subscription_grace_window"]
+    assert script.get_heads() == ["0005_job_idempotency"]
 
 
 def test_initial_upgrade_creates_every_production_table() -> None:

@@ -14,6 +14,8 @@ class QueueClient(Protocol):
 
     async def publish_progress(self, job_id: UUID, event: dict[str, Any]) -> None: ...
 
+    async def cancel_gpu_job(self, job_id: UUID) -> None: ...
+
 
 class ArqQueueClient:
     def __init__(self, redis: Any) -> None:
@@ -39,3 +41,11 @@ class ArqQueueClient:
             )
         except Exception as exc:
             raise QueueDispatchError("Redis progress publish failed") from exc
+
+    async def cancel_gpu_job(self, job_id: UUID) -> None:
+        from arq.jobs import Job as ArqJob
+
+        try:
+            await ArqJob(f"gpu:{job_id}", self._redis).abort(timeout=5)
+        except Exception as exc:
+            raise QueueDispatchError("Redis queue cancellation failed") from exc

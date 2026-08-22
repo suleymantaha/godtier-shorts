@@ -285,6 +285,7 @@ class Project(Base):
 class Job(Base):
     __tablename__ = "jobs"
     __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key", name="uq_jobs_user_idempotency_key"),
         CheckConstraint("progress >= 0 AND progress <= 100", name="progress_range"),
         CheckConstraint("reserved_credits >= 0", name="reserved_credits_nonnegative"),
         CheckConstraint("settled_credits >= 0", name="settled_credits_nonnegative"),
@@ -298,6 +299,7 @@ class Job(Base):
     type: Mapped[JobType] = mapped_column(_enum(JobType, "job_type"), nullable=False)
     status: Mapped[JobStatus] = mapped_column(_enum(JobStatus, "job_status"), nullable=False)
     request: Mapped[dict[str, Any]] = mapped_column(JSON_VALUE, nullable=False)
+    idempotency_key: Mapped[str | None] = mapped_column(Text)
     progress: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default=text("0"))
     last_message: Mapped[str | None] = mapped_column(Text)
     error_code: Mapped[str | None] = mapped_column(String(100))

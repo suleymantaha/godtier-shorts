@@ -6,6 +6,7 @@ from typing import Any, Protocol
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from backend.db.models import Job, JobEvent, JobStatus, JobType
 from backend.db.session import get_session_factory
@@ -22,7 +23,8 @@ class JobRepository(Protocol):
         project_id: UUID,
         job_type: str,
         request: dict[str, Any],
-    ) -> UUID: ...
+        idempotency_key: str,
+    ) -> DurableJob | UUID: ...
 
     async def mark_dispatch_failed(self, job_id: UUID, message: str) -> None: ...
 
@@ -48,6 +50,12 @@ class SubmittedJob:
     status: str = "queued"
 
 
+@dataclass(frozen=True, slots=True)
+class DurableJob:
+    id: UUID
+    created: bool
+
+
 class DistributedJobService:
     def __init__(
         self,
@@ -71,12 +79,19 @@ class DistributedJobService:
     ) -> SubmittedJob:
         if estimated_credits <= 0:
             raise ValueError("estimated_credits must be positive")
-        job_id = await self._jobs.create_queued(
+        idempotency_key = idempotency_key.strip()
+        if not idempotency_key:
+            raise ValueError("idempotency_key must not be blank")
+        durable = await self._jobs.create_queued(
             user_id=user_id,
             project_id=project_id,
             job_type=job_type,
             request=request,
+            idempotency_key=idempotency_key,
         )
+        job_id = durable.id if isinstance(durable, DurableJob) else durable
+        if isinstance(durable, DurableJob) and not durable.created:
+            return SubmittedJob(job_id)
         try:
             await self._credits.reserve(
                 user_id=user_id,
@@ -108,32 +123,51 @@ class SqlAlchemyJobRepository:
         project_id: UUID,
         job_type: str,
         request: dict[str, Any],
-    ) -> UUID:
-        job_id = uuid4()
+        idempotency_key: str,
+    ) -> DurableJob:
         factory = get_session_factory()
-        async with factory() as session, session.begin():
-            session.add(
-                Job(
+        async with factory() as session:
+            existing = await session.scalar(
+                select(Job).where(
+                    Job.user_id == user_id,
+                    Job.idempotency_key == idempotency_key,
+                )
+            )
+            if existing is not None:
+                if existing.project_id != project_id or existing.type != JobType(job_type) or existing.request != request:
+                    raise ValueError("Idempotency key was already used for another job request")
+                return DurableJob(existing.id, created=False)
+
+        job_id = uuid4()
+        try:
+            async with factory() as session, session.begin():
+                session.add(Job(
                     id=job_id,
                     user_id=user_id,
                     project_id=project_id,
                     type=JobType(job_type),
                     status=JobStatus.QUEUED,
                     request=request,
+                    idempotency_key=idempotency_key,
                     progress=0,
                     last_message="Job queued",
-                )
-            )
-            session.add(
-                JobEvent(
+                ))
+                session.add(JobEvent(
                     job_id=job_id,
                     status=JobStatus.QUEUED,
                     progress=0,
                     message="Job queued",
                     source="api",
+                ))
+        except IntegrityError:
+            async with factory() as session:
+                existing = await session.scalar(
+                    select(Job).where(Job.user_id == user_id, Job.idempotency_key == idempotency_key)
                 )
-            )
-        return job_id
+                if existing is None or existing.project_id != project_id or existing.type != JobType(job_type) or existing.request != request:
+                    raise ValueError("Idempotency key conflict")
+                return DurableJob(existing.id, created=False)
+        return DurableJob(job_id, created=True)
 
     async def mark_dispatch_failed(self, job_id: UUID, message: str) -> None:
         factory = get_session_factory()
