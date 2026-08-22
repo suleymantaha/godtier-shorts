@@ -21,7 +21,21 @@ class FakeGateway:
         return "cancelled"
 
 
-def _app(gateway: FakeGateway):
+class FakeRateLimiter:
+    def __init__(self, *, allowed: bool = True) -> None:
+        self.allowed = allowed
+        self.calls = []
+
+    async def consume(self, **kwargs):
+        self.calls.append(kwargs)
+        return SimpleNamespace(
+            allowed=self.allowed,
+            remaining=0,
+            retry_after_seconds=45,
+        )
+
+
+def _app(gateway: FakeGateway, limiter: FakeRateLimiter | None = None):
     app = FastAPI()
     app.include_router(production_jobs.router)
     user_id = uuid4()
@@ -31,6 +45,9 @@ def _app(gateway: FakeGateway):
         auth_mode="clerk_jwt", user_id=user_id,
     )
     app.dependency_overrides[production_jobs.get_job_gateway] = lambda: gateway
+    app.dependency_overrides[production_jobs.get_rate_limiter] = lambda: (
+        limiter or FakeRateLimiter()
+    )
     return app
 
 
@@ -76,6 +93,23 @@ def test_production_start_job_rejects_blank_idempotency_key() -> None:
     )
 
     assert response.status_code == 422
+    assert gateway.calls == []
+
+
+def test_production_start_job_rate_limit_runs_before_gateway() -> None:
+    gateway = FakeGateway()
+    limiter = FakeRateLimiter(allowed=False)
+    app = _app(gateway, limiter)
+
+    response = TestClient(app).post(
+        "/api/start-job",
+        headers={"Idempotency-Key": "render-rate-limited"},
+        json={"project_id": str(uuid4()), "num_clips": 3},
+    )
+
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "45"
+    assert limiter.calls[0]["scope"] == "start_job"
     assert gateway.calls == []
 
 

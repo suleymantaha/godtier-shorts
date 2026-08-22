@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -62,3 +61,12 @@ def test_production_api_is_cpu_control_plane_with_readiness_probe() -> None:
 def test_production_api_image_has_bounded_preview_media_tooling() -> None:
     dockerfile = (ROOT / "Dockerfile.api").read_text(encoding="utf-8")
     assert "ffmpeg" in dockerfile
+
+
+def test_production_api_receives_distributed_rate_limit_contract() -> None:
+    environment = _render_production_compose()["services"]["api"]["environment"]
+
+    assert environment["PREVIEW_REQUEST_LIMIT"] == "1"
+    assert environment["BILLING_CHECKOUT_REQUEST_LIMIT"] == "5"
+    assert environment["BILLING_FAILED_CHECKOUT_LIMIT"] == "3"
+    assert environment["JOB_START_REQUEST_LIMIT"] == "10"
