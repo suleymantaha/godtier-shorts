@@ -188,16 +188,198 @@ rutin bir adım olmalı.
 
 ---
 
-## 🚀 Sonuç ve Sistem Sağlığı (Güncel: 20 Ağustos 2026)
+## Ek: 20 Ağustos 2026 Oturumu (2) — Compose/Social Sekme Temizliği (`claude/compose-social-tabs-cleanup-88f810`, PR #3–#11)
+
+Bu ek, madde 8'deki AI durum rozeti kurtarmasından hemen sonra aynı gün
+içinde yürütülen ayrı bir oturumu belgeler: Social sekmesinin öncelik
+sıralı bir panoya dönüştürülmesi, ölü `ShareComposerModal` yolunun
+kaldırılması ve bu değişiklikler sırasında ortaya çıkan dört ayrı kök
+nedenin bulunup düzeltilmesi. Tüm commit'ler zaten `main`'e merge edildi
+(bu doküman güncellemesi ayrı, sonraki bir oturumda yazıldı).
+
+### 9. 🐢 `SocialRepository.read_analytics` "platforms" verisini hiç önbelleğe almıyordu — Social sayfası her açılışta canlı Postiz senkronizasyonu bekliyordu
+
+#### 🔍 Belirti
+Social sekmesi her açıldığında (3 paralel istek: overview/accounts/posts +
+platforms) gözle görülür şekilde yavaştı; sayfa yüklenmesi saniyeler
+sürüyordu.
+
+#### 🧬 Kök Neden
+`backend/services/social/repository.py` içindeki `refresh_analytics`,
+`overview`, `accounts` ve `posts` scope'larını `upsert_analytics_snapshot`
+ile önbelleğe alıyordu ama `platforms` aggregate'ini hiç yazmıyordu.
+`read_analytics` ise `platforms` alanını doğrudan
+`self.refresh_analytics(subject=subject)["platforms"]` çağırarak
+dolduruyordu — yani önbellek ısınmış olsa bile her okuma, canlı Postiz
+provider senkronizasyonu dahil tam bir `refresh_analytics()` tetikliyordu.
+Diğer üç alan önbellekten geliyor gibi görünse de fonksiyonun kendisi
+zaten tetiklenmiş oluyordu, bu yüzden önbelleğin faydası sıfırdı.
+
+#### 🛠️ Yapılan Çözüm
+- `refresh_analytics` artık `platforms` scope'unu da
+  `upsert_analytics_snapshot(subject, scope="platforms", ...)` ile yazıyor.
+- `read_analytics`, dört scope'un (`overview`, `accounts`, `platforms`,
+  `posts`) hepsi doluysa önbellekten okuyor; yalnızca biri eksikse
+  `refresh_analytics`'e düşüyor.
+- Regresyon testi eklendi (`test_social_read_analytics_uses_cache_without_forcing_refresh`,
+  [backend/tests/test_social_connections.py](backend/tests/test_social_connections.py)):
+  `refresh_analytics`'i sayaçla sarıp ısınmış önbellekte
+  `read_analytics`'in onu **sıfır kez** çağırdığını doğruluyor.
+
+#### 📌 Ders
+Kısmi önbellekleme tehlikelidir: bir agregat fonksiyonun döndürdüğü
+alanlardan biri bile önbellek yerine "kaynağı yeniden hesapla" yoluna
+düşüyorsa, önbelleğin geri kalanı da fiilen işe yaramaz hale gelir —
+çünkü o tek eksik alan zaten tüm pahalı işlemi tetikler. Yeni bir alan
+eklerken "hangi scope'ların cache'e yazıldığı" listesi ile "hangi
+scope'ların cache'ten okunduğu" listesi birbirine göre çapraz kontrol
+edilmeli.
+
+### 10. 🎭 Postiz manuel API-key kartı, gerçek bağlantı modu bilinmeden (hatta bazen hiç bilinmeden) gösteriliyordu
+
+#### 🔍 Belirti
+Compose sayfası her açıldığında, yönetilen (managed) bağlantı modundaki
+kullanıcılar için bile kısa süreliğine ham API-key giriş kartı
+görünüyordu. Daha ciddisi: henüz bir klip seçilmemişken bu görünüm
+**kalıcı** olarak yanlış kalıyordu.
+
+#### 🧬 Kök Neden
+`useShareComposerController.ts` içindeki state, `connectionMode`'u
+`SocialConnectionMode` tipinde ve varsayılan değeri `'manual_api_key'`
+literal'i olarak tanımlıyordu. Gerçek değer yalnızca accounts API
+yanıtı geldiğinde çözülüyordu; ama bu istek yalnızca bir klip ve proje
+bilindiğinde tetikleniyordu. Klip seçilmeden önce gerçek değer hiç
+gelmediği için varsayılan (`manual_api_key`) kalıcı olarak ekranda
+kalıyordu.
+
+#### 🛠️ Yapılan Çözüm
+- `connectionMode` tipi `SocialConnectionMode | null` olarak genişletildi,
+  varsayılan `null` yapıldı; kart artık yalnızca gerçek değer
+  geldiğinde render ediliyor.
+- Çözümleme mantığı (accounts API yanıtından) değiştirilmedi — sadece
+  "bilinmiyor" durumu artık dürüstçe temsil ediliyor.
+
+#### 📌 Ders
+Bir API'den gelecek değer için yerel state'e "en olası" ya da "en güvenli
+görünen" bir literal varsayılan atamak, veri gelene kadar geçen sürede
+yanlış bilgi göstermekle aynı şeydir. Değer gelene kadar geçen pencere
+her zaman sıfır olmayabilir (bu vakada bazı yollarda hiç kapanmıyordu) —
+bu yüzden "henüz bilinmiyor" durumu `null`/`undefined` ile açıkça temsil
+edilmeli, UI da bu duruma göre render'ı ertelemeli.
+
+### 11. 📐 `aspect-ratio` + `max-height` ikilisi, genişlik `w-full` ile sabitlenmeden CSS'te öngörülemeyen şekilde daralıyordu
+
+#### 🔍 Belirti
+İlk düzeltme turunda (4819f32) 9:16 önizleme placeholder'larına
+`max-h-[720px]` eklendi (gerçek `<video>` elementiyle aynı üst sınır).
+Ancak bir sonraki manuel testte placeholder, panelin genişliğini
+doldurmak yerine dar bir sütuna küçüldü ve yanında büyük boş bir alan
+kaldı (30ada91). Aynı sınıftan ayrı bir bulgu olarak, klip galerisi
+ızgarasındaki `ClipCard`'lar da (1abf049) az sayıda klip olduğunda
+`minmax(228px, 1fr)` yüzünden orantısız şekilde büyüyordu.
+
+#### 🧬 Kök Neden
+`aspect-ratio` ve `max-height` birlikte tanımlı ama genişliği belirsiz
+(`auto`) bir blok kutuda, tarayıcı 9:16 oranını tam olarak korumak için
+genişliği daraltır — sütunu doldurmaz. Gerçek `<video>` elementi bu
+tuzağa hiç düşmüyordu çünkü zaten `max-h-[720px]` ile birlikte
+`w-full` de tanımlıydı; genişlik sabit olduğu için yükseklik tek başına
+sınırlanabiliyordu. İlk düzeltme bu ikiliyi kopyalamadan yalnızca
+`max-h-[720px]`'i taşıdı. Izgara vakasında ise kök neden farklı ama aynı
+aileden: `1fr` üst sınırsız olduğu için boş sütun genişliği kartın
+en-boy oranı üzerinden yüksekliğe orantılı olarak yansıyordu.
+
+#### 🛠️ Yapılan Çözüm
+- `SocialComposePage.tsx`'teki üç placeholder durumuna (`!clip`, `error`,
+  `!resolvedSrc`) `max-h-[720px]` yanına `w-full` eklendi — gerçek
+  `<video>` elementinin zaten kullandığı ikili aynen kopyalandı.
+- `clipGallery/sections.tsx`'teki ızgara şablonu `minmax(228px, 1fr)`'dan
+  `minmax(228px, 280px)`'e çekildi; sütunlar 228px'e kadar daralabiliyor
+  ama artık üst sınırsız büyüyemiyor, fazla satır alanı boş kalıyor.
+
+#### 📌 Ders
+`aspect-ratio` kullanan bir kutuya `max-height` eklerken genişliğin de
+(`w-full` veya eşdeğeri) açıkça sabitlenip sabitlenmediği kontrol
+edilmeli — aksi halde tarayıcı oranı korumak için genişliği sessizce
+küçültür ve bu, üst sınırı ekleyen commit'in kendisinde fark edilmeyip
+bir sonraki manuel testte ayrı bir "bug" olarak ortaya çıkar. Aynı
+en-boy-oranı-yüksekliği-sürüklüyor deseni `minmax(x, 1fr)` grid
+sütunlarında da tekrar edebilir; ikisi de "sınırsız `1fr`/`auto`
+boyut + sabit en-boy oranı" kombinasyonunun aynı ailesidir.
+
+### 12. 🧱 Eşit olmayan yükseklikteki iki sütunlu dashboard grid'i `items-start` ile büyük bir boşluk bırakıyordu
+
+#### 🔍 Belirti
+Geniş ekranlarda, az aktivite olduğunda (Needs Attention/Week/Performance
+boş) Social dashboard'ının ana sütunu Connections rayının çok altında
+bitiyor, aradaki fark çıplak sayfa arkaplanı olarak görünüyordu.
+
+#### 🧬 Kök Neden
+İki sütunlu grid `items-start` kullanıyordu; her sütun kendi doğal
+yüksekliğinde bitiyordu. Connections rayı veriden bağımsız neredeyse
+sabit yükseklikteyken ana sütunun yüksekliği tamamen veriye bağlıydı —
+ikisi arasındaki fark hizalanmıyordu.
+
+#### 🛠️ Yapılan Çözüm
+- Grid `items-start` → `items-stretch` yapıldı; her sütun artık
+  `flex flex-col` ile sarmalandı.
+- Her sütundaki son panel (solda Performance, sağda rayın kendi Panel'i)
+  `flex-1`/`h-full` ile artan boşluğu kendi çerçevesinin içine alıyor,
+  böylece iki sütunun kenarlıkları içerik miktarından bağımsız hep aynı
+  çizgide bitiyor.
+
+---
+
+### 📋 Bu Oturumun Yan Ürünü: Ölü Kod ve Navigasyon Sadeleştirmesi (hata değil, kayıtlı iyileştirme)
+
+- `ShareComposerModal.tsx` ve `shareComposer/sections.tsx` (627 satır) uygulamadan hiç
+  çağrılmıyordu — `SocialComposePage` compose yüzeyini çoktan devralmıştı, modal
+  yalnızca kendi testleriyle hayatta tutuluyordu. Modal'a özgü işlevsellik
+  (manuel API-key bağlan/kes, taslak sıfırlama banner'ı, iş onay/iptal)
+  `SocialComposePage`'e taşındıktan sonra ölü dosyalar, kullanılmayan controller
+  alanları (`openSocialWorkspace`, `openSocialComposePage`, `connectUrl`,
+  `handleManagedConnectOpen`, `ShareComposerController` tipi) ve yetim
+  `shareComposer.*` i18n anahtarları (en/tr) silindi.
+- Ayrı "Social Compose" üst-nav sekmesi ve config ekranındaki yinelenen
+  "Open Composer"/"Open Workspace" butonları kaldırıldı; Social artık compose
+  alt-görünümündeyken de vurgulu kalıyor, oraya yalnızca klip paylaşım
+  aksiyonları ve dashboard'ın kendi compose linkinden ulaşılıyor.
+- **Not**: `docs/analysis/repo-deep-scan-2026-03-17-appendix.md` ve
+  `docs/analysis/TECHNICAL_AUDIT_APPENDIX_2026-03-13.md` hâlâ artık var
+  olmayan `ShareComposerModal.tsx`/`shareComposer/sections.tsx`'e referans
+  veriyor — bunlar tarihe damgalı (point-in-time) denetim raporları olduğu
+  için bilinçli olarak güncellenmedi; canlı bir mimari doküman değiller.
+
+---
+
+## 🚀 Sonuç ve Sistem Sağlığı (Güncel: 20 Ağustos 2026, ikinci oturum)
 
 17 Ağustos oturumundaki tüm hatalar kök nedenleriyle çözülmüş ve
-doğrulanmıştı. 20 Ağustos oturumunda `main`'e merge öncesi yapılan
+doğrulanmıştı. 20 Ağustos'taki ilk oturumda `main`'e merge öncesi yapılan
 doğrulama sırasında üç yeni, birbirinden bağımsız kök neden daha bulundu
 ve ikisi (`backend/models/` gitignore çakışması, yarım commit edilmiş AI
-durum rozeti özelliği) çözülüp doğrulandı. Üçüncüsü
-(`.github/workflows/verify.yml` eksikliği) bilinçli olarak açık bırakıldı
-ve ayrı bir iş olarak takip edilmeli.
+durum rozeti özelliği) çözülüp doğrulandı; üçüncüsü
+(`.github/workflows/verify.yml` eksikliği) hâlâ açık.
 
-**Güncel test durumu**: `pytest backend/tests` → 352 passed, 2 skipped,
-2 failed (yalnızca madde 7'deki bilinen açık sorun). Frontend: `tsc -b`
-temiz, `vitest run` → 57 dosya / 294 test passed, 4 skipped.
+Aynı gün içindeki ikinci oturumda (Compose/Social sekme temizliği, PR
+#3–#11), Social sekmesinin öncelik sıralı panoya dönüştürülmesi sırasında
+dört yeni kök neden daha bulunup düzeltildi: bir backend önbellek
+bug'ı (madde 9, gerçek performans etkisi olan), bir "veri gelmeden önce
+yanlış varsayılan state" bug'ı (madde 10), CSS `aspect-ratio`/`max-height`/
+`w-full` etkileşiminden doğan ve ilk düzeltmenin kendisinin yeni bir görsel
+regresyona yol açtığı iki parçalı bir bug (madde 11) ve bir grid hizalama
+bug'ı (madde 12). Ayrıca 627 satırlık ölü kod yolu ve yinelenen navigasyon
+kaldırıldı.
+
+**Doğrulama durumu**: Her commit kendi anlık testleriyle doğrulandı
+(commit mesajlarında ayrıntılı). Bu doküman güncellemesinin yazıldığı
+worktree'de backend için kurulu bir `venv` ve frontend için güncel bir
+`node_modules` kurulumu bulunmadığından, tam test paketi bu oturumda
+yeniden çalıştırılmadı — bu iki eksik kurulum, bu worktree'ye özgü bir
+ortam farkı olup ayrı bir "hata" değildir. Bir sonraki geliştirme
+oturumunda ana worktree'de `pytest backend/tests` ve
+`cd frontend && npm run test` ile tam doğrulama yapılması önerilir.
+
+**Bilinen açık sorun**: `.github/workflows/verify.yml` hâlâ yazılmadı
+(bkz. madde 7); `pytest backend/tests/test_toolchain_contract.py` içindeki
+ilgili iki test bilinçli olarak kırmızı bırakıldı.
