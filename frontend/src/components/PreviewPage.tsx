@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { previewApi } from '../api/preview';
 import type { PreviewAnalyzeResponse, ViralCandidate } from '../types/preview';
 import { TurnstileGate } from './security/TurnstileGate';
+import { Paywall } from './paywall/Paywall';
+import { PENDING_PREVIEW_URL_KEY, readPendingPreviewUrl } from '../marketing/funnel';
 
 
 function timestamp(seconds: number): string {
@@ -29,9 +31,25 @@ function CandidateCard({ candidate, fallbackTitle }: { candidate: ViralCandidate
   );
 }
 
+function PreviewResults({ result }: { result: PreviewAnalyzeResponse }) {
+  const { t } = useTranslation();
+  return (
+    <section aria-label={t('previewPage.resultsLabel')} className="space-y-4">
+      <div>
+        <h2 className="text-xl font-semibold text-foreground">{result.source.title}</h2>
+        <p className="mt-1 text-xs text-muted-foreground">{t('previewPage.resultMeta', { count: result.candidates.length })}</p>
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        {result.candidates.map((candidate) => <CandidateCard key={`${candidate.start_time}-${candidate.end_time}`} candidate={candidate} fallbackTitle={t('previewPage.candidateFallback')} />)}
+      </div>
+      <Paywall candidateCount={result.candidates.length} />
+    </section>
+  );
+}
+
 export function PreviewPage() {
   const { t } = useTranslation();
-  const [url, setUrl] = useState('');
+  const [url, setUrl] = useState(readPendingPreviewUrl);
   const [result, setResult] = useState<PreviewAnalyzeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -48,6 +66,7 @@ export function PreviewPage() {
     setError(null);
     try {
       setResult(await previewApi.analyze(url.trim(), turnstileToken));
+      window.sessionStorage.removeItem(PENDING_PREVIEW_URL_KEY);
     } catch (caught) {
       setResult(null);
       setError(caught instanceof Error ? caught.message : t('previewPage.error'));
@@ -96,19 +115,7 @@ export function PreviewPage() {
         {error ? <p role="alert" className="mt-4 text-sm text-red-300">{error}</p> : null}
       </section>
 
-      {result ? (
-        <section aria-label={t('previewPage.resultsLabel')} className="space-y-4">
-          <div>
-            <h2 className="text-xl font-semibold text-foreground">{result.source.title}</h2>
-            <p className="mt-1 text-xs text-muted-foreground">{t('previewPage.resultMeta', { count: result.candidates.length })}</p>
-          </div>
-          <div className="grid gap-4 md:grid-cols-3">
-            {result.candidates.map((candidate) => (
-              <CandidateCard key={`${candidate.start_time}-${candidate.end_time}`} candidate={candidate} fallbackTitle={t('previewPage.candidateFallback')} />
-            ))}
-          </div>
-        </section>
-      ) : null}
+      {result ? <PreviewResults result={result} /> : null}
     </main>
   );
 }

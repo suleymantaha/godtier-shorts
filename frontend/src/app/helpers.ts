@@ -1,5 +1,6 @@
 import type { Clip } from '../types';
 import { readStored } from '../utils/storage';
+import { readPendingPreviewUrl } from '../marketing/funnel';
 
 export type AppViewMode = 'config' | 'preview' | 'manual' | 'subtitle' | 'social' | 'social_compose';
 export type SubtitleSessionMode = 'project' | 'clip';
@@ -67,7 +68,7 @@ export function readAppState(): AppState {
   const parsed = readStored<StoredAppState>(APP_STATE_STORAGE_KEY, DEFAULT_APP_STATE);
   const queryMode = readQueryViewMode();
   return {
-    viewMode: queryMode ?? normalizeViewMode(parsed.viewMode),
+    viewMode: queryMode ?? (readPendingPreviewUrl() ? 'preview' : normalizeViewMode(parsed.viewMode)),
     editingClip: parsed.editingClip ?? null,
     subtitleTargetClip: normalizeStoredClip(parsed.subtitleTargetClip),
   };

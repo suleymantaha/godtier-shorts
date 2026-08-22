@@ -33,6 +33,7 @@ import type { AppViewMode } from './helpers';
 import type { ResilientAuthState, ResilientAuthStatus } from '../auth/useResilientAuth';
 import { TurnstileGate } from '../components/security/TurnstileGate';
 import { turnstileApi } from '../api/turnstile';
+import { LandingPage } from '../pages/LandingPage';
 
 const SIGN_IN_APPEARANCE = {
   elements: {
@@ -94,11 +95,10 @@ export function SignedOutScreen() {
   if (window.location.pathname === '/sign-up') {
     return <SignupGateScreen />;
   }
-  return (
-    <div className="flex w-full h-[80vh] items-center justify-center animate-in fade-in duration-1000">
-      <SignIn appearance={SIGN_IN_APPEARANCE} signUpUrl="/sign-up" />
-    </div>
-  );
+  if (window.location.pathname === '/sign-in') {
+    return <div className="flex h-[80vh] w-full items-center justify-center"><SignIn appearance={SIGN_IN_APPEARANCE} signUpUrl="/sign-up" /></div>;
+  }
+  return <LandingPage />;
 }
 
 function SignupGateScreen() {
