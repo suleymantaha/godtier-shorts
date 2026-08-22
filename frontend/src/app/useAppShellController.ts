@@ -42,6 +42,7 @@ function useAppShellNavigation({
   }, [setEditingClip, setSubtitleTargetClip, setViewMode]);
 
   const openConfig = useCallback(() => openViewMode('config'), [openViewMode]);
+  const openBilling = useCallback(() => openViewMode('billing'), [openViewMode]);
   const openManual = useCallback(() => openViewMode('manual'), [openViewMode]);
   const openPreview = useCallback(() => openViewMode('preview'), [openViewMode]);
   const openSocial = useCallback(() => openViewMode('social'), [openViewMode]);
@@ -58,6 +59,7 @@ function useAppShellNavigation({
 
   return {
     openClipSubtitleEditor,
+    openBilling,
     openConfig,
     openManual,
     openPreview,
@@ -130,6 +132,7 @@ export function useAppShellController(canUseBackend = true, identityKey: string 
   const { locale, setLocale } = useLocaleStore();
   const {
     openClipSubtitleEditor,
+    openBilling,
     openConfig,
     openManual,
     openPreview,
@@ -166,6 +169,7 @@ export function useAppShellController(canUseBackend = true, identityKey: string 
     handleSkipSubtitlesChange,
     handleStyleChange,
     openClipSubtitleEditor,
+    openBilling,
     openConfig,
     openManual,
     openPreview,

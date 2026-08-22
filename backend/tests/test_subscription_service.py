@@ -34,13 +34,16 @@ class FakeRepository:
     status_writes: list[SubscriptionStatus] | None = None
     created_subscriptions: list[LocalSubscription] | None = None
     checkout: CheckoutRecord | None = None
+    additional_plan: LocalPlan | None = None
 
     def __post_init__(self) -> None:
         self.status_writes = []
         self.created_subscriptions = []
 
     async def get_plan(self, code: str) -> LocalPlan | None:
-        return self.plan if self.plan.code == code else None
+        if self.plan.code == code:
+            return self.plan
+        return self.additional_plan if self.additional_plan and self.additional_plan.code == code else None
 
     async def get_subscription(self, user_id: UUID) -> LocalSubscription | None:
         return self.subscription if self.subscription and self.subscription.user_id == user_id else None
@@ -50,6 +53,11 @@ class FakeRepository:
         assert subscription_id == self.subscription.id
         self.status_writes.append(status)
         self.subscription.status = status
+
+    async def change_plan(self, subscription_id: UUID, subscription: LocalSubscription) -> None:
+        assert self.subscription is not None
+        assert subscription_id == self.subscription.id
+        self.subscription = subscription
 
     async def upsert_subscription(self, subscription: LocalSubscription) -> None:
         self.subscription = subscription
@@ -105,7 +113,7 @@ class FakeIyzicoClient:
         return CheckoutSession("checkout-token", "<script>hosted</script>", 1800)
 
     async def get_subscription(self, reference_code: str) -> ProviderSubscription:
-        assert reference_code == "sub-1"
+        assert reference_code == self.subscription.reference_code
         return self.subscription
 
     async def cancel_subscription(self, reference_code: str) -> None:
@@ -122,12 +130,50 @@ class FakeIyzicoClient:
         assert token == "checkout-token"
         return self.subscription
 
+    async def upgrade_subscription(self, reference_code: str, pricing_reference: str) -> str:
+        assert reference_code == "sub-1"
+        assert pricing_reference == "pro-monthly"
+        self.subscription = ProviderSubscription(
+            reference_code="sub-2",
+            product_reference_code="product-creator",
+            pricing_plan_reference_code="pro-monthly",
+            status="ACTIVE",
+        )
+        return "sub-2"
+
 
 def _references() -> PlanReferenceMap:
     return PlanReferenceMap.from_json(
         '{"creator":{"product_reference_code":"product-creator",'
         '"monthly":"creator-monthly","yearly":"creator-yearly"}}'
     )
+
+
+def _change_references() -> PlanReferenceMap:
+    return PlanReferenceMap.from_json(
+        '{"creator":{"product_reference_code":"product-creator","monthly":"creator-monthly","yearly":"creator-yearly"},'
+        '"pro":{"product_reference_code":"product-creator","monthly":"pro-monthly","yearly":"pro-yearly"}}'
+    )
+
+
+def test_active_subscription_can_change_to_a_plan_in_the_same_product_and_interval() -> None:
+    user_id = uuid4()
+    repository = FakeRepository(
+        LocalPlan(id=uuid4(), code="creator", active=True),
+        subscription=LocalSubscription(uuid4(), user_id, "sub-1", "creator", SubscriptionStatus.ACTIVE),
+        additional_plan=LocalPlan(id=uuid4(), code="pro", active=True),
+    )
+    service = SubscriptionService(
+        repository, FakeIyzicoClient(), _change_references(),
+        "https://api.example.com/callback", "test-checkout-secret",
+    )
+
+    snapshot = asyncio.run(service.change_plan(user_id, "pro", BillingInterval.MONTHLY))
+
+    assert snapshot.plan_code == "pro"
+    assert snapshot.status is SubscriptionStatus.ACTIVE
+    assert repository.subscription is not None
+    assert repository.subscription.provider_reference == "sub-2"
 
 
 @pytest.mark.parametrize(

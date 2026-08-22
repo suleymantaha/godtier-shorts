@@ -257,3 +257,21 @@ class IyzicoClient:
             f"/v2/subscription/subscriptions/{safe_reference}/cancel",
             {"subscriptionReferenceCode": reference_code},
         )
+
+    async def upgrade_subscription(self, reference_code: str, pricing_reference: str) -> str:
+        safe_reference = quote(reference_code.strip(), safe="")
+        if not safe_reference or not pricing_reference.strip():
+            raise ValueError("subscription plan degisikligi referansi bos olamaz")
+        result = await self._request(
+            "POST",
+            f"/v2/subscription/subscriptions/{safe_reference}/upgrade",
+            {
+                "newPricingPlanReferenceCode": pricing_reference,
+                "upgradePeriod": "NOW",
+                "useTrial": False,
+                "resetRecurrenceCount": False,
+            },
+        )
+        data = result.get("data")
+        upgraded_reference = str(data.get("referenceCode") or "").strip() if isinstance(data, dict) else ""
+        return upgraded_reference or reference_code

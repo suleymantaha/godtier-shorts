@@ -136,6 +136,34 @@ def test_subscription_query_and_cancel_use_provider_endpoints() -> None:
     assert queried.orders["order-1"].payment_statuses == ("SUCCESS",)
 
 
+def test_subscription_plan_change_uses_official_upgrade_endpoint() -> None:
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(200, json={"status": "success", "data": {"referenceCode": "sub-2"}})
+
+    client = IyzicoClient(
+        api_key="api-key",
+        secret_key="secret-key",
+        base_url="https://sandbox-api.iyzipay.com",
+        transport=httpx.MockTransport(handler),
+        random_key_factory=lambda: "rnd-1",
+    )
+
+    reference = asyncio.run(client.upgrade_subscription("sub-1", "pro-monthly"))
+
+    request = captured[0]
+    assert request.url.path == "/v2/subscription/subscriptions/sub-1/upgrade"
+    assert json.loads(request.content) == {
+        "newPricingPlanReferenceCode": "pro-monthly",
+        "upgradePeriod": "NOW",
+        "useTrial": False,
+        "resetRecurrenceCount": False,
+    }
+    assert reference == "sub-2"
+
+
 def test_checkout_result_is_retrieved_from_provider_by_token() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "GET"

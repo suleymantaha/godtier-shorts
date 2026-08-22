@@ -2,7 +2,7 @@ import type { Clip } from '../types';
 import { readStored } from '../utils/storage';
 import { readPendingPreviewUrl } from '../marketing/funnel';
 
-export type AppViewMode = 'config' | 'preview' | 'manual' | 'subtitle' | 'social' | 'social_compose';
+export type AppViewMode = 'config' | 'preview' | 'manual' | 'subtitle' | 'social' | 'social_compose' | 'billing';
 export type SubtitleSessionMode = 'project' | 'clip';
 export type SubtitleSessionJobKind = 'reburn' | 'clip_recovery' | 'project_transcript' | 'range_render' | 'unknown';
 
@@ -119,7 +119,7 @@ export function clearSubtitleSessionSnapshot() {
 }
 
 function normalizeViewMode(viewMode?: string): AppViewMode {
-  if (viewMode === 'preview' || viewMode === 'manual' || viewMode === 'subtitle' || viewMode === 'social' || viewMode === 'social_compose') {
+  if (viewMode === 'preview' || viewMode === 'manual' || viewMode === 'subtitle' || viewMode === 'social' || viewMode === 'social_compose' || viewMode === 'billing') {
     return viewMode;
   }
 
@@ -182,6 +182,9 @@ function queryTabForViewMode(viewMode: AppViewMode): string | null {
   if (viewMode === 'subtitle') {
     return 'subtitle';
   }
+  if (viewMode === 'billing') {
+    return 'billing';
+  }
   return null;
 }
 
@@ -211,6 +214,9 @@ function normalizeQueryTab(tab: string | null): AppViewMode | null {
   }
   if (tab === 'social-compose') {
     return 'social_compose';
+  }
+  if (tab === 'billing') {
+    return 'billing';
   }
   return null;
 }
