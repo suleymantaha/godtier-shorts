@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from uuid import uuid4
-
-import pytest
 
 from backend.db.models import PaymentStatus, SubscriptionStatus
 from backend.services.billing.account_service import (
@@ -25,8 +24,7 @@ class FakeAccountRepository:
         return self.record
 
 
-@pytest.mark.asyncio
-async def test_account_snapshot_reports_period_usage_and_clamps_wallet_values() -> None:
+def test_account_snapshot_reports_period_usage_and_clamps_wallet_values() -> None:
     user_id = uuid4()
     now = datetime(2026, 8, 22, tzinfo=timezone.utc)
     creator = PlanRecord(uuid4(), "creator", "Creator", 9_900, "TRY", 1_000, 60, 10, 2, 30)
@@ -49,7 +47,7 @@ async def test_account_snapshot_reports_period_usage_and_clamps_wallet_values() 
         )
     )
 
-    account = await BillingAccountService(repository).get_account(user_id, interval="monthly")
+    account = asyncio.run(BillingAccountService(repository).get_account(user_id, interval="monthly"))
 
     assert repository.user_ids == [user_id]
     assert account.subscription is not None
@@ -63,22 +61,23 @@ async def test_account_snapshot_reports_period_usage_and_clamps_wallet_values() 
     assert account.payments[0].status is PaymentStatus.SUCCEEDED
 
 
-@pytest.mark.asyncio
-async def test_account_snapshot_supports_users_without_a_subscription() -> None:
+def test_account_snapshot_supports_users_without_a_subscription() -> None:
     free = PlanRecord(uuid4(), "free", "Free", 0, "TRY", 0, 30, 3, 1, 7)
-    account = await BillingAccountService(
-        FakeAccountRepository(
-            AccountRecord(
-                subscription=None,
-                plans=(free,),
-                payments=(),
-                source_seconds_used=0,
-                compute_credits_used=0,
-                wallet_available=0,
-                wallet_reserved=0,
+    account = asyncio.run(
+        BillingAccountService(
+            FakeAccountRepository(
+                AccountRecord(
+                    subscription=None,
+                    plans=(free,),
+                    payments=(),
+                    source_seconds_used=0,
+                    compute_credits_used=0,
+                    wallet_available=0,
+                    wallet_reserved=0,
+                )
             )
-        )
-    ).get_account(uuid4())
+        ).get_account(uuid4())
+    )
 
     assert account.subscription is None
     assert account.plans == (free,)
