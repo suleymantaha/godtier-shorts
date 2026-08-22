@@ -63,6 +63,7 @@ def test_validate_runtime_configuration_accepts_defaults(monkeypatch: pytest.Mon
     monkeypatch.delenv("REQUIRE_CUDA_FOR_APP", raising=False)
     monkeypatch.delenv("REQUIRE_NVENC_FOR_APP", raising=False)
     monkeypatch.delenv("LOG_ACCELERATOR_STATUS_ON_STARTUP", raising=False)
+    monkeypatch.delenv("GPU_HOURLY_COST_USD", raising=False)
 
     validate_runtime_configuration()
 
@@ -125,6 +126,7 @@ def test_production_gpu_requires_storage_queue_database_and_accelerator_flags(
     monkeypatch.setenv("R2_ACCESS_KEY_ID", PRODUCTION_API_ENV["R2_ACCESS_KEY_ID"])
     monkeypatch.setenv("R2_SECRET_ACCESS_KEY", PRODUCTION_API_ENV["R2_SECRET_ACCESS_KEY"])
     monkeypatch.setenv("REQUIRE_CUDA_FOR_APP", "1")
+    monkeypatch.setenv("GPU_HOURLY_COST_USD", "0.90")
     monkeypatch.delenv("REQUIRE_NVENC_FOR_APP", raising=False)
 
     with pytest.raises(RuntimeError, match="REQUIRE_NVENC_FOR_APP"):
@@ -147,8 +149,16 @@ def test_production_gpu_accepts_complete_runtime_contract(
         monkeypatch.setenv(name, PRODUCTION_API_ENV[name])
     monkeypatch.setenv("REQUIRE_CUDA_FOR_APP", "1")
     monkeypatch.setenv("REQUIRE_NVENC_FOR_APP", "1")
+    monkeypatch.setenv("GPU_HOURLY_COST_USD", "0.90")
 
     validate_runtime_configuration()
+
+
+def test_runtime_rejects_invalid_gpu_hourly_cost(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GPU_HOURLY_COST_USD", "not-a-price")
+
+    with pytest.raises(RuntimeError, match="GPU_HOURLY_COST_USD"):
+        validate_runtime_configuration()
 
 
 def test_production_api_rejects_malformed_iyzico_plan_mapping(

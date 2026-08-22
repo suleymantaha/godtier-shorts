@@ -3,6 +3,7 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
@@ -16,6 +17,7 @@ from sqlalchemy import (
     Index,
     Integer,
     JSON,
+    Numeric,
     SmallInteger,
     String,
     Text,
@@ -339,6 +341,31 @@ class JobEvent(Base):
     message: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str] = mapped_column(String(80), nullable=False)
     created_at: Mapped[datetime] = _created_at()
+
+
+class JobUsageMetric(Base):
+    __tablename__ = "job_usage_metrics"
+    __table_args__ = (
+        CheckConstraint("source_seconds >= 0", name="source_seconds_nonnegative"),
+        CheckConstraint("gpu_seconds >= 0", name="gpu_seconds_nonnegative"),
+        CheckConstraint("estimated_internal_cost_usd >= 0", name="cost_nonnegative"),
+    )
+
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    source_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    transcript_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    tracking_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    render_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_wall_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    gpu_model: Mapped[str] = mapped_column(String(120), nullable=False)
+    gpu_seconds: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    output_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    estimated_internal_cost_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
+    peak_vram_mb: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
 
 class Asset(Base):

@@ -16,6 +16,7 @@ EXPECTED_TABLES = {
     "credit_ledger",
     "credit_wallets",
     "job_events",
+    "job_usage_metrics",
     "jobs",
     "payments",
     "plans",
@@ -31,6 +32,7 @@ UUID_PRIMARY_KEY_TABLES = EXPECTED_TABLES - {
     "audit_logs",
     "credit_wallets",
     "job_events",
+    "job_usage_metrics",
     "risk_events",
 }
 
@@ -97,6 +99,8 @@ def test_ownership_and_billing_foreign_keys_cannot_be_bypassed() -> None:
         ("credit_ledger", "job_id"): "jobs.id",
         ("credit_ledger", "payment_id"): "payments.id",
         ("job_events", "job_id"): "jobs.id",
+        ("job_usage_metrics", "job_id"): "jobs.id",
+        ("job_usage_metrics", "user_id"): "users.id",
         ("trial_entitlements", "user_id"): "users.id",
         ("risk_events", "user_id"): "users.id",
     }

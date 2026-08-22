@@ -60,6 +60,7 @@ def test_gpu_runner_downloads_source_uploads_outputs_and_cleans_scratch(tmp_path
         project_id=project_id,
         source_url=None,
         source_storage_key=f"uploads/{user_id}/source.mp4",
+        source_seconds=120,
     )
     repository = FakeRepository(context)
     store = FakeObjectStore()
@@ -80,8 +81,11 @@ def test_gpu_runner_downloads_source_uploads_outputs_and_cleans_scratch(tmp_path
         f"outputs/{user_id}/{job_id}/clip-2.mp4",
     ]
     assert len(repository.outputs) == 2
-    assert repository.metrics[0]["gpu_model"] == "RTX Test"
-    assert repository.metrics[0]["peak_vram_mb"] == 128
+    snapshot = repository.metrics[0]["snapshot"]
+    assert snapshot.gpu_model == "RTX Test"
+    assert snapshot.peak_vram_mb == 128
+    assert snapshot.source_seconds == 120
+    assert snapshot.output_count == 2
     assert not (tmp_path / str(job_id)).exists()
     assert progress == [(5, "source_download"), (55, "rendering"), (95, "output_upload")]
 
@@ -94,14 +98,16 @@ def test_gpu_runner_cleans_scratch_when_pipeline_fails(tmp_path) -> None:
         project_id=project_id,
         source_url=None,
         source_storage_key=f"uploads/{user_id}/source.mp4",
+        source_seconds=120,
     )
 
     class FailingPipeline:
         async def run(self, *_args, **_kwargs):
             raise RuntimeError("render failed")
 
+    repository = FakeRepository(context)
     runner = GpuObjectLifecycleRunner(
-        repository=FakeRepository(context),
+        repository=repository,
         object_store=FakeObjectStore(),
         pipeline=FailingPipeline(),
         scratch_root=tmp_path,
@@ -112,6 +118,7 @@ def test_gpu_runner_cleans_scratch_when_pipeline_fails(tmp_path) -> None:
         asyncio.run(runner({"_job_id": str(job_id)}, _noop_report))
 
     assert not (tmp_path / str(job_id)).exists()
+    assert repository.metrics[0]["snapshot"].output_count == 0
 
 
 async def _report(events, value, message):
