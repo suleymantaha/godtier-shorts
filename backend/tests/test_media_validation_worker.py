@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from uuid import uuid4
 
 import pytest
@@ -18,8 +19,7 @@ class FakeR2Client:
             target.write(self.payload)
 
 
-@pytest.mark.asyncio
-async def test_media_validation_worker_downloads_to_scratch_and_runs_ffprobe(
+def test_media_validation_worker_downloads_to_scratch_and_runs_ffprobe(
     monkeypatch,
 ) -> None:
     payload = b"valid-video"
@@ -34,12 +34,14 @@ async def test_media_validation_worker_downloads_to_scratch_and_runs_ffprobe(
         },
     )
 
-    result = await media_validation.validate_uploaded_media(
-        {"r2_client": FakeR2Client(payload), "r2_bucket_name": "private-assets"},
-        str(user_id),
-        storage_key,
-        "video/mp4",
-        len(payload),
+    result = asyncio.run(
+        media_validation.validate_uploaded_media(
+            {"r2_client": FakeR2Client(payload), "r2_bucket_name": "private-assets"},
+            str(user_id),
+            storage_key,
+            "video/mp4",
+            len(payload),
+        )
     )
 
     assert result["status"] == "validated"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -41,14 +42,13 @@ class FakeAssetRepository:
         return self.storage_key
 
 
-@pytest.mark.asyncio
-async def test_upload_url_uses_opaque_uuid_key_and_signed_content_type() -> None:
+def test_upload_url_uses_opaque_uuid_key_and_signed_content_type() -> None:
     client = FakeR2Client()
     user_id = uuid4()
     store = R2ObjectStore(client=client, bucket_name="private-assets")
 
-    upload = await store.create_upload_url(
-        user_id, "My Holiday Video.mp4", "video/mp4", 123
+    upload = asyncio.run(
+        store.create_upload_url(user_id, "My Holiday Video.mp4", "video/mp4", 123)
     )
 
     assert upload.storage_key.startswith(f"uploads/{user_id}/")
@@ -68,7 +68,6 @@ async def test_upload_url_uses_opaque_uuid_key_and_signed_content_type() -> None
     ]
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("filename", "content_type", "size_bytes"),
     [
@@ -78,7 +77,7 @@ async def test_upload_url_uses_opaque_uuid_key_and_signed_content_type() -> None
         ("video.mp4", "video/mp4", 1025),
     ],
 )
-async def test_upload_url_rejects_invalid_media_metadata(
+def test_upload_url_rejects_invalid_media_metadata(
     filename: str, content_type: str, size_bytes: int
 ) -> None:
     store = R2ObjectStore(
@@ -86,11 +85,12 @@ async def test_upload_url_rejects_invalid_media_metadata(
     )
 
     with pytest.raises(UploadValidationError):
-        await store.create_upload_url(uuid4(), filename, content_type, size_bytes)
+        asyncio.run(
+            store.create_upload_url(uuid4(), filename, content_type, size_bytes)
+        )
 
 
-@pytest.mark.asyncio
-async def test_download_url_requires_asset_ownership_and_defaults_to_ten_minutes() -> None:
+def test_download_url_requires_asset_ownership_and_defaults_to_ten_minutes() -> None:
     client = FakeR2Client()
     store = R2ObjectStore(
         client=client,
@@ -98,7 +98,7 @@ async def test_download_url_requires_asset_ownership_and_defaults_to_ten_minutes
         asset_repository=FakeAssetRepository("assets/result.mp4"),
     )
 
-    url = await store.create_download_url(uuid4(), uuid4())
+    url = asyncio.run(store.create_download_url(uuid4(), uuid4()))
 
     assert url.endswith("get_object")
     assert client.presign_calls == [
@@ -110,8 +110,7 @@ async def test_download_url_requires_asset_ownership_and_defaults_to_ten_minutes
     ]
 
 
-@pytest.mark.asyncio
-async def test_download_url_does_not_sign_another_users_asset() -> None:
+def test_download_url_does_not_sign_another_users_asset() -> None:
     client = FakeR2Client()
     store = R2ObjectStore(
         client=client,
@@ -120,20 +119,19 @@ async def test_download_url_does_not_sign_another_users_asset() -> None:
     )
 
     with pytest.raises(ObjectNotFoundError):
-        await store.create_download_url(uuid4(), uuid4())
+        asyncio.run(store.create_download_url(uuid4(), uuid4()))
 
     assert client.presign_calls == []
 
 
-@pytest.mark.asyncio
-async def test_internal_put_and_delete_keep_bucket_private(tmp_path: Path) -> None:
+def test_internal_put_and_delete_keep_bucket_private(tmp_path: Path) -> None:
     source = tmp_path / "render.mp4"
     source.write_bytes(b"video")
     client = FakeR2Client()
     store = R2ObjectStore(client=client, bucket_name="private-assets")
 
-    await store.put_internal("renders/opaque.mp4", source, "video/mp4")
-    await store.delete("renders/opaque.mp4")
+    asyncio.run(store.put_internal("renders/opaque.mp4", source, "video/mp4"))
+    asyncio.run(store.delete("renders/opaque.mp4"))
 
     assert client.upload_calls == [
         (
@@ -148,22 +146,26 @@ async def test_internal_put_and_delete_keep_bucket_private(tmp_path: Path) -> No
     ]
 
 
-@pytest.mark.asyncio
-async def test_uploaded_object_metadata_is_verified_before_validation_job() -> None:
+def test_uploaded_object_metadata_is_verified_before_validation_job() -> None:
     user_id = uuid4()
     client = FakeR2Client()
     store = R2ObjectStore(client=client, bucket_name="private-assets")
-    upload = await store.create_upload_url(user_id, "source.mp4", "video/mp4", 123)
+    upload = asyncio.run(
+        store.create_upload_url(user_id, "source.mp4", "video/mp4", 123)
+    )
 
-    metadata = await store.verify_uploaded_object(user_id, upload.storage_key)
+    metadata = asyncio.run(store.verify_uploaded_object(user_id, upload.storage_key))
 
     assert metadata.size_bytes == 123
     assert metadata.content_type == "video/mp4"
 
 
-@pytest.mark.asyncio
-async def test_uploaded_object_key_must_belong_to_authenticated_user() -> None:
+def test_uploaded_object_key_must_belong_to_authenticated_user() -> None:
     store = R2ObjectStore(client=FakeR2Client(), bucket_name="private-assets")
 
     with pytest.raises(ObjectNotFoundError):
-        await store.verify_uploaded_object(uuid4(), f"uploads/{uuid4()}/{uuid4()}.mp4")
+        asyncio.run(
+            store.verify_uploaded_object(
+                uuid4(), f"uploads/{uuid4()}/{uuid4()}.mp4"
+            )
+        )
