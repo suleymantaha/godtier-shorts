@@ -178,22 +178,31 @@ def _env_int(name: str, default: int) -> int:
 def _build_cors_origins() -> list[str]:
     raw = os.getenv("CORS_ORIGINS", "").strip()
     if raw:
-        return [origin.strip() for origin in raw.split(",") if origin.strip()]
+        return [origin.strip().rstrip("/") for origin in raw.split(",") if origin.strip()]
+
+    frontend_url = os.getenv("FRONTEND_URL", "").strip().rstrip("/")
+    app_env = os.getenv("APP_ENV", "development").strip().lower() or "development"
+    if app_env == "production":
+        return [frontend_url] if frontend_url else []
 
     defaults = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:5174",
     ]
-    frontend_url = os.getenv("FRONTEND_URL", "").strip()
     if frontend_url and frontend_url not in defaults:
         defaults.append(frontend_url)
     return defaults
 
 
+def get_cors_origins() -> list[str]:
+    """Return CORS origins from the current runtime environment."""
+    return _build_cors_origins()
+
+
 API_HOST = os.getenv("API_HOST", "0.0.0.0").strip() or "0.0.0.0"
 API_PORT = _env_int("API_PORT", 8000)
-CORS_ORIGINS = _build_cors_origins()
+CORS_ORIGINS = get_cors_origins()
 
 # Upload limitleri (5GB)
 UPLOAD_MAX_FILE_SIZE = _env_int("UPLOAD_MAX_FILE_SIZE", 5 * 1024 * 1024 * 1024)

@@ -1,0 +1,8 @@
+# Cloudflare Pages copies this file to the deployment output.
+/*
+  Strict-Transport-Security: max-age=31536000
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' https://challenges.cloudflare.com https://*.clerk.accounts.dev https://*.clerk.com https://*.protect.clerk.com https://*.iyzipay.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://img.clerk.com https://*.clerk.com; font-src 'self' data:; connect-src 'self' https://challenges.cloudflare.com https://*.clerk.accounts.dev https://*.clerk.com https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.protect.clerk.com https://*.iyzipay.com; frame-src https://challenges.cloudflare.com https://*.protect.clerk.com https://*.iyzipay.com; media-src 'self' blob: https://*.r2.cloudflarestorage.com; worker-src 'self' blob:; form-action 'self' https://*.iyzipay.com; upgrade-insecure-requests
