@@ -76,6 +76,7 @@ def test_financial_and_provider_idempotency_is_enforced_by_unique_constraints() 
     assert frozenset({"storage_key"}) in _unique_column_sets("assets")
     assert frozenset({"idempotency_key_hash"}) in _unique_column_sets("billing_checkout_sessions")
     assert frozenset({"provider_token_hash"}) in _unique_column_sets("billing_checkout_sessions")
+    assert frozenset({"user_id", "idempotency_key"}) in _unique_column_sets("jobs")
 
 
 def test_ownership_and_billing_foreign_keys_cannot_be_bypassed() -> None:

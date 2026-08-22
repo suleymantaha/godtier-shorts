@@ -36,7 +36,7 @@ from backend.api.server import create_app
 paths = set(create_app().openapi()["paths"])
 assert "/health/live" in paths
 assert "/health/ready" in paths
-assert "/api/start-job" not in paths
+assert "/api/start-job" in paths
 """
     env = os.environ.copy()
     env["APP_ENV"] = "development"

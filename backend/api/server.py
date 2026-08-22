@@ -146,6 +146,11 @@ def create_app() -> FastAPI:
     app.include_router(uploads.router)
     app.include_router(health.router)
 
+    if WORKER_MODE == "api":
+        from backend.api.routes import production_jobs
+
+        app.include_router(production_jobs.router)
+
     # Mevcut lokal GPU akislarini yalniz local modda yukle. Production API
     # control-plane, queue/worker siniri kurulmadan GPU runtime import etmez.
     if WORKER_MODE == "local":
