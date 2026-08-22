@@ -17,6 +17,7 @@ from backend.services.billing.webhook_service import (
     WebhookPayloadError,
     WebhookSignatureError,
 )
+from backend.observability import emit_alert
 
 
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
@@ -51,5 +52,6 @@ async def iyzico_subscription_webhook(
     except (WebhookPayloadError, WebhookConflictError, ValueError) as exc:
         raise HTTPException(status_code=400, detail="Invalid webhook") from exc
     except (WebhookError, IyzicoError) as exc:
+        emit_alert("payment_webhook_failure", provider="iyzico")
         raise HTTPException(status_code=503, detail="Webhook processing unavailable") from exc
     return {"received": True, "processed": result.processed}

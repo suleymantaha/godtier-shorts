@@ -44,6 +44,7 @@ def test_requirements_cover_production_runtime_dependencies() -> None:
         "asyncpg",
         "boto3",
         "redis",
+        "sentry-sdk",
         "sqlalchemy",
     } <= requirement_names
 
@@ -57,6 +58,7 @@ def test_api_requirements_keep_gpu_packages_out_of_control_plane() -> None:
         "asyncpg",
         "boto3",
         "redis",
+        "sentry-sdk",
         "sqlalchemy",
     } <= requirement_names
     assert {

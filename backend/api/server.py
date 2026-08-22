@@ -31,17 +31,15 @@ from backend.config import (
     get_cors_origins,
 )
 from backend.runtime_validation import validate_runtime_configuration
+from backend.observability import (
+    build_production_readiness_checker,
+    configure_error_reporting,
+    configure_logging,
+    run_operational_monitor,
+)
 from backend.services.social.crypto import validate_social_security_configuration
 from backend.services.social.scheduler import get_social_scheduler
 from backend.system_validation import validate_accelerator_support_configuration
-
-# Loglama
-logger.add(
-    str(LOGS_DIR / "api_server_{time:YYYY-MM-DD}.log"),
-    rotation="50 MB",
-    retention="10 days",
-    level="DEBUG",
-)
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,120}$")
 PRODUCTION_API_CSP = (
@@ -76,7 +74,11 @@ async def lifespan(app: FastAPI):
     """Uygulama yaşam döngüsü yönetimi."""
     # Startup
     app.state.ready = False
+    app_env = os.getenv("APP_ENV", "development").strip().lower()
+    production = app_env == "production"
+    configure_logging(app_env, LOGS_DIR)
     validate_runtime_configuration()
+    configure_error_reporting()
     validate_accelerator_support_configuration()
     validate_auth_configuration()
     validate_social_security_configuration()
@@ -102,11 +104,20 @@ async def lifespan(app: FastAPI):
     
     logger.info("🚀 Uygulama başlatıldı.")
 
+    if production:
+        app.state.readiness_checker = build_production_readiness_checker()
+    monitor_stop = asyncio.Event()
+    monitor_task = None
+    if production and WORKER_MODE == "api":
+        monitor_task = asyncio.create_task(run_operational_monitor(monitor_stop))
     app.state.ready = True
     yield  # App runs here
 
     # Shutdown
     app.state.ready = False
+    if monitor_task is not None:
+        monitor_stop.set()
+        await monitor_task
     await social_scheduler.stop()
     await manager.stop_cleanup_task()
     logger.info("👋 Uygulama kapatılıyor...")

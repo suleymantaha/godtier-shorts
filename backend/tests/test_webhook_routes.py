@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from backend.api.routes import webhooks
 from backend.services.billing.webhook_service import (
+    WebhookError,
     WebhookResult,
     WebhookSignatureError,
 )
@@ -22,14 +23,17 @@ PAYLOAD = {
 
 
 class FakeWebhookService:
-    def __init__(self, *, reject: bool = False) -> None:
+    def __init__(self, *, reject: bool = False, unavailable: bool = False) -> None:
         self.reject = reject
+        self.unavailable = unavailable
         self.calls = 0
 
     async def handle(self, payload, signature: str) -> WebhookResult:
         self.calls += 1
         if self.reject:
             raise WebhookSignatureError("iyzico webhook imzasi gecersiz")
+        if self.unavailable:
+            raise WebhookError("provider secret must not be logged")
         return WebhookResult(processed=True)
 
 
@@ -65,3 +69,17 @@ def test_valid_webhook_returns_2xx_acknowledgement() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"received": True, "processed": True}
+
+
+def test_webhook_processing_failure_emits_sanitized_operational_alert(monkeypatch) -> None:
+    alerts = []
+    monkeypatch.setattr(webhooks, "emit_alert", lambda code, **context: alerts.append((code, context)))
+
+    response = _client(FakeWebhookService(unavailable=True)).post(
+        "/api/webhooks/iyzico/subscription",
+        json=PAYLOAD,
+        headers={"X-IYZ-SIGNATURE-V3": "c" * 64},
+    )
+
+    assert response.status_code == 503
+    assert alerts == [("payment_webhook_failure", {"provider": "iyzico"})]
