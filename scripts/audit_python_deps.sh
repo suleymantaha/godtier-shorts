@@ -13,7 +13,7 @@ fi
 IGNORE_ARGS=()
 while read -r line; do
   line="${line%%#*}"
-  line="${line// /}"
+  line="${line//[[:space:]]/}"
   [[ -n "$line" ]] && IGNORE_ARGS+=(--ignore-vuln "$line")
 done < .pip-audit-ignore
 
