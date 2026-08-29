@@ -48,6 +48,17 @@ geliştirmede kullanılır. Bu kural rollback'i mümkün kılar: yeni şema eski
 image ile de çalışabildiği için health check başarısız olduğunda uygulama
 geri alınabilir, veritabanı geri alınmaz.
 
+### Bağımlılık audit'i ve istisna listesi
+
+`scripts/audit_python_deps.sh`, `requirements.lock` üzerinde `pip-audit`
+çalıştırır ve `.pip-audit-ignore` dosyasındaki advisory ID'lerini `--ignore-vuln`
+olarak geçer. Bu dosyaya **yalnız upstream fix'i olmayan** advisory'ler
+eklenebilir; her satır gerekçesiyle birlikte yorumlanmalıdır. Fix yayınlandığında
+satır silinir, tarih ötelenmez.
+
+Frontend tarafında `npm audit --audit-level=high` bloklayıcıdır ve istisna
+mekanizması yoktur.
+
 ### Commit'lenmiş secret taraması
 
 `scripts/check_committed_secrets.py`, `git ls-files` çıktısındaki metin
