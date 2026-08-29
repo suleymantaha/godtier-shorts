@@ -7,7 +7,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postiz-user
-      POSTGRES_PASSWORD: postiz-password-secure
+      POSTGRES_PASSWORD: postiz-password-secure  # pragma: allowlist secret (local self-hosted dev stack only)
       POSTGRES_DB: postiz-db
     volumes:
       - postiz-db-data:/var/lib/postgresql/data
@@ -43,7 +43,7 @@ services:
     environment:
       MAIN_URL: "http://localhost:4007"
       NEXT_PUBLIC_BACKEND_URL: "http://localhost:4007/api"
-      JWT_SECRET: "postiz-godtier-shorts-jwt-secret-key-9f8e"
+      JWT_SECRET: "postiz-godtier-shorts-jwt-secret-key-9f8e"  # pragma: allowlist secret (local self-hosted dev stack only)
       DATABASE_URL: "postgresql://postiz-user:postiz-password-secure@postiz-postgres:5432/postiz-db"
       REDIS_URL: "redis://postiz-redis:6379"
       FRONTEND_URL: "http://localhost:4007"

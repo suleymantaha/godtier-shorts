@@ -2,11 +2,12 @@
 
 This file is the canonical handoff memory for AI work in this repository.
 
-Last Updated: 2026-03-30
+Last Updated: 2026-08-29
 
 ## Current Objective
 
-- Switch the machine-local auth setup from temporary static tokens to the real Clerk flow.
+- Execute `docs/superpowers/plans/2026-08-20-godtier-shorts-production-v1.md` task by task.
+- Task 23 (CI/CD) is delivered; Task 24 (cloud deployment) is next, then Task 25 (launch E2E acceptance suite).
 
 ## Current State
 
@@ -20,6 +21,9 @@ Last Updated: 2026-03-30
 - The temporary frontend static-dev auth fallback has been removed; the app now expects Clerk again.
 - Backend is responding on `http://127.0.0.1:8000/docs`.
 - Frontend dev server is responding on `http://127.0.0.1:5173`.
+- Plan Tasks 1-23 are delivered; the authoritative mapping lives in the plan's `Delivery Status` table.
+- CI gates: `Verify` (tests, security/static, API image build, GPU image build smoke) and `Deploy` (GHCR publish + release), documented in `docs/operations/ci-cd-and-deployment.md`.
+- `compose.production.yml` accepts `API_IMAGE` / `GPU_IMAGE` so deploys pin immutable sha tags.
 
 ## Decisions In Force
 
@@ -31,9 +35,11 @@ Last Updated: 2026-03-30
 
 ## Open Work / Next Steps
 
-1. Sign into the frontend once and verify browser-issued Clerk JWTs contain `aud=godtier-shorts-api` and non-empty `roles`.
-2. Remove or rotate any Clerk secrets that were exposed during setup discussion.
-3. If `.cursor/` should stay behaviorally identical to `.agents/`, mirror the same Windows-focused guidance there as a follow-up.
+1. Task 24 — cloud deployment: provision the CPU VPS, Cloudflare, R2 and RunPod, then set the `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_DIR` repository secrets so the `Deploy` workflow stops skipping its release step.
+2. Task 25 — launch E2E acceptance suite.
+3. Verify the `docker-gpu` CI job on a real runner; the CUDA image build has not been exercised outside GitHub Actions.
+4. Parametrize the hardcoded local credentials in `docker/postiz/docker-compose.yml`; they are currently allowlisted for the secret scan.
+5. Sign into the frontend once and verify browser-issued Clerk JWTs contain `aud=godtier-shorts-api` and non-empty `roles`.
 
 ## Validation Status
 
@@ -59,6 +65,16 @@ Last Updated: 2026-03-30
 - `docs/operations/ai-session-exit-protocol.md`
 
 ## Session Log
+
+### 2026-08-29
+
+- Delivered Task 23 (CI/CD) from the production v1 master plan.
+- Extended `.github/workflows/verify.yml` with `security`, `docker-api` and `docker-gpu` jobs so every PR runs dependency audits, static gates and both production image builds without needing a GPU runner.
+- Added `.github/workflows/deploy.yml`: a `workflow_run` gate that publishes both images to GHCR under an immutable head-sha tag and releases the CPU control plane only after `Verify` succeeds on `main`.
+- Added `scripts/deploy_production.sh` (backup -> alembic upgrade -> release -> health check -> image rollback) and wired `API_IMAGE` / `GPU_IMAGE` into `compose.production.yml`.
+- Added `scripts/check_migration_safety.py` (destructive `upgrade()` ban) and `scripts/check_committed_secrets.py`, and wired both into `scripts/verify.sh`.
+- Added `backend/tests/test_ci_pipeline_contract.py` covering the PR gate, deploy gate, deploy-script ordering and the destructive-migration ban.
+- Documented the pipeline in `docs/operations/ci-cd-and-deployment.md` and added a `Delivery Status` table to the master plan.
 
 ### 2026-03-29
 
