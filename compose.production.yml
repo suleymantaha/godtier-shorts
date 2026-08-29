@@ -2,6 +2,7 @@ name: godtier-shorts-production
 
 services:
   api:
+    image: ${API_IMAGE:-godtier-shorts-api:local}
     build:
       context: .
       dockerfile: Dockerfile.api
@@ -80,6 +81,7 @@ services:
 
   gpu-worker:
     profiles: ["gpu"]
+    image: ${GPU_IMAGE:-godtier-shorts-gpu:local}
     build:
       context: .
       dockerfile: Dockerfile.gpu

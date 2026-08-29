@@ -8,6 +8,7 @@ Ana proje: [README.md](../README.md)
 
 ## Operasyon
 
+- [CI/CD ve Production Deploy](./operations/ci-cd-and-deployment.md)
 - [AI Session Exit Protocol](./operations/ai-session-exit-protocol.md)
 
 ## Sayfalar (UI)

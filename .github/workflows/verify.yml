@@ -20,7 +20,7 @@ jobs:
         env:
           POSTGRES_DB: godtier_test
           POSTGRES_USER: godtier_test
-          POSTGRES_PASSWORD: task2-test-password
+          POSTGRES_PASSWORD: task2-test-password  # pragma: allowlist secret
         ports:
           - 5432:5432
         options: >-
@@ -56,3 +56,99 @@ jobs:
 
       - name: Run repository verification gate
         run: bash scripts/verify.sh
+
+  security:
+    name: Security and static checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install audit tooling
+        run: python -m pip install pip-audit
+
+      - name: Audit locked Python dependencies
+        run: bash scripts/audit_python_deps.sh
+
+      - name: Audit frontend dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+      - name: Reject destructive schema migrations
+        run: python scripts/check_migration_safety.py
+
+      - name: Scan tracked files for committed secrets
+        run: python scripts/check_committed_secrets.py
+
+  docker-api:
+    name: Build API image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build CPU control-plane image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.api
+          load: true
+          tags: godtier-shorts-api:ci
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+      - name: Assert the control plane image stays CPU-only
+        run: |
+          docker run --rm --entrypoint python godtier-shorts-api:ci -c "
+          import importlib.util, alembic, uvicorn
+          assert importlib.util.find_spec('torch') is None, 'GPU packages leaked into the API image'
+          assert importlib.util.find_spec('ultralytics') is None, 'GPU packages leaked into the API image'
+          print('api image ok')
+          "
+
+  docker-gpu:
+    name: Build GPU worker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Free runner disk space for the CUDA image
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo rm -rf /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          df -h /
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build GPU worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.gpu
+          load: true
+          tags: godtier-shorts-gpu:ci
+          cache-from: type=gha,scope=gpu
+          cache-to: type=gha,scope=gpu,mode=max
