@@ -11,7 +11,7 @@ from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.rate_limit import enforce_rate_limit, get_rate_limiter
@@ -39,6 +39,7 @@ from backend.services.billing.pricing import JobPricingRequest, estimate_job_cos
 from backend.services.billing.subscription_service import paid_entitlement_is_active
 from backend.services.queue.client import ArqQueueClient
 from backend.services.queue.job_service import (
+    ActiveJobLimitReached,
     DistributedJobService,
     LedgerCreditReservations,
     SqlAlchemyJobRepository,
@@ -141,16 +142,6 @@ class ProductionJobGateway:
         ):
             raise HTTPException(status_code=402, detail="Paid entitlement required")
         _, plan = row
-        active_jobs = await self._session.scalar(
-            select(func.count())
-            .select_from(Job)
-            .where(
-                Job.user_id == user_id,
-                Job.status.in_([JobStatus.QUEUED, JobStatus.PROCESSING]),
-            )
-        )
-        if int(active_jobs or 0) >= plan.max_active_jobs:
-            raise HTTPException(status_code=429, detail="Active job limit reached")
         estimate = estimate_job_cost(
             JobPricingRequest(
                 job_type=JobType.FULL_RENDER,
@@ -162,16 +153,20 @@ class ProductionJobGateway:
             ),
             plan,
         )
-        return await DistributedJobService(
-            SqlAlchemyJobRepository(), LedgerCreditReservations(), self._queue
-        ).submit(
-            user_id=user_id,
-            project_id=project_id,
-            job_type=JobType.FULL_RENDER.value,
-            request=request_data,
-            estimated_credits=estimate.wallet_credits,
-            idempotency_key=idempotency_key,
-        )
+        try:
+            return await DistributedJobService(
+                SqlAlchemyJobRepository(), LedgerCreditReservations(), self._queue
+            ).submit(
+                user_id=user_id,
+                project_id=project_id,
+                job_type=JobType.FULL_RENDER.value,
+                request=request_data,
+                estimated_credits=estimate.wallet_credits,
+                idempotency_key=idempotency_key,
+                max_active_jobs=plan.max_active_jobs,
+            )
+        except ActiveJobLimitReached as exc:
+            raise HTTPException(status_code=429, detail=str(exc)) from exc
 
     async def cancel(self, *, user_id: UUID, job_id: UUID) -> str:
         job = await self._session.scalar(

@@ -15,9 +15,9 @@ RUN apt-get update \
 RUN groupadd --system godtier \
     && useradd --system --gid godtier --home-dir /app godtier
 
-COPY requirements-api.txt ./requirements-api.txt
+COPY requirements-api.lock ./requirements-api.lock
 RUN python -m pip install --upgrade pip \
-    && python -m pip install -r requirements-api.txt
+    && python -m pip install -r requirements-api.lock
 
 COPY backend ./backend
 COPY alembic.ini ./alembic.ini

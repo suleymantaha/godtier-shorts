@@ -6,6 +6,17 @@ import { accountApi } from '../api/client';
 import { isAppError } from '../api/errors';
 import { clearClientAccountState, hardReloadPage } from '../auth/accountCleanup';
 import { tSafe } from '../i18n';
+import type { PendingAccountDeletionSummary } from '../types';
+
+function resolvePendingMessage(summary: PendingAccountDeletionSummary): string {
+  if (summary.reason === 'subscription_cancellation_required') {
+    return tSafe('accountDeletion.pendingSubscription');
+  }
+  if (summary.reason === 'upload_url_expiry' && typeof summary.retry_after_seconds === 'number') {
+    return tSafe('accountDeletion.pendingUpload', { seconds: summary.retry_after_seconds });
+  }
+  return tSafe('accountDeletion.pending');
+}
 
 function resolveErrorMessage(error: unknown): string {
   if (isAppError(error)) {
@@ -22,6 +33,7 @@ export function AccountDeletionCard() {
   const { user } = useUser();
   const [confirmation, setConfirmation] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isPending, setIsPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTone, setMessageTone] = useState<'error' | 'warning' | null>(null);
 
@@ -37,7 +49,15 @@ export function AccountDeletionCard() {
     setMessageTone(null);
 
     try {
-      await accountApi.deleteMyData('DELETE');
+      const response = await accountApi.deleteMyData('DELETE');
+      if (response.status !== 'purged') {
+        setIsPending(true);
+        setMessage(response.status === 'deletion_pending'
+          ? resolvePendingMessage(response.summary) : t('accountDeletion.genericError'));
+        setMessageTone('warning');
+        setIsDeleting(false);
+        return;
+      }
     } catch (error) {
       setMessage(resolveErrorMessage(error));
       setMessageTone('error');
@@ -85,7 +105,7 @@ export function AccountDeletionCard() {
             onClick={handleDeleteAccount}
             type="button"
           >
-            {isDeleting ? t('accountDeletion.deleting') : t('accountDeletion.action')}
+            {isDeleting ? t('accountDeletion.deleting') : t(isPending ? 'accountDeletion.retry' : 'accountDeletion.action')}
           </button>
           {message ? (
             <p

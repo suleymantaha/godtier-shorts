@@ -33,6 +33,7 @@ torch>=2.13.0
 torchvision>=0.28.0
 ultralytics>=8.0.0
 faster-whisper>=1.0.0
+av>=11,<19  # faster-whisper 1.2.1 uses av.open(metadata_errors), removed in PyAV 19
 huggingface-hub>=0.23.0
 lap>=0.5.12
 

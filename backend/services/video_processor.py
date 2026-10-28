@@ -28,7 +28,7 @@ from ultralytics import YOLO
 
 from backend.config import LOGS_DIR, TEMP_DIR, YOLO_MODEL_PATH
 from backend.core.external_tools import ffmpeg as resolve_ffmpeg
-from backend.core.render_contracts import ensure_valid_requested_layout
+from backend.core.render_contracts import ensure_valid_requested_layout, validate_source_window
 from backend.core.render_quality import extract_media_stream_metrics, probe_media
 from backend.services.diarization import DiarizationEntry, build_diarization_index, speaker_at
 from backend.services.subtitle_styles import (
@@ -580,7 +580,7 @@ class VideoProcessor:
             input_video,
             "-t",
             str(duration),
-            "-vsync",
+            "-fps_mode",
             "cfr",
             "-r",
             f"{source_fps:.6f}",
@@ -663,6 +663,30 @@ class VideoProcessor:
         x1 = min(max(0, x1), max_x1)
         x2 = x1 + crop_width
         return x1, x2
+
+    @staticmethod
+    def _split_crop_dimensions(
+        frame_width: int, frame_height: int, *, center_distance: float | None = None
+    ) -> tuple[int, int]:
+        """Fit a split pane to the observed distance between tracked subjects."""
+        if frame_width <= 0 or frame_height <= 0:
+            return 0, 0
+        panel_ratio = LOGICAL_CANVAS_WIDTH / SPLIT_PANEL_HEIGHT
+        separation_limit = int(center_distance * 0.88) if center_distance and center_distance > 0 else frame_width // 2
+        crop_width = min(frame_width, max(1, separation_limit), max(1, int(frame_height * panel_ratio)))
+        crop_height = min(frame_height, max(1, round(crop_width / panel_ratio)))
+        return crop_width, crop_height
+
+    @staticmethod
+    def _split_crop_vertical_bounds(
+        frame_height: int, crop_height: int, *, person_box: tuple[float, float, float, float] | None
+    ) -> tuple[int, int]:
+        """Keep the detected head inside the split crop when it sits high in frame."""
+        top = (frame_height - crop_height) // 2
+        if person_box is not None:
+            top = min(top, max(0, int(person_box[1] - crop_height * 0.08)))
+        top = max(0, min(top, frame_height - crop_height))
+        return top, top + crop_height
 
     @staticmethod
     def _resize_for_detection(frame: np.ndarray) -> tuple[np.ndarray, float, float]:
@@ -1571,6 +1595,7 @@ class VideoProcessor:
         duration = end_time - start_time
         source_probe = probe_media(input_video)
         source_metrics = extract_media_stream_metrics(source_probe)
+        validate_source_window(start_time, end_time, float(source_metrics.get("video_duration") or source_metrics.get("duration") or 0.0))
         if require_audio and not source_metrics["has_audio"]:
             raise RuntimeError("Audio stream required for this render but source video has no audio")
 
@@ -1678,7 +1703,7 @@ class VideoProcessor:
                         str(orig_fps),
                         "-i",
                         "-",
-                        "-vsync",
+                        "-fps_mode",
                         "cfr",
                         "-r",
                         str(orig_fps),
@@ -1696,9 +1721,12 @@ class VideoProcessor:
                 stdin: io.RawIOBase = ffmpeg_proc.stdin  # type: ignore[assignment]
 
                 if layout == "split":
-                    src_crop_w = min(orig_w, max(1, int(orig_h * (target_w / split_panel_h))))
+                    initial_separation = abs(initial_secondary_cx - initial_primary_cx) if initial_slot_centers is not None else None
+                    src_crop_w, src_crop_h = self._split_crop_dimensions(orig_w, orig_h, center_distance=initial_separation)
+                    split_geometry_calibrated = initial_slot_centers is not None
                 else:
                     src_crop_w = min(orig_w, max(1, int(orig_h * (target_w / target_h))))
+                    src_crop_h = orig_h
 
                 while True:
                     if cancel_event is not None and cancel_event.is_set():
@@ -1714,6 +1742,8 @@ class VideoProcessor:
                     previous_frame = frame
 
                     if cut_confidence >= HARD_CUT_THRESHOLD:
+                        if layout == "split":
+                            split_geometry_calibrated = False
                         for state in (primary_slot, secondary_slot):
                             state.confirmed_track_id = None
                             state.last_confirmed_box = None
@@ -1774,6 +1804,12 @@ class VideoProcessor:
                         candidates = list(cached_candidates)
                         candidates = sorted(candidates, key=lambda candidate: candidate.center_x)
                         if layout == "split":
+                            if not split_geometry_calibrated and len(candidates) >= 2:
+                                src_crop_w, src_crop_h = self._split_crop_dimensions(
+                                    orig_w, orig_h,
+                                    center_distance=abs(candidates[1].center_x - candidates[0].center_x),
+                                )
+                                split_geometry_calibrated = True
                             if (
                                 manual_center_x is None
                                 and primary_slot.confirmed_track_id is None
@@ -1923,9 +1959,12 @@ class VideoProcessor:
                         current_cx1 = manual_center_x * orig_w
                         current_cx2 = current_cx1
 
-                    def get_crop(center_x: float) -> np.ndarray:
-                        x1, x2 = self._compute_crop_bounds(center_x, src_crop_w, orig_w)
-                        return frame[0:orig_h, x1:x2]
+                    def get_crop(
+                        bounds: tuple[int, int], person_box: tuple[float, float, float, float] | None
+                    ) -> np.ndarray:
+                        x1, x2 = bounds
+                        y1, y2 = self._split_crop_vertical_bounds(orig_h, src_crop_h, person_box=person_box) if layout == "split" else (0, orig_h)
+                        return frame[y1:y2, x1:x2]
 
                     primary_bounds = self._compute_crop_bounds(current_cx1, src_crop_w, orig_w)
                     secondary_bounds = self._compute_crop_bounds(current_cx2, src_crop_w, orig_w)
@@ -1953,14 +1992,14 @@ class VideoProcessor:
                             split_unsafe_frames += 1
 
                     if layout == "split" and manual_center_x is None:
-                        crop1 = get_crop(current_cx1)
-                        crop2 = get_crop(current_cx2)
+                        crop1 = get_crop(primary_bounds, primary_slot.last_confirmed_box)
+                        crop2 = get_crop(secondary_bounds, secondary_slot.last_confirmed_box)
                         res1 = cv2.resize(crop1, (target_w, split_panel_h))
                         res2 = cv2.resize(crop2, (target_w, split_panel_h))
                         gutter = np.zeros((split_gutter_h, target_w, 3), dtype=np.uint8)
                         final_frame = np.vstack((res1, gutter, res2))
                     else:
-                        crop = get_crop(current_cx1)
+                        crop = get_crop(primary_bounds, primary_slot.last_confirmed_box)
                         final_frame = cv2.resize(crop, (target_w, target_h))
 
                     try:
@@ -2273,7 +2312,6 @@ class VideoProcessor:
                 reverse=True,
             )
             speaker_count_peak = max(speaker_count_peak, len(candidates), len(centers))
-            crop_width = min(frame_width, max(1, int(frame_height * (LOGICAL_CANVAS_WIDTH / SPLIT_PANEL_HEIGHT)))) if frame_width > 0 and frame_height > 0 else 0
             pair = []
             best_score = -1.0
             for i in range(len(candidates)):
@@ -2286,6 +2324,8 @@ class VideoProcessor:
                             pair = sorted([candidates[i], candidates[j]], key=lambda c: c.center_x)
             if not pair:
                 pair = sorted(candidates[:2], key=lambda c: c.center_x)
+            pair_separation = abs(pair[1].center_x - pair[0].center_x) if len(pair) >= 2 else None
+            crop_width, _crop_height = self._split_crop_dimensions(frame_width, frame_height, center_distance=pair_separation)
             edge_margin_ratios = [
                 self._split_crop_margin_ratio(candidate, frame_width=frame_width, crop_width=crop_width)
                 for candidate in pair
@@ -2608,9 +2648,35 @@ class VideoProcessor:
         cancel_event: threading.Event | None = None,
         require_audio: bool = False,
     ) -> dict:
+        """Publish only a validated, complete cut; preserve old output on failure."""
+        output_stem, output_ext = os.path.splitext(output_filename)
+        staged_output = f"{output_stem}_{uuid.uuid4().hex}_cut{output_ext}"
+        try:
+            report = self._cut_segment_only_to_path(
+                input_video, start_time, end_time, staged_output,
+                cancel_event=cancel_event, require_audio=require_audio,
+            )
+            if cancel_event is not None and cancel_event.is_set():
+                raise RuntimeError("Job cancelled by user")
+            os.replace(staged_output, output_filename)
+            return report
+        finally:
+            with contextlib.suppress(FileNotFoundError):
+                os.remove(staged_output)
+
+    def _cut_segment_only_to_path(
+        self,
+        input_video: str,
+        start_time: float,
+        end_time: float,
+        output_filename: str,
+        cancel_event: threading.Event | None = None,
+        require_audio: bool = False,
+    ) -> dict:
         duration = end_time - start_time
         logger.info("✂️ Zaman kesimi: {} - {} sn (orijinal boyut) → {}", start_time, end_time, output_filename)
         source_metrics = extract_media_stream_metrics(probe_media(input_video))
+        validate_source_window(start_time, end_time, float(source_metrics.get("video_duration") or source_metrics.get("duration") or 0.0))
         if require_audio and not source_metrics["has_audio"]:
             raise RuntimeError("Audio stream required for this render but source video has no audio")
 
@@ -2624,7 +2690,7 @@ class VideoProcessor:
             input_video,
             "-t",
             str(duration),
-            "-vsync",
+            "-fps_mode",
             "cfr",
             "-r",
             f"{source_fps:.6f}",
@@ -2650,7 +2716,7 @@ class VideoProcessor:
             input_video,
             "-t",
             str(duration),
-            "-vsync",
+            "-fps_mode",
             "cfr",
             "-r",
             f"{source_fps:.6f}",
@@ -2678,7 +2744,12 @@ class VideoProcessor:
             else:
                 raise RuntimeError(f"Video kesilemedi: {stderr[-300:]}")
 
-        merged_metrics = extract_media_stream_metrics(probe_media(output_filename))
+        merged_probe = probe_media(output_filename)
+        merged_metrics = extract_media_stream_metrics(merged_probe)
+        if not any(stream.get("codec_type") == "video" for stream in merged_probe.get("streams", [])):
+            raise RuntimeError("Video cut produced no video frames")
+        if require_audio and not merged_metrics["has_audio"]:
+            raise RuntimeError("Audio stream required but cut output has no audio")
         debug_timing = {
             "source_fps": round(float(source_metrics.get("fps") or 0.0), 4),
             "normalized_fps": round(float(merged_metrics.get("fps") or 0.0), 4),

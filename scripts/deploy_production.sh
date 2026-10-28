@@ -24,10 +24,11 @@ COMPOSE=(docker compose -f compose.production.yml --env-file .env)
 
 cd "$DEPLOY_DIR"
 
-# shellcheck disable=SC1091
-set -a
-source .env
-set +a
+# A stale server compose file could silently ignore the verified image tag.
+if ! API_IMAGE="$API_IMAGE" "${COMPOSE[@]}" config --images | grep -Fxq -- "$API_IMAGE"; then
+    echo "[deploy] compose.production.yml does not select the verified API image" >&2
+    exit 1
+fi
 
 PREVIOUS_API_IMAGE="$("${COMPOSE[@]}" images --quiet api 2>/dev/null || true)"
 echo "[deploy] previous api image: ${PREVIOUS_API_IMAGE:-<none>}"
@@ -37,7 +38,7 @@ mkdir -p "$BACKUP_DIR"
 BACKUP_FILE="$BACKUP_DIR/pre-deploy-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
 echo "[deploy] backing up database to $BACKUP_FILE"
 "${COMPOSE[@]}" exec -T postgres \
-    pg_dump --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
+    sh -c 'exec pg_dump --username "$POSTGRES_USER" --dbname "$POSTGRES_DB"' \
     | gzip > "$BACKUP_FILE"
 
 # 2. Pull the immutable images for this release.
@@ -69,9 +70,10 @@ rollback() {
 
 # 5. Health check the released control plane.
 echo "[deploy] waiting for /health/ready"
+HEALTH_ADDRESS="$("${COMPOSE[@]}" port api 8000)"
 for _ in $(seq 1 "$HEALTH_RETRIES"); do
     if curl --fail --silent --show-error \
-        "http://127.0.0.1:${API_PORT:-8000}/health/ready" >/dev/null 2>&1; then
+        "http://${HEALTH_ADDRESS}/health/ready" >/dev/null 2>&1; then
         echo "[deploy] release healthy: $API_IMAGE"
         exit 0
     fi

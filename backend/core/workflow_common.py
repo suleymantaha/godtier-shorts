@@ -47,10 +47,25 @@ def build_hook_slug(hook: str, *, max_length: int) -> str:
 
 
 async def run_blocking(func, /, *args, **kwargs):
-    """Run a blocking callable inline in tests, otherwise offload to a worker thread."""
+    """Keep the caller alive until an offloaded stage actually stops."""
     if os.getenv("PYTEST_CURRENT_TEST") or os.getenv("WORKFLOW_INLINE_BLOCKING") == "1":
         return func(*args, **kwargs)
-    return await asyncio.to_thread(partial(func, *args, **kwargs))
+    worker = asyncio.create_task(asyncio.to_thread(partial(func, *args, **kwargs)))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        # Cancelling a to_thread await does not stop its FFmpeg/model work.
+        # Keep GPU/temp-file ownership until the worker has really exited.
+        while not worker.done():
+            try:
+                await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                continue
+            except Exception:
+                break
+        if worker.done() and not worker.cancelled():
+            worker.exception()
+        raise
 
 
 def write_json_atomic(path: str | Path, payload: object, *, indent: int = 2) -> None:

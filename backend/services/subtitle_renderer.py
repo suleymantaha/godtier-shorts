@@ -366,7 +366,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             if not lines:
                 continue
             font_scale = font_scales.get(index, 1.0)
-            line_widths = [self._estimate_line_width_ratio(line, font_scale=font_scale) for line in lines]
+            line_widths = [
+                self._estimate_line_width_ratio(line, font_scale=font_scale * self._animation_width_scale())
+                for line in lines
+            ]
             widest = max(line_widths)
             max_width_ratio = max(max_width_ratio, widest)
             if widest > 1.0:
@@ -407,6 +410,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if self.style.high_contrast or self.style.large_text or int(self.style.font_weight) >= 800:
             estimated_width *= 1.05
         return estimated_width / max(self.spec.safe_area.max_text_width, 1)
+
+    def _animation_width_scale(self) -> float:
+        if self.style.animation_type in {"none", "fade", "typewriter"}:
+            return 1.0
+        return max(100, self.spec.animation.base_scale_pct, self.spec.animation.emphasis_scale_pct) / 100
 
     @staticmethod
     def _chunk_lines(chunk: list[dict], *, line_break_after: int | None) -> list[list[dict]]:
@@ -452,11 +460,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         min_scale: float = SPLIT_MIN_FONT_SCALE,
     ) -> float:
         lines = self._chunk_lines(chunk, line_break_after=line_break_after)
-        widest = max((self._estimate_line_width_ratio(line) for line in lines if line), default=0.0)
+        peak_scale = self._animation_width_scale()
+        widest = max((self._estimate_line_width_ratio(line) for line in lines if line), default=0.0) * peak_scale
         if widest <= 1.0:
             return 1.0
         desired_scale = (1.0 / widest) * SPLIT_FONT_CLAMP_MARGIN
-        return round(min(1.0, max(min_scale, desired_scale)), 4)
+        # Keep the existing minimum size at the emphasis peak, reserving room
+        # in the base font for the animation rather than clipping enlarged text.
+        return round(min(1.0, max(min_scale / peak_scale, desired_scale)), 4)
 
     def _resolve_split_chunk_font_scales(
         self,
@@ -473,6 +484,16 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 line_break_after=line_breaks.get(index),
                 min_scale=SPLIT_MIN_FONT_SCALE,
             )
+            lines = self._chunk_lines(chunk, line_break_after=line_breaks.get(index))
+            if len(lines) > 1:
+                safe_area = self.spec.safe_area
+                # Top-aligned split captions must fit between their anchor and
+                # the lower panel, including stroke, shadow, and pop growth.
+                available_height = safe_area.top + safe_area.height - safe_area.anchor_y
+                effect_height = 2 * self.spec.outline_width + self.spec.shadow_depth + 2 * self.spec.blur
+                peak_height = self.spec.font_size * self.spec.line_height * len(lines) * self._animation_width_scale()
+                height_scale = max(28 / self.spec.font_size, (available_height - effect_height) / peak_height)
+                font_scale = min(font_scale, height_scale * SPLIT_FONT_CLAMP_MARGIN)
             if font_scale < 0.9999:
                 font_scales[index] = font_scale
         return font_scales

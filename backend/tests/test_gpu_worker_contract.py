@@ -88,3 +88,11 @@ def test_unexpected_failure_is_recorded_and_remains_observable() -> None:
 
     assert any(event[:2] == ("fail", "UNEXPECTED_WORKER_ERROR") for event in store.events)
     assert store.events[-1][0] == "release"
+
+
+def test_last_transient_attempt_fails_and_releases_reservation():
+    store = FakeStore()
+    async def runner(_request, _report): raise TransientJobError("r2 timeout")
+    asyncio.run(GpuJobWorker(store, FakePublisher(), runner).execute(uuid4(), retry_count=2))
+    assert any(event[:2] == ("fail", "RETRY_EXHAUSTED") for event in store.events)
+    assert store.events[-1][0] == "release"

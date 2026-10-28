@@ -76,6 +76,8 @@ class R2ObjectStore:
                     "Bucket": self._bucket_name,
                     "Key": storage_key,
                     "ContentType": normalized_type,
+                    "ContentLength": size_bytes,
+                    "IfNoneMatch": "*",
                 },
                 ExpiresIn=DEFAULT_UPLOAD_URL_EXPIRES_SECONDS,
             )
@@ -84,7 +86,7 @@ class R2ObjectStore:
         return PresignedUpload(
             url=url,
             storage_key=storage_key,
-            required_headers={"Content-Type": normalized_type},
+            required_headers={"Content-Type": normalized_type, "Content-Length": str(size_bytes), "If-None-Match": "*"},
             expires_seconds=DEFAULT_UPLOAD_URL_EXPIRES_SECONDS,
         )
 

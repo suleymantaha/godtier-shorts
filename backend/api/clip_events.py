@@ -20,28 +20,27 @@ class ApiClipEventPort(ClipEventPort):
     ) -> str | None:
         from backend.api.websocket import manager
 
-        resolved_job_id = job_id if job_id in manager.jobs else None
-        if resolved_job_id is None and subject:
-            active_jobs = [
-                (float(job.get("created_at") or 0.0), candidate_job_id)
-                for candidate_job_id, job in manager.jobs.items()
-                if str(job.get("subject") or "") == subject
-                and str(job.get("status") or "") in {"queued", "processing"}
-            ]
-            if active_jobs:
-                resolved_job_id = max(active_jobs)[1]
+        if job_id is not None:
+            job = manager.jobs.get(job_id)
+            if job is None:
+                return None
+            if subject and str(job.get("subject") or "") != subject:
+                return None
+            known_project = str(job.get("project_id") or "")
+            if known_project and known_project != project_id:
+                return None
+            return job_id
 
-        if resolved_job_id is None:
-            active_jobs = [
-                (float(job.get("created_at") or 0.0), candidate_job_id)
-                for candidate_job_id, job in manager.jobs.items()
-                if str(job.get("project_id") or "") == project_id
-                and str(job.get("status") or "") in {"queued", "processing"}
-            ]
-            if active_jobs:
-                resolved_job_id = max(active_jobs)[1]
-
-        return resolved_job_id
+        # A missing explicit ID is common in older workflows. Only infer a
+        # target when the active project/subject pair is unambiguous.
+        active_jobs = [
+            candidate_job_id
+            for candidate_job_id, job in manager.jobs.items()
+            if str(job.get("project_id") or "") == project_id
+            and (not subject or str(job.get("subject") or "") == subject)
+            and str(job.get("status") or "") in {"queued", "processing"}
+        ]
+        return active_jobs[0] if len(active_jobs) == 1 else None
 
     def broadcast_clip_ready(
         self,

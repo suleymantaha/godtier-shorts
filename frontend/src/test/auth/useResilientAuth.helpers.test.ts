@@ -67,6 +67,20 @@ describe('useResilientAuth helpers - authenticated states', () => {
 });
 
 describe('useResilientAuth helpers - fallback handling', () => {
+  it('keeps the signed-in shell accessible after whoami rejects a deleted backend user', () => {
+    expect(resolveResilientAuthState({
+      authError: createAppError('forbidden', 'deleted backend user', { status: 403 }),
+      backendRuntime: {
+        backendAuthStatus: 'paused', canUseProtectedRequests: false,
+        pauseReason: 'forbidden', tokenExpiresAt: null,
+      },
+      bootstrapTimedOut: false,
+      isLoaded: true,
+      isOnline: true,
+      isSignedIn: true,
+    })).toMatchObject({ canAccessApp: true, canUseBackend: false, status: 'authenticated' });
+  });
+
   it('returns error state when there is no usable fallback snapshot', () => {
     expect(resolveResilientAuthState({
       authError: createAppError('auth_provider_unavailable', 'auth down'),

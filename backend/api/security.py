@@ -218,16 +218,14 @@ def _decode_jwt(token: str, issuer: str, audience: str | list[str]) -> AuthConte
     jwks_client = _get_jwks_client(issuer, cache_ttl_seconds, timeout_seconds)
     try:
         signing_key = jwks_client.get_signing_key_from_jwt(token)
-        unverified = jwt.decode(token, options={"verify_signature": False})
-        verify_aud = bool(audience and "aud" in unverified)
         payload = jwt.decode(
             token,
             signing_key.key,
             algorithms=["RS256"],
             issuer=issuer,
-            audience=audience if verify_aud else None,
+            audience=audience,
             leeway=10,
-            options={"verify_aud": verify_aud},
+            options={"require": ["aud", "sub"]},
         )
     except ExpiredSignatureError as exc:
         raise ClerkTokenExpiredError("JWT token expired") from exc
@@ -238,7 +236,9 @@ def _decode_jwt(token: str, issuer: str, audience: str | list[str]) -> AuthConte
     except Exception as exc:
         raise ValueError(f"JWT verification failed: {exc}") from exc
 
-    subject = str(payload.get("sub") or "jwt-user")
+    subject = payload.get("sub")
+    if not isinstance(subject, str) or not subject.strip():
+        raise ValueError("JWT verification failed: subject missing or invalid")
     roles = _extract_roles(payload) or _default_clerk_roles()
     return AuthContext(
         subject=subject,
@@ -392,7 +392,12 @@ async def authenticate_request(
             "Kullanici kimligi su anda dogrulanamiyor",
         ) from exc
 
-    if identity.status is not UserStatus.ACTIVE:
+    deletion_retry = (
+        identity.status is UserStatus.DELETED
+        and request.method == "DELETE"
+        and request.url.path.rstrip("/") == "/api/account/me/data"
+    )
+    if identity.status is not UserStatus.ACTIVE and not deletion_retry:
         _security_log(request, event="auth_failed", reason=f"user_status={identity.status.value}")
         raise _auth_exception(
             status.HTTP_403_FORBIDDEN,

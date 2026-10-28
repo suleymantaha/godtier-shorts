@@ -6,6 +6,18 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
+
+@pytest.mark.parametrize("speaker", [None, "unknown", " UNKNOWN ", ""])
+def test_unknown_labels_do_not_skip_diarization_backfill(tmp_path: Path, speaker) -> None:
+    from backend.services import diarization
+
+    path = tmp_path / "transcript.json"
+    path.write_text(json.dumps([{"start": 0, "end": 1, "speaker": speaker,
+                                 "words": [{"start": 0, "end": 1, "speaker": speaker}]}]), encoding="utf-8")
+    assert diarization.transcript_has_speaker_labels(str(path)) is False
+
 
 
 def test_load_pipeline_reads_hf_token_at_call_time(monkeypatch) -> None:

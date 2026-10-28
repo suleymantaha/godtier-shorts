@@ -795,6 +795,10 @@ export const tr: TranslationSchema = {
     action: 'Hesabı sil',
     genericError: 'Hesap silme işlemi tamamlanamadı.',
     partialError: 'Uygulama verileri silindi, ancak hesap silme tamamlanamadı.',
+    pending: 'Silme işlemi beklemede. Verilerinizin tamamen kaldırıldığı henüz doğrulanmadı. Oturumunuzu açık tutun ve daha sonra veri silmeyi yeniden deneyin.',
+    pendingUpload: 'Mevcut yükleme bağlantılarının süresi dolana kadar silme işlemi beklemede. Yeniden denemeden önce en az {{seconds}} saniye bekleyin. Hesabınız silinmedi.',
+    pendingSubscription: 'Silme işlemi beklemede. Veri silmeyi yeniden denemeden önce etkin aboneliğinizi iptal edin. Hesabınız silinmedi.',
+    retry: 'Veri silmeyi yeniden dene',
   },
   previewPage: {
     eyebrow: 'Viral Tarama',

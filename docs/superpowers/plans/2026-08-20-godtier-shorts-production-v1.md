@@ -461,12 +461,12 @@ frontend/src/test/integration/billing-flow.test.tsx
 
 **Produces:** PostgreSQL/Redis/R2/iyzico/Turnstile config sözleşmesi ve CPU-only API container.
 
-- [x] SQLAlchemy, Alembic, asyncpg, redis, arq, boto3-compatible client ve iyzico HTTP client bağımlılıklarını ekle.
-- [x] `.env.example` içine `DATABASE_URL`, `REDIS_URL`, `R2_*`, `IYZICO_*`, `TURNSTILE_*`, `APP_ENV`, `WORKER_MODE` değişkenlerini ekle.
-- [x] `backend/config.py` içinde production validation ekle; prod'da eksik secret varsa fail-fast.
-- [x] CPU API image'ında Torch/YOLO model yüklemesinin startup'ı gereksiz yere GPU aramamasını garanti et.
-- [x] Docker healthcheck: `GET /health/live` ve `GET /health/ready`.
-- [x] Test: production config eksik secret ile başlamamalı; dev mod lokal çalışmaya devam etmeli.
+- [ ] SQLAlchemy, Alembic, asyncpg, redis, arq, boto3-compatible client ve iyzico HTTP client bağımlılıklarını ekle.
+- [ ] `.env.example` içine `DATABASE_URL`, `REDIS_URL`, `R2_*`, `IYZICO_*`, `TURNSTILE_*`, `APP_ENV`, `WORKER_MODE` değişkenlerini ekle.
+- [ ] `backend/config.py` içinde production validation ekle; prod'da eksik secret varsa fail-fast.
+- [ ] CPU API image'ında Torch/YOLO model yüklemesinin startup'ı gereksiz yere GPU aramamasını garanti et.
+- [ ] Docker healthcheck: `GET /health/live` ve `GET /health/ready`.
+- [ ] Test: production config eksik secret ile başlamamalı; dev mod lokal çalışmaya devam etmeli.
 
 **Commit:** `chore: add production runtime foundation`
 
@@ -476,11 +476,11 @@ frontend/src/test/integration/billing-flow.test.tsx
 
 **Produces:** `get_db_session()` async session factory ve ilk schema migration.
 
-- [x] Önce model constraints için failing tests yaz.
-- [x] UUID PK, unique webhook/payment/idempotency constraints ve FK'leri oluştur.
-- [x] İlk migration'ı oluştur ve boş DB'ye uygula.
-- [x] Migration downgrade/upgrade smoke test çalıştır.
-- [x] Lokal Docker Compose ile DB restart sonrası verinin kaldığını doğrula.
+- [ ] Önce model constraints için failing tests yaz.
+- [ ] UUID PK, unique webhook/payment/idempotency constraints ve FK'leri oluştur.
+- [ ] İlk migration'ı oluştur ve boş DB'ye uygula.
+- [ ] Migration downgrade/upgrade smoke test çalıştır.
+- [ ] Lokal Docker Compose ile DB restart sonrası verinin kaldığını doğrula.
 
 **Commit:** `feat: add postgres persistence model`
 
@@ -490,11 +490,11 @@ frontend/src/test/integration/billing-flow.test.tsx
 
 **Produces:** `get_or_create_user(clerk_subject)` ve DB user identity.
 
-- [x] Valid JWT -> internal `user_id` mapping testi.
-- [x] User A'nın User B project/job/asset endpoint'inden 404 aldığını test et.
-- [x] Admin/support/user role mapping ekle.
-- [x] Admin için step-up/MFA claim kontrolü ekle.
-- [x] Clerk bot protection dashboard ayarını launch checklist'e ekle.
+- [ ] Valid JWT -> internal `user_id` mapping testi.
+- [ ] User A'nın User B project/job/asset endpoint'inden 404 aldığını test et.
+- [ ] Admin/support/user role mapping ekle.
+- [ ] Admin için step-up/MFA claim kontrolü ekle.
+- [ ] Clerk bot protection dashboard ayarını launch checklist'e ekle.
 
 **Commit:** `feat: persist users and enforce ownership`
 
@@ -511,11 +511,11 @@ async def settle(user_id: UUID, job_id: UUID, actual_amount: int, idempotency_ke
 async def release(user_id: UUID, job_id: UUID, idempotency_key: str) -> None
 ```
 
-- [x] Aynı idempotency key iki kere balance değiştirmemeli.
-- [x] `reserve` DB transaction + row lock ile concurrent overspend'i engellemeli.
-- [x] 100 balance ile eşzamanlı iki `80` reservation'dan yalnız biri başarılı olmalı.
-- [x] Failed/cancelled job reservation release etmeli.
-- [x] Ledger satırları update/delete edilmemeli; düzeltmeler adjustment/refund satırı olmalı.
+- [ ] Aynı idempotency key iki kere balance değiştirmemeli.
+- [ ] `reserve` DB transaction + row lock ile concurrent overspend'i engellemeli.
+- [ ] 100 balance ile eşzamanlı iki `80` reservation'dan yalnız biri başarılı olmalı.
+- [ ] Failed/cancelled job reservation release etmeli.
+- [ ] Ledger satırları update/delete edilmemeli; düzeltmeler adjustment/refund satırı olmalı.
 
 **Commit:** `feat: add atomic credit ledger`
 

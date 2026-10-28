@@ -13,6 +13,7 @@ jobs:
     timeout-minutes: 45
     env:
       TEST_DATABASE_URL: postgresql+asyncpg://godtier_test:task2-test-password@127.0.0.1:5432/godtier_test
+      TEST_REDIS_URL: redis://127.0.0.1:6379/15
 
     services:
       postgres:
@@ -28,6 +29,15 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping | grep PONG"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Check out repository
@@ -38,7 +48,7 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: requirements.lock
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -47,8 +57,15 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Verify dependency locks
+        run: |
+          python -m pip install uv==0.12.22
+          python scripts/generate_requirements_lock.py
+          git ls-files --error-unmatch requirements.lock requirements-api.lock
+          git diff --exit-code -- requirements.lock requirements-api.lock
+
       - name: Install backend dependencies
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install -r requirements.lock
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -56,6 +73,19 @@ jobs:
 
       - name: Run repository verification gate
         run: bash scripts/verify.sh
+
+      - name: Enforce coverage thresholds
+        run: bash scripts/check_coverage.sh
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            coverage/backend/
+            frontend/coverage/
+          if-no-files-found: ignore
 
   security:
     name: Security and static checks

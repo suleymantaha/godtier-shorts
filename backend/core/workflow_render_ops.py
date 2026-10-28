@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from pathlib import Path
 
@@ -10,7 +11,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from backend.config import TEMP_DIR
-from backend.core.exceptions import RenderReviewRequiredError
+from backend.core.exceptions import InvalidInputError, RenderReviewRequiredError
 from backend.core.render_contracts import resolve_duration_validation_status
 from backend.core.workflow_artifacts import (
     SAFE_PUBLIC_LAYOUT_STATUSES,
@@ -26,6 +27,7 @@ from backend.core.workflow_artifacts import (
 )
 from backend.core.workflow_common import TempArtifactManager, build_hook_slug, run_blocking
 from backend.core.subtitle_timing import snap_segment_boundaries
+from backend.services.diarization import speaker_intervals
 
 if TYPE_CHECKING:
     from backend.core.workflow_runtime import SubtitleRenderPlan
@@ -389,8 +391,20 @@ async def run_cut_points_workflow(
     skip_subtitles: bool,
     cut_as_short: bool,
 ) -> list[str]:
-    if len(cut_points) < 2:
-        return []
+    if not isinstance(cut_points, list) or not 2 <= len(cut_points) <= 21:
+        raise InvalidInputError("Kesim noktaları 2 ile 21 sayı içermeli")
+    if any(isinstance(point, bool) or not isinstance(point, (int, float)) for point in cut_points):
+        raise InvalidInputError("Kesim noktaları yalnızca sayı içermeli")
+    try:
+        cut_points = [float(point) for point in cut_points]
+    except OverflowError as exc:
+        raise InvalidInputError("Kesim noktaları sonlu sayı olmalı") from exc
+    if any(not math.isfinite(point) for point in cut_points):
+        raise InvalidInputError("Kesim noktaları sonlu sayı olmalı")
+    if cut_points[0] < 0:
+        raise InvalidInputError("Kesim noktaları negatif olamaz")
+    if any(right <= left for left, right in zip(cut_points, cut_points[1:])):
+        raise InvalidInputError("Kesim noktaları artan sırada ve benzersiz olmalı")
 
     from backend.core.workflows_manual import ManualClipWorkflow
 
@@ -402,9 +416,6 @@ async def run_cut_points_workflow(
         ctx._check_cancelled()
         start_t = cut_points[index]
         end_t = cut_points[index + 1]
-        if end_t <= start_t:
-            continue
-
         clip_number = index + 1
         progress = 10 + int((index / total_segments) * 85)
         ctx._update_status(
@@ -711,9 +722,17 @@ def _analyze_speaker_dominance(
     start_time: float,
     end_time: float,
 ) -> tuple[float, int, float]:
-    """Analyze speaker dominance in the segment. Returns (dominant_ratio, unique_speaker_count, second_ratio)."""
+    """Return speaker ratios over all speech, retaining unknown time in the denominator."""
+    total_speaking_time = sum(
+        max(
+            0.0,
+            min(end_time, float(segment.get("end", 0.0)))
+            - max(start_time, float(segment.get("start", 0.0))),
+        )
+        for segment in transcript_source
+    )
     speaker_durations: dict[str, float] = {}
-    for segment in transcript_source:
+    for segment in speaker_intervals(transcript_source):
         seg_start = float(segment.get("start", 0.0))
         seg_end = float(segment.get("end", 0.0))
         if seg_end <= start_time or seg_start >= end_time:
@@ -723,11 +742,10 @@ def _analyze_speaker_dominance(
         overlap_end = min(end_time, seg_end)
         duration = max(0.0, overlap_end - overlap_start)
         
-        speaker = str(segment.get("speaker") or "SPEAKER_00")
+        speaker = segment["speaker"]
         speaker_durations[speaker] = speaker_durations.get(speaker, 0.0) + duration
         
-    total_speaking_time = sum(speaker_durations.values())
-    if total_speaking_time <= 0:
+    if total_speaking_time <= 0 or not speaker_durations:
         return 0.0, 0, 0.0
         
     sorted_durs = sorted(speaker_durations.values(), reverse=True)
@@ -767,7 +785,7 @@ def _resolve_segment_window(
             segment_start,
             segment_end,
         )
-        if speaker_count <= 1 or dominant_ratio >= 0.85 or second_ratio < 0.20:
+        if speaker_count > 0 and dominant_ratio >= 0.85:
             effective_layout = "single"
             logger.info("Dynamic monologue detected (ratio: {:.2f}, speakers: {}, second_ratio: {:.2f}), forcing 'single' layout.", dominant_ratio, speaker_count, second_ratio)
 
@@ -806,6 +824,16 @@ def _resolve_segment_window(
         validated_start,
         segment_end,
     )
+    # Snapping must not reintroduce the invisible frames that opening validation
+    # just removed. Keep the visibility floor when the nearest word starts earlier.
+    if segment_start < validated_start:
+        segment_start = validated_start
+        snap_report = {
+            **snap_report,
+            "snapped_start_time": segment_start,
+            "start_applied": False,
+            "boundary_snaps_applied": int(bool(snap_report.get("end_applied"))),
+        }
     render_plan = resolve_subtitle_render_plan(
         video_processor=video_processor,
         source_video=source_video,
@@ -823,6 +851,8 @@ def _resolve_segment_window(
         resolved_layout=render_plan.resolved_layout,
         manual_center_x=manual_center_x,
     )
+    if str(opening_report.get("layout_validation_status")) == "opening_subject_missing":
+        raise RuntimeError("Açılışta görünür subject bulunamadı.")
     return segment_start, segment_end, snap_report, render_plan, opening_report
 
 

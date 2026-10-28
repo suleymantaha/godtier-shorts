@@ -89,6 +89,11 @@ def test_deploy_runs_only_after_the_verify_gate_succeeds_on_main() -> None:
     assert "github.event.workflow_run.conclusion == 'success'" in guard
     assert "github.event.workflow_run.head_branch == 'main'" in guard
 
+    for job_name in ("publish-api", "publish-gpu"):
+        job_guard = workflow["jobs"][job_name]["if"]
+        assert "github.event.workflow_run.event == 'push'" in job_guard
+        assert "github.event.workflow_run.head_repository.full_name == github.repository" in job_guard
+
 
 def test_deploy_publishes_both_images_to_ghcr_with_immutable_sha_tags() -> None:
     rendered = yaml.safe_dump(_load_workflow(DEPLOY_WORKFLOW))
@@ -133,6 +138,21 @@ def test_deploy_script_backs_up_before_migrating_then_health_checks() -> None:
     health = script.index("/health/ready")
 
     assert backup < migrate < health
+
+
+def test_deploy_script_keeps_dotenv_values_out_of_the_shell() -> None:
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert "source .env" not in script
+    assert 'pg_dump --username "$POSTGRES_USER" --dbname "$POSTGRES_DB"' in script
+    assert 'port api 8000' in script
+
+
+def test_deploy_script_rejects_a_server_compose_without_the_release_image() -> None:
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert 'config --images' in script
+    assert 'grep -Fxq -- "$API_IMAGE"' in script
 
 
 def test_deploy_script_rolls_back_the_application_when_health_fails() -> None:

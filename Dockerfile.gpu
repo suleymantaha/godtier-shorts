@@ -26,10 +26,9 @@ RUN apt-get update \
 RUN groupadd --system godtier \
     && useradd --system --gid godtier --home-dir /app godtier
 
-COPY requirements.txt requirements.lock ./
+COPY requirements.lock ./
 RUN python -m pip install --upgrade pip \
-    && python -m pip install -r requirements.lock \
-    && python -m pip install -r requirements.txt
+    && python -m pip install -r requirements.lock
 
 RUN python -c "import ctranslate2, torch, ultralytics" \
     && ffmpeg -hide_banner -encoders 2>/dev/null | grep -q h264_nvenc

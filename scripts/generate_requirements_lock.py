@@ -1,44 +1,34 @@
 #!/usr/bin/env python3
-"""Pin direct requirements to the currently installed versions."""
+"""Resolve complete Linux/Python 3.13 dependency locks."""
 
 from __future__ import annotations
 
-from importlib.metadata import PackageNotFoundError, version
+import subprocess
+import sys
 from pathlib import Path
 
-from packaging.requirements import Requirement
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SOURCE = PROJECT_ROOT / "requirements.txt"
-TARGET = PROJECT_ROOT / "requirements.lock"
-
-
-def _pin_requirement(raw_line: str) -> str:
-    requirement = Requirement(raw_line)
-    package_name = requirement.name
-    try:
-        installed_version = version(package_name)
-    except PackageNotFoundError as exc:
-        raise RuntimeError(f"Package not installed for lock generation: {package_name}") from exc
-
-    extras = f"[{','.join(sorted(requirement.extras))}]" if requirement.extras else ""
-    marker = f"; {requirement.marker}" if requirement.marker else ""
-    return f"{package_name}{extras}=={installed_version}{marker}"
 
 
 def main() -> int:
-    lines: list[str] = []
-    for raw_line in SOURCE.read_text(encoding="utf-8").splitlines():
-        stripped = raw_line.strip()
-        if not stripped or stripped.startswith("#"):
-            lines.append(raw_line)
-            continue
-        lines.append(_pin_requirement(stripped))
-
-    TARGET.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"Wrote {TARGET.relative_to(PROJECT_ROOT)}")
+    for source, target in (
+        ("requirements.txt", "requirements.lock"),
+        ("requirements-api.txt", "requirements-api.lock"),
+    ):
+        try:
+            subprocess.run(
+                ["uv", "pip", "compile", source,
+                 "--python-version", "3.13",
+                 "--python-platform", "x86_64-unknown-linux-gnu",
+                 "--output-file", target, "--quiet"],
+                cwd=PROJECT_ROOT,
+                check=True,
+            )
+        except FileNotFoundError as exc:
+            raise SystemExit("uv is required: python -m pip install uv") from exc
+        print(f"Wrote {target}")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

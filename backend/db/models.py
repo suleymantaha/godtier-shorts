@@ -150,6 +150,8 @@ class User(Base):
     id: Mapped[uuid.UUID] = _uuid_primary_key()
     clerk_subject: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     email_normalized: Mapped[str | None] = mapped_column(Text)
+    deletion_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    data_purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[UserStatus] = mapped_column(_enum(UserStatus, "user_status"), nullable=False, default=UserStatus.ACTIVE)
     role: Mapped[UserRole] = mapped_column(_enum(UserRole, "user_role"), nullable=False, default=UserRole.USER)
     created_at: Mapped[datetime] = _created_at()

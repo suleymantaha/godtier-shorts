@@ -7,12 +7,15 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from backend.api.security import AuthContext, require_policy
 from backend.db.session import get_db_session
+from backend.db.models import Asset, AssetKind
 from backend.services.storage.media_validation import (
     ArqMediaValidationQueue,
     MediaValidationQueue,
+    UploadAdmissionError,
 )
 from backend.services.storage.object_store import (
     ObjectNotFoundError,
@@ -20,6 +23,7 @@ from backend.services.storage.object_store import (
     UploadValidationError,
 )
 from backend.services.storage.r2_store import R2ObjectStore, SqlAlchemyAssetRepository
+from backend.services.storage.validated_uploads import upload_project_id
 
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -47,6 +51,7 @@ class CompleteUploadRequest(BaseModel):
 class CompleteUploadResponse(BaseModel):
     validation_job_id: str
     status: str
+    project_id: UUID
 
 
 class DownloadUrlResponse(BaseModel):
@@ -120,13 +125,32 @@ async def complete_upload(
     try:
         metadata = await store.verify_uploaded_object(user_id, payload.storage_key)
         job_id = await validation_queue.enqueue(user_id=user_id, metadata=metadata)
+    except UploadAdmissionError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     except ObjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Uploaded object not found") from exc
     except UploadValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ObjectStoreError as exc:
         raise HTTPException(status_code=502, detail="Object storage unavailable") from exc
-    return CompleteUploadResponse(validation_job_id=job_id, status="queued")
+    return CompleteUploadResponse(validation_job_id=job_id, status="queued", project_id=upload_project_id(user_id, payload.storage_key))
+
+
+@router.get("/status")
+async def upload_status(
+    storage_key: str,
+    auth: Annotated[AuthContext, Depends(require_policy("upload"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    validation_queue: Annotated[MediaValidationQueue, Depends(get_media_validation_queue)],
+):
+    user_id = _database_user_id(auth)
+    if not storage_key.startswith(f"uploads/{user_id}/"):
+        raise HTTPException(status_code=404, detail="Upload not found")
+    asset = await session.scalar(select(Asset).where(
+        Asset.storage_key == storage_key, Asset.user_id == user_id, Asset.kind == AssetKind.SOURCE,
+    ))
+    state = "validated" if asset else await validation_queue.status(user_id=user_id, storage_key=storage_key)
+    return {"status": state, "project_id": str(asset.project_id if asset else upload_project_id(user_id, storage_key))}
 
 
 @router.post("/assets/{asset_id}/download", response_model=DownloadUrlResponse)

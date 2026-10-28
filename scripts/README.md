@@ -10,8 +10,8 @@ Yardımcı ve integration scriptleri. Unit testler `backend/tests/` ve `frontend
 | `check_toolchain.py` | Yerel Python/Node/npm sürümlerini ve repo içi sürüm sözleşmesini (`.python-version`, `.nvmrc`, pyright/pyre, CI) doğrular. |
 | `check_runtime_config.py` | `.env` yükleyip runtime config değerlerini doğrular; hatalı URL/port/limit değerlerinde erken fail eder. |
 | `check_system_deps.py` | `ffmpeg`, `yt-dlp`, `nvidia-smi` ve `torch.cuda` durumunu denetler. Varsayılan modda GPU opsiyoneldir; `--require-gpu` ile CUDA varlığı, `--require-nvenc` ile `ffmpeg h264_nvenc` smoke testi zorunlu yapılabilir. Sandbox altında yalancı negatif görebilir; prod/backend runtime doğrulaması için `run.sh` veya gerçek host shell kullanın. |
-| `generate_requirements_lock.py` | `requirements.txt` içindeki doğrudan bağımlılıkları kurulu sürümlere pinleyerek `requirements.lock` üretir. |
-| `update_requirements_lock.sh` | `requirements.txt` içinden pinlenmiş `requirements.lock` üretir. `bash scripts/update_requirements_lock.sh` |
+| `generate_requirements_lock.py` | `uv` ile Python 3.13/Linux için tüm transitif bağımlılıkları çözerek API ve GPU lock dosyalarını üretir. |
+| `update_requirements_lock.sh` | Her iki lock dosyasını yeniden üretir. `bash scripts/update_requirements_lock.sh` |
 | `audit_python_deps.sh` | `requirements.lock` üzerinden Python dependency audit çalıştırır. `bash scripts/audit_python_deps.sh` |
 | `test_subtitle_styles.py` | Altyazı stilleri ASS üretimini gerçek proje ile test eder. `python scripts/test_subtitle_styles.py [PROJECT_DIR]` |
 | `ass_format_example.py` | ASS pop/fade override string örnekleri. |
@@ -44,9 +44,9 @@ Yardımcı ve integration scriptleri. Unit testler `backend/tests/` ve `frontend
 
 ## Dependency Locking
 
-- Lock dosyası: `requirements.lock`
+- Lock dosyaları: GPU için `requirements.lock`, API için `requirements-api.lock` (Python 3.13/Linux x86_64).
 - Güncelleme akışı:
-  - `python -m pip install pip-audit`
+  - `python -m pip install uv==0.12.22 pip-audit`
   - `bash scripts/update_requirements_lock.sh`
   - `bash scripts/audit_python_deps.sh`
-- `requirements.txt` intent/üst sınır kaynağı, `requirements.lock` ise tekrarlanabilir kurulum girdisi olarak tutulur.
+- `requirements.txt` ve `requirements-api.txt` sürüm aralığı kaynağı, lock dosyaları transitif sürümleri de içeren kurulum girdileridir.

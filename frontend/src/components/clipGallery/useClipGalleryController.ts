@@ -134,6 +134,7 @@ function useClipGalleryFetch({
   hasLoadedOnceRef: RefObject<boolean>;
   scheduleRetry: () => void;
 }) {
+  const { setClips, setTotal, setHasMore, setState, setErrorMsg, setStaleRefreshWarning } = clipsState;
   return useCallback(async (options?: { forceAuthRecovery?: boolean }) => {
     if (!canUseProtectedRequests && !options?.forceAuthRecovery) {
       return;
@@ -145,13 +146,13 @@ function useClipGalleryFetch({
         return;
       }
 
-      hasLoadedOnceRef.current = data.clips.length > 0;
-      clipsState.setClips(data.clips);
-      clipsState.setTotal(data.total ?? data.clips.length);
-      clipsState.setHasMore(Boolean(data.has_more));
-      clipsState.setState(resolveGalleryState(data.clips.length, hasActiveClipProducingJobs));
-      clipsState.setErrorMsg(null);
-      clipsState.setStaleRefreshWarning(null);
+      hasLoadedOnceRef.current = true;
+      setClips(data.clips);
+      setTotal(data.total ?? data.clips.length);
+      setHasMore(Boolean(data.has_more));
+      setState(resolveGalleryState(data.clips.length, hasActiveClipProducingJobs));
+      setErrorMsg(null);
+      setStaleRefreshWarning(null);
       clearRetryTimer();
     } catch (error) {
       if (cancelledRef.current) {
@@ -159,23 +160,23 @@ function useClipGalleryFetch({
       }
 
       const message = error instanceof Error ? error.message : tSafe('clipGalleryErrors.loadFailed');
-      clipsState.setErrorMsg(message);
+      setErrorMsg(message);
 
       if (isAppError(error) && AUTH_BLOCKING_CODES.has(error.code)) {
-        clipsState.setState('auth_blocked');
+        setState('auth_blocked');
         clearRetryTimer();
         return;
       }
 
       if (!hasLoadedOnceRef.current) {
-        clipsState.setState('error');
+        setState('error');
         scheduleRetry();
         return;
       }
 
-      clipsState.setStaleRefreshWarning(tSafe('clipGalleryErrors.staleRefreshWarning'));
+      setStaleRefreshWarning(tSafe('clipGalleryErrors.staleRefreshWarning'));
     }
-  }, [canUseProtectedRequests, cancelledRef, clearRetryTimer, clipsState, hasActiveClipProducingJobs, hasLoadedOnceRef, scheduleRetry]);
+  }, [canUseProtectedRequests, cancelledRef, clearRetryTimer, hasActiveClipProducingJobs, hasLoadedOnceRef, scheduleRetry, setClips, setTotal, setHasMore, setState, setErrorMsg, setStaleRefreshWarning]);
 }
 
 function useClipGalleryStateEffects({

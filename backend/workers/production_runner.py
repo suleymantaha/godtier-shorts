@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 
 from backend.core.usage_metering import UsageMeter, UsageSnapshot
-from backend.db.models import Asset, AssetKind, Job, JobEvent, JobUsageMetric, Project, SourceType
+from backend.db.models import Asset, AssetKind, Job, JobEvent, JobUsageMetric, Project, SourceType, JobStatus, User, UserStatus
 from backend.db.session import get_session_factory
 from backend.workers.gpu_tasks import DeterministicJobError, TransientJobError
 
@@ -34,15 +34,7 @@ class ProductionJobContext:
 class ProductionJobRepository(Protocol):
     async def load_context(self, request: dict[str, Any]) -> ProductionJobContext: ...
 
-    async def record_output(
-        self,
-        *,
-        context: ProductionJobContext,
-        storage_key: str,
-        source: Path,
-        sha256: str,
-        content_type: str,
-    ) -> None: ...
+    async def publish_output(self, *, upload: Callable[[], Awaitable[None]], **kwargs) -> None: ...
 
     async def record_metrics(
         self,
@@ -178,23 +170,23 @@ class GpuObjectLifecycleRunner:
         storage_key = (
             f"outputs/{context.user_id}/{context.job_id}/{resolved_output.name}"
         )
-        try:
-            await self._object_store.upload(
-                storage_key, resolved_output, content_type
-            )
-        except Exception as exc:
-            raise TransientJobError("R2 output upload failed") from exc
+        async def upload() -> None:
+            try:
+                await self._object_store.upload(storage_key, resolved_output, content_type)
+            except Exception as exc:
+                raise TransientJobError("R2 output upload failed") from exc
+
         digest = await asyncio.to_thread(_sha256_file, resolved_output)
         try:
-            await self._repository.record_output(
-                context=context,
-                storage_key=storage_key,
-                source=resolved_output,
-                sha256=digest,
-                content_type=content_type,
+            await self._repository.publish_output(
+                upload=upload, context=context, storage_key=storage_key,
+                source=resolved_output, sha256=digest, content_type=content_type,
             )
+        except (DeterministicJobError, TransientJobError):
+            raise
         except Exception as exc:
             raise TransientJobError("Output metadata persistence failed") from exc
+
 
 
 class SqlAlchemyProductionJobRepository:
@@ -240,29 +232,46 @@ class SqlAlchemyProductionJobRepository:
                 source_seconds=max(0, int(project.duration_seconds or 0)),
             )
 
-    async def record_output(self, **kwargs) -> None:
+    async def publish_output(self, *, upload, **kwargs) -> None:
         context: ProductionJobContext = kwargs["context"]
-        source: Path = kwargs["source"]
         factory = get_session_factory()
         async with factory() as session, session.begin():
-            existing = await session.scalar(
-                select(Asset.id).where(Asset.storage_key == kwargs["storage_key"])
-            )
-            if existing is not None:
-                return
-            session.add(
-                Asset(
-                    id=uuid4(),
-                    user_id=context.user_id,
-                    project_id=context.project_id,
-                    job_id=context.job_id,
-                    kind=AssetKind.SHORT,
-                    storage_key=kwargs["storage_key"],
-                    mime_type=kwargs["content_type"],
-                    size_bytes=source.stat().st_size,
-                    sha256=kwargs["sha256"],
-                )
-            )
+            # Purge uses the same lock order. Hold the fence until the upload
+            # finishes so a tombstone cannot commit while a writer is in flight.
+            user = await session.scalar(select(User).where(User.id == context.user_id).with_for_update())
+            if user is None or user.status is not UserStatus.ACTIVE:
+                raise DeterministicJobError("Account is not active")
+            job = await session.scalar(select(Job).where(Job.id == context.job_id, Job.user_id == context.user_id).with_for_update())
+            if job is None or job.status is not JobStatus.PROCESSING:
+                raise DeterministicJobError("Job is not processing")
+            task = asyncio.create_task(upload())
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                # to_thread/boto3 writes outlive cancellation; retain the fence
+                # until the actual write stops before allowing account purge.
+                while not task.done():
+                    try:
+                        await asyncio.shield(task)
+                    except asyncio.CancelledError:
+                        continue
+                task.result()
+                raise
+            await self._record_output(session, **kwargs)
+
+    async def _record_output(self, session, **kwargs) -> None:
+        context: ProductionJobContext = kwargs["context"]
+        source: Path = kwargs["source"]
+        existing = await session.scalar(
+            select(Asset.id).where(Asset.storage_key == kwargs["storage_key"])
+        )
+        if existing is not None:
+            return
+        session.add(Asset(
+            id=uuid4(), user_id=context.user_id, project_id=context.project_id,
+            job_id=context.job_id, kind=AssetKind.SHORT, storage_key=kwargs["storage_key"],
+            mime_type=kwargs["content_type"], size_bytes=source.stat().st_size, sha256=kwargs["sha256"],
+        ))
 
     async def record_metrics(self, **kwargs) -> None:
         snapshot: UsageSnapshot = kwargs["snapshot"]

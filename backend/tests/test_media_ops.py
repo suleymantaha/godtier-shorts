@@ -5,6 +5,8 @@ import os
 import threading
 from pathlib import Path
 
+import pytest
+
 from backend.core.media_ops import (
     DOWNLOAD_ACTIVITY_TIMEOUT_SECONDS,
     DOWNLOAD_TOTAL_TIMEOUT_SECONDS,
@@ -73,7 +75,9 @@ def test_cut_and_burn_clip_saves_raw_copy_before_burn(tmp_path: Path) -> None:
 
     raw_output = tmp_path / "clip_raw.mp4"
     assert processor.cut_calls == 1
-    assert subtitle_engine.calls == [(str(tmp_path / "temp.mp4"), str(ass_file), str(final_output))]
+    assert len(subtitle_engine.calls) == 1
+    assert subtitle_engine.calls[0][:2] == (str(tmp_path / "temp.mp4"), str(ass_file))
+    assert Path(subtitle_engine.calls[0][2]).parent == tmp_path
     assert raw_output.read_bytes() == b"raw-before-burn"
     assert final_output.read_bytes() == b"final-with-subs"
 
@@ -101,6 +105,41 @@ def test_cut_and_burn_clip_moves_final_output_when_subtitles_are_skipped(tmp_pat
     assert final_output.read_bytes() == b"cropped-no-subs"
     assert not (tmp_path / "clip_raw.mp4").exists()
     assert not (tmp_path / "temp.mp4").exists()
+
+
+def test_failed_burn_preserves_existing_bundle_and_removes_partial_output(tmp_path: Path) -> None:
+    class FailingRenderer:
+        def burn_subtitles_to_video(self, source, ass, output, **kwargs):
+            Path(output).write_bytes(b"partial")
+            raise RuntimeError("encode failed")
+
+    final = tmp_path / "clip.mp4"
+    raw = tmp_path / "clip_raw.mp4"
+    final.write_bytes(b"old final")
+    raw.write_bytes(b"old raw")
+    ass = tmp_path / "subs.ass"
+    ass.touch()
+    with pytest.raises(RuntimeError, match="encode failed"):
+        cut_and_burn_clip(
+            video_processor=_DummyVideoProcessor(), cancel_event=threading.Event(),
+            master_video="master.mp4", start_t=0, end_t=1,
+            temp_cropped=str(tmp_path / "crop.mp4"), final_output=str(final),
+            ass_file=str(ass), subtitle_engine=FailingRenderer(),
+            layout="single", center_x=None, cut_as_short=False,
+        )
+    assert final.read_bytes() == b"old final"
+    assert raw.read_bytes() == b"old raw"
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["clip.mp4", "clip_raw.mp4", "crop.mp4", "subs.ass"]
+
+
+def test_shifted_transcript_preserves_word_speakers() -> None:
+    shifted = build_shifted_transcript_segments([
+        {"start": 0, "end": 2, "text": "hello there", "speaker": "SPEAKER_00", "words": [
+            {"word": "hello", "start": 0, "end": 1, "speaker": "SPEAKER_01"},
+            {"word": "there", "start": 1, "end": 2, "speaker": "Unknown"},
+        ]}
+    ], 0, 2)
+    assert [word.get("speaker") for word in shifted[0]["words"]] == ["SPEAKER_01", "Unknown"]
 
 
 def test_build_shifted_transcript_segments_rebuilds_text_from_retained_words() -> None:

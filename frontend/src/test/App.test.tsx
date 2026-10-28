@@ -365,6 +365,17 @@ describe('App auth and fallback rendering', () => {
     expect(screen.queryByText('AUTH_FALLBACK')).not.toBeInTheDocument();
     expect(useWebSocketMock).toHaveBeenCalledWith(false);
   });
+
+  it('exposes account deletion after a reload with no local state and forbidden backend access', async () => {
+    resilientAuthState.backendAuthStatus = 'paused';
+    resilientAuthState.canUseBackend = false;
+    resilientAuthState.pauseReason = 'forbidden';
+    render(<App />);
+    expect(await screen.findByRole('button', { name: /delete account/i })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/delete account confirmation/i), { target: { value: 'DELETE' } });
+    expect(screen.getByRole('button', { name: /delete account/i })).toBeEnabled();
+    expect(useWebSocketMock).toHaveBeenCalledWith(false);
+  });
 });
 
 describe('App identity reset handling', () => {

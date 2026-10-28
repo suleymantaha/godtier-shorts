@@ -9,6 +9,7 @@ import re
 import shutil
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -372,6 +373,7 @@ def build_shifted_transcript_segments_with_report(
                                 "start": ws,
                                 "end": we,
                                 "score": word.get("score", 1.0),
+                                **({"speaker": word["speaker"]} if "speaker" in word else {}),
                             }
                         )
 
@@ -510,17 +512,47 @@ def cut_and_burn_clip(
         render_report = {}
 
     if subtitle_engine is not None and Path(ass_file).exists():
-        raw_path = final_output.replace(".mp4", "_raw.mp4")
-        shutil.copy2(temp_cropped, raw_path)
-        subtitle_engine.burn_subtitles_to_video(
-            temp_cropped,
-            ass_file,
-            final_output,
-            cancel_event=cancel_event,
-        )
+        output = Path(final_output)
+        artifact_id = uuid.uuid4().hex
+        staged_output = output.with_name(f".{output.stem}_{artifact_id}.mp4")
+        staged_raw = output.with_name(f".{output.stem}_{artifact_id}_raw.mp4")
+        try:
+            shutil.copy2(temp_cropped, staged_raw)
+            subtitle_engine.burn_subtitles_to_video(
+                temp_cropped,
+                ass_file,
+                str(staged_output),
+                cancel_event=cancel_event,
+            )
+            if cancel_event.is_set():
+                raise RuntimeError("Job cancelled by user")
+            os.replace(staged_raw, output.with_name(f"{output.stem}_raw.mp4"))
+            os.replace(staged_output, output)
+        finally:
+            staged_output.unlink(missing_ok=True)
+            staged_raw.unlink(missing_ok=True)
     else:
         shutil.move(temp_cropped, final_output)
 
     if subtitle_engine is not None:
         render_report["subtitle_layout_quality"] = dict(getattr(subtitle_engine, "last_render_report", {}) or {})
     return render_report
+
+
+def commit_reburn_output(temp_output: str, input_video: str, temp_metadata: str, meta_path: str) -> None:
+    """Roll back the video when the matching metadata cannot be published."""
+    backup = f"{input_video}.{uuid.uuid4().hex}.backup"
+    shutil.copy2(input_video, backup)
+    preserve_backup = False
+    try:
+        os.replace(temp_output, input_video)
+        try:
+            os.replace(temp_metadata, meta_path)
+        except BaseException:
+            preserve_backup = True
+            os.replace(backup, input_video)
+            preserve_backup = False
+            raise
+    finally:
+        if not preserve_backup and os.path.exists(backup):
+            os.remove(backup)

@@ -54,7 +54,7 @@ def test_upload_url_uses_opaque_uuid_key_and_signed_content_type() -> None:
     assert upload.storage_key.startswith(f"uploads/{user_id}/")
     assert "My Holiday Video" not in upload.storage_key
     UUID(Path(upload.storage_key).stem)
-    assert upload.required_headers == {"Content-Type": "video/mp4"}
+    assert upload.required_headers == {"Content-Type": "video/mp4", "Content-Length": "123", "If-None-Match": "*"}
     assert client.presign_calls == [
         (
             "put_object",
@@ -62,6 +62,8 @@ def test_upload_url_uses_opaque_uuid_key_and_signed_content_type() -> None:
                 "Bucket": "private-assets",
                 "Key": upload.storage_key,
                 "ContentType": "video/mp4",
+                "ContentLength": 123,
+                "IfNoneMatch": "*",
             },
             900,
         )
@@ -169,3 +171,14 @@ def test_uploaded_object_key_must_belong_to_authenticated_user() -> None:
                 uuid4(), f"uploads/{uuid4()}/{uuid4()}.mp4"
             )
         )
+
+
+def test_real_sigv4_signature_binds_size_and_prevents_overwrite():
+    import boto3
+    from botocore.config import Config
+    from urllib.parse import urlparse, parse_qs
+    client = boto3.client("s3", endpoint_url="https://r2.invalid", aws_access_key_id="test", aws_secret_access_key="test", config=Config(signature_version="s3v4"), region_name="auto")
+    result = asyncio.run(R2ObjectStore(client=client, bucket_name="private").create_upload_url(uuid4(), "source.mp4", "video/mp4", 123))
+    headers = parse_qs(urlparse(result.url).query)["X-Amz-SignedHeaders"][0].split(";")
+    assert "content-length" in headers
+    assert "if-none-match" in headers

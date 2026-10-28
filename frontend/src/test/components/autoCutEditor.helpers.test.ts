@@ -184,3 +184,22 @@ describe('autoCutEditor metadata helpers', () => {
     expect(range.endTime).toBe(24);
   });
 });
+
+it('stops processing and shows the explanation for an empty render', () => {
+  const state = deriveAutoCutJobState({
+    currentJob: buildJob({ status: 'empty', progress: 100, last_message: 'No suitable clips found' }),
+    currentJobId: 'job_1', currentJobMissing: false, isSubmitting: false,
+    pendingOutputUrl: null, requestError: null,
+  });
+  expect(state.hasTerminalJob).toBe(true);
+  expect(state.processing).toBe(false);
+  expect(state.errorMessage).toBe('No suitable clips found');
+  expect(state.resultUrl).toBeNull();
+});
+
+it('keeps a valid range when a replacement video is shorter than the previous selection', () => {
+  const range = getRangeForLoadedMetadata(90, 120, 180);
+  expect(range.startTime).toBeGreaterThanOrEqual(0);
+  expect(range.endTime).toBeLessThanOrEqual(90);
+  expect(range.endTime).toBeGreaterThan(range.startTime);
+});

@@ -8,7 +8,7 @@ from uuid import UUID
 from arq import Retry
 from sqlalchemy import select
 
-from backend.db.models import Job, JobEvent, JobStatus
+from backend.db.models import Job, JobEvent, JobStatus, User, UserStatus
 from backend.db.session import get_session_factory
 from backend.services.billing import ledger
 from backend.services.queue.client import QueueClient
@@ -73,6 +73,10 @@ class GpuJobWorker:
             await self._store.release(job_id)
             return
         except TransientJobError as exc:
+            if retry_count >= 2:
+                await self._store.fail(job_id, "RETRY_EXHAUSTED", str(exc))
+                await self._store.release(job_id)
+                return
             raise Retry(defer=30) from exc
         except Exception as exc:
             await self._store.fail(job_id, "UNEXPECTED_WORKER_ERROR", str(exc))
@@ -96,9 +100,15 @@ class SqlAlchemyWorkerJobStore:
     async def claim(self, job_id: UUID) -> dict[str, Any]:
         factory = get_session_factory()
         async with factory() as session, session.begin():
+            user_id = await session.scalar(select(Job.user_id).where(Job.id == job_id))
+            user = await session.scalar(select(User).where(User.id == user_id).with_for_update())
+            if user is None or user.status is not UserStatus.ACTIVE:
+                raise DeterministicJobError("Account is not active")
             job = await self._locked_job(session, job_id)
             if job.status not in {JobStatus.QUEUED, JobStatus.PROCESSING}:
                 raise DeterministicJobError(f"Job is not runnable: {job.status.value}")
+            if job.reserved_credits <= 0:
+                raise DeterministicJobError("Job has no active credit reservation")
             job.status = JobStatus.PROCESSING
             job.started_at = job.started_at or datetime.now(timezone.utc)
             job.last_message = "GPU worker started"

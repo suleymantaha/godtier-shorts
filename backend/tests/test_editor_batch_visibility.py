@@ -94,3 +94,29 @@ def test_process_batch_clips_persists_output_artifacts(monkeypatch, tmp_path: Pa
     assert len(job["output_paths"]) == 2
 
     editor.manager.jobs.clear()
+
+def test_process_batch_forwards_subtitle_option_to_async_renderer(monkeypatch):
+    calls = []
+
+    class AsyncOrchestrator:
+        def __init__(self, **kwargs):
+            pass
+
+        async def run_batch_manual_clips_async(self, **kwargs):
+            calls.append(kwargs)
+            return []
+
+        def cleanup_gpu(self):
+            pass
+
+    monkeypatch.setattr(editor, 'thread_safe_broadcast', lambda *args, **kwargs: None)
+    monkeypatch.setattr(editor, 'GodTierShortsCreator', AsyncOrchestrator)
+    editor.manager.jobs.clear()
+    try:
+        __import__('asyncio').run(_run_batch(BatchJobRequest(
+            start_time=0, end_time=90, num_clips=2, skip_subtitles=True,
+        )))
+        assert len(calls) == 1
+        assert calls[0]['skip_subtitles'] is True
+    finally:
+        editor.manager.jobs.clear()

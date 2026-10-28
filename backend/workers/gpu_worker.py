@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from arq.connections import RedisSettings
+from arq import func
 from loguru import logger
 from sqlalchemy import exists, select
 
@@ -16,6 +17,7 @@ from backend.config import LOGS_DIR
 from backend.observability import capture_exception, configure_error_reporting, configure_logging
 from backend.observability.monitor import GPU_WORKER_HEARTBEAT_KEY
 from backend.services.queue.client import ArqQueueClient
+from backend.services.billing import ledger
 from backend.workers.gpu_tasks import GpuJobWorker, SqlAlchemyWorkerJobStore, run_gpu_job
 from backend.workers.media_validation import validate_uploaded_media
 
@@ -47,6 +49,8 @@ async def _heartbeat_loop(ctx: dict[str, Any]) -> None:
             await publish_worker_heartbeat(
                 ctx["redis"], worker_id=worker_id, ttl_seconds=ttl
             )
+            await reconcile_failed_reservations()
+            await recover_dispatchable_jobs(ArqQueueClient(ctx["redis"]))
         except Exception as exc:
             logger.bind(event="gpu_worker_heartbeat_failed", worker_id=worker_id).error(
                 "gpu worker heartbeat failed"
@@ -72,26 +76,55 @@ async def recover_dispatchable_jobs(queue: ArqQueueClient, *, stale_seconds: int
         statement = (
             select(Job)
             .where(
-                (Job.status == JobStatus.QUEUED)
-                | (
+                (
+                    (Job.reserved_credits > 0)
+                    & (
+                        (Job.status == JobStatus.QUEUED)
+                        | (
+                            (Job.status == JobStatus.PROCESSING)
+                            & (Job.started_at < cutoff)
+                            & ~recent_heartbeat
+                        )
+                    )
+                ) | (
                     (Job.status == JobStatus.PROCESSING)
-                    & (Job.started_at < cutoff)
-                    & ~recent_heartbeat
+                    & (Job.reserved_credits == 0)
+                    & (Job.settled_credits > 0)
                 )
             )
             .with_for_update(skip_locked=True)
         )
         jobs = list((await session.scalars(statement)).all())
+        job_ids = []
         for job in jobs:
+            if job.status is JobStatus.PROCESSING and job.reserved_credits == 0 and job.settled_credits > 0:
+                job.status = JobStatus.COMPLETED
+                job.progress = 100
+                job.finished_at = datetime.now(timezone.utc)
+                job.last_message = "Recovered completion after credit settlement"
+                session.add(JobEvent(job_id=job.id, status=job.status, progress=100, message=job.last_message, source="recovery"))
+                continue
             if job.status is JobStatus.PROCESSING:
                 job.status = JobStatus.QUEUED
                 job.started_at = None
                 job.last_message = "Recovered after stale worker heartbeat"
                 session.add(JobEvent(job_id=job.id, status=JobStatus.QUEUED, progress=job.progress, message=job.last_message, source="recovery"))
-        job_ids = [job.id for job in jobs]
+            job_ids.append(job.id)
     for job_id in job_ids:
         await queue.enqueue_gpu_job(job_id)
     return len(job_ids)
+
+
+async def reconcile_failed_reservations() -> int:
+    """Repair a crash between terminal failure and reservation release."""
+    factory = get_session_factory()
+    async with factory() as session:
+        jobs = list((await session.scalars(select(Job).where(
+            Job.status == JobStatus.ERROR, Job.reserved_credits > 0,
+        ))).all())
+    for job in jobs:
+        await ledger.release(job.user_id, job.id, f"release:worker:{job.id}")
+    return len(jobs)
 
 
 async def startup(ctx: dict[str, Any]) -> None:
@@ -104,6 +137,7 @@ async def startup(ctx: dict[str, Any]) -> None:
         runner = build_production_runner()
     queue = ArqQueueClient(ctx["redis"])
     ctx["gpu_job_worker"] = GpuJobWorker(SqlAlchemyWorkerJobStore(), queue, runner)
+    await reconcile_failed_reservations()
     await recover_dispatchable_jobs(queue)
     ctx["gpu_heartbeat_stop"] = asyncio.Event()
     ctx["gpu_heartbeat_task"] = asyncio.create_task(_heartbeat_loop(ctx))
@@ -119,7 +153,7 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 
 class WorkerSettings:
-    functions = [run_gpu_job, validate_uploaded_media]
+    functions = [run_gpu_job, func(validate_uploaded_media, timeout=300, keep_result=86400)]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(os.getenv("REDIS_URL", "redis://localhost:6379/0"))

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 from loguru import logger
+from fastapi.responses import JSONResponse
 
 from backend.api.security import AuthContext, require_policy
 from backend.core.exceptions import InvalidInputError
@@ -16,11 +17,13 @@ router = APIRouter(prefix="/api/account", tags=["account"])
 async def delete_my_account_data(
     payload: AccountDeletionRequest,
     auth: AuthContext = Depends(require_policy("delete_account_data")),
-) -> dict[str, object]:
+):
     if payload.confirm != "DELETE":
         raise InvalidInputError("Hesap verilerini silmek icin DELETE onayi gerekli")
 
     summary = await purge_subject_data(auth.subject)
+    if summary.get("status") == "deletion_pending":
+        return JSONResponse(status_code=202, content={"status": "deletion_pending", "summary": summary})
     logger.info(
         "🔐 Security event=account_data_purged subject={} deleted_projects={} deleted_social_rows={} cancelled_jobs={} scrubbed_grants={}",
         auth.subject,

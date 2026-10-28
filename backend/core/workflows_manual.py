@@ -1,9 +1,9 @@
 """Manual clip workflows (single + cut-points)."""
 from __future__ import annotations
 import os
-import time
 from pathlib import Path
 from typing import Optional
+from uuid import uuid4
 
 from backend.config import TEMP_DIR
 from backend.core.media_ops import build_shifted_transcript_segments_with_report
@@ -62,13 +62,13 @@ class ManualClipWorkflow:
 
         self.ctx._update_status(f"Manuel klip: {start_t} - {end_t} sn", 10)
         normalized_transcript = self.ctx._normalize_transcript_payload(transcript_data) if transcript_data else self.ctx._load_project_transcript()
-        job_id = f"manual_{int(time.time())}"
-        temp_json = str(TEMP_DIR / f"manual_{job_id}.json")
-        shifted_json = str(TEMP_DIR / f"shifted_{job_id}.json")
-        ass_file = str(TEMP_DIR / f"subs_{job_id}.ass")
-        temp_cropped = str(TEMP_DIR / f"cropped_{job_id}.mp4")
+        artifact_id = uuid4().hex
+        temp_json = str(TEMP_DIR / f"manual_{artifact_id}.json")
+        shifted_json = str(TEMP_DIR / f"shifted_{artifact_id}.json")
+        ass_file = str(TEMP_DIR / f"subs_{artifact_id}.ass")
+        temp_cropped = str(TEMP_DIR / f"cropped_{artifact_id}.mp4")
 
-        clip_filename = (output_name or f"manual_{job_id}.mp4")
+        clip_filename = (output_name or f"manual_{artifact_id}.mp4")
         if not clip_filename.endswith(".mp4"):
             clip_filename = f"{clip_filename}.mp4"
         if self.ctx.project is None:
