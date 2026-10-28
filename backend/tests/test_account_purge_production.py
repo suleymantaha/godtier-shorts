@@ -128,6 +128,26 @@ def test_remote_failure_is_pending_and_retains_retry_inventory(production):
     assert asyncio.run(purge._purge_production("owner"))["reason"] == "storage_finalization_unverified"
 
 
+def test_late_put_after_empty_listing_is_cleaned_on_retry_without_claiming_finality(production):
+    asyncio.run(purge._purge_production("owner"))
+    expire_window(production)
+    assert asyncio.run(purge._purge_production("owner"))["reason"] == "storage_finalization_unverified"
+    # A PUT that started before URL expiry may finish after cleanup and asset scrubbing.
+    late_key = f"uploads/{production.user_id}/late-source.mp4"
+    production.objects.add(late_key)
+
+    result = asyncio.run(purge._purge_production("owner"))
+
+    assert result["status"] == "deletion_pending"
+    assert result["reason"] == "storage_finalization_unverified"
+    assert late_key not in production.objects
+    assert any("private.mp4" in key for key in production.objects)
+    with Session(production.engine) as session:
+        user = session.get(User, production.user_id)
+        assert user.status is UserStatus.DELETED
+        assert user.data_purged_at is None
+
+
 def test_foreign_storage_key_fails_closed(production):
     asyncio.run(purge._purge_production("owner"))
     expire_window(production)

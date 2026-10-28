@@ -224,3 +224,11 @@ def test_priority_requires_plan_entitlement() -> None:
 def test_invalid_internal_pricing_request_is_rejected(pricing_request: JobPricingRequest) -> None:
     with pytest.raises(InvalidPricingRequest):
         estimate_job_cost(pricing_request, _plan())
+
+def test_explicit_fit_cost_matches_single_without_changing_preview_entitlement() -> None:
+    from dataclasses import replace
+    request = JobPricingRequest(job_type=JobType.FULL_RENDER, source_seconds=600,
+        requested_clips=3, resolution="1080p", layout="single")
+    assert estimate_job_cost(replace(request, layout="fit"), _plan()) == estimate_job_cost(request, _plan())
+    with pytest.raises(EntitlementDenied):
+        estimate_job_cost(replace(request, job_type=JobType.PREVIEW, resolution="720p", layout="fit"), _plan(paid=False))

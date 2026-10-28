@@ -45,6 +45,7 @@ function getLayoutSelectOptions(t: (key: string) => string) {
     { label: t('autoCut.options.auto'), value: 'auto' },
     { label: t('autoCut.options.single'), value: 'single' },
     { label: t('autoCut.options.split'), value: 'split' },
+    { label: t('autoCut.options.fit'), value: 'fit' },
   ];
 }
 
@@ -415,7 +416,7 @@ function AutoCutSubtitleOptions({
         <label className="text-[11px] text-muted-foreground uppercase block">{t('autoCut.controls.layout')}</label>
         <Select
           value={layout}
-          onChange={(value) => setLayout(value === 'split' ? 'split' : value === 'single' ? 'single' : 'auto')}
+          onChange={(value) => setLayout(value === 'fit' ? 'fit' : value === 'split' ? 'split' : value === 'single' ? 'single' : 'auto')}
           options={layoutOptions}
           icon={<Sparkles className="w-4 h-4 text-secondary/50" />}
         />

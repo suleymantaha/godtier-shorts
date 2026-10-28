@@ -45,7 +45,7 @@ export interface ClipReadyEntry {
 }
 
 export type SubtitleAnimationType = 'default' | 'pop' | 'shake' | 'slide_up' | 'fade' | 'typewriter' | 'none';
-export type RequestedSubtitleLayout = 'auto' | 'single' | 'split';
+export type RequestedSubtitleLayout = 'auto' | 'single' | 'split' | 'fit';
 
 export interface Job {
     job_id: string;

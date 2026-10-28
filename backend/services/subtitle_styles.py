@@ -106,7 +106,7 @@ class SubtitleStyle(BaseModel):
 class SubtitleCanvasSpec(BaseModel):
     width: int
     height: int
-    layout: Literal["single", "split"] = "single"
+    layout: Literal["single", "split", "fit"] = "single"
     logical_width: int = LOGICAL_CANVAS_WIDTH
     logical_height: int = LOGICAL_CANVAS_HEIGHT
 

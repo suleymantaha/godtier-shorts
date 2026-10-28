@@ -340,6 +340,7 @@ export const en = {
       layoutAuto: 'Auto',
       layoutSingle: 'Single',
       layoutSplit: 'Split',
+      layoutFit: 'Full source (letterbox)',
       engineLocal: 'Local (Ollama)',
       engineLmstudio: 'Local (LM Studio)',
       engineCloud: 'Cloud (OpenRouter)',
@@ -398,6 +399,7 @@ export const en = {
       auto: 'Auto',
       single: 'Single',
       split: 'Split',
+      fit: 'Full source (letterbox)',
     },
     result: {
       title: 'Generated clip',

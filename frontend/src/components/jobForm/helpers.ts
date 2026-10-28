@@ -41,6 +41,7 @@ export function getLayoutSelectOptions() {
     { label: tSafe('jobForm.options.layoutAuto', { defaultValue: 'Auto' }), value: 'auto' },
     { label: tSafe('jobForm.options.layoutSingle', { defaultValue: 'Single' }), value: 'single' },
     { label: tSafe('jobForm.options.layoutSplit', { defaultValue: 'Split' }), value: 'split' },
+    { label: tSafe('jobForm.options.layoutFit', { defaultValue: 'Full source (letterbox)' }), value: 'fit' },
   ];
 }
 
@@ -97,7 +98,7 @@ export function readInitialAnimationType(): SubtitleAnimationType {
 
 export function readInitialLayout(): RequestedSubtitleLayout {
   const stored = readStored<JobFormPrefs>(JOB_FORM_PREFS_STORAGE_KEY, { layout: 'auto' });
-  return stored.layout === 'single' || stored.layout === 'split' || stored.layout === 'auto' ? stored.layout : 'auto';
+  return stored.layout === 'fit' || stored.layout === 'single' || stored.layout === 'split' || stored.layout === 'auto' ? stored.layout : 'auto';
 }
 
 export function clampClipCount(value: number): number {

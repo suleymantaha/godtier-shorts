@@ -343,8 +343,8 @@ class TrackingDiagnostics:
         quality_b = diag_b.to_quality()
         total_frames = quality_a.get("total_frames", 0) + quality_b.get("total_frames", 0)
         avg_center_jump = (
-            quality_a.get("avg_center_jump_px", 0.0) or 0.0
-            + quality_b.get("avg_center_jump_px", 0.0) or 0.0
+            (quality_a.get("avg_center_jump_px", 0.0) or 0.0)
+            + (quality_b.get("avg_center_jump_px", 0.0) or 0.0)
         ) / 2.0
         status_order = {"good": 0, "degraded": 1, "fallback": 2}
         merged_status = max(
@@ -419,6 +419,13 @@ logger.add(
     rotation="50 MB",
     retention="10 days",
     level="DEBUG",
+)
+
+
+SOURCE_FIT_FILTER = (
+    "scale=w='round(min(1080,1920*dar)/2)*2':"
+    "h='round(min(1920,1080/dar)/2)*2',setsar=1,"
+    "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black"
 )
 
 
@@ -1575,6 +1582,21 @@ class VideoProcessor:
         transcript_path: str | None = None,
     ) -> dict:
         logger.info("✂️ Klip: {} - {} sn (Layout: {}) → {}", start_time, end_time, layout, output_filename)
+        if layout == "fit":
+            report = self.cut_segment_only(
+                input_video, start_time, end_time, output_filename,
+                cancel_event=cancel_event, require_audio=require_audio, fit_to_canvas=True,
+            )
+            report["tracking_quality"].update({
+                "mode": "source_preserved",
+                "speaker_lock_policy": "not_applicable",
+                "identity_confidence": None,
+            })
+            report["composition_quality"] = {
+                "mode": "fit", "source_frame_preserved": True,
+                "graphics_readability": "not_assessed",
+            }
+            return report
         if manual_center_x is None:
             self._ensure_model_loaded()
 
@@ -2247,6 +2269,13 @@ class VideoProcessor:
     ) -> LayoutDecisionReport:
         normalized_layout = ensure_valid_requested_layout(requested_layout)
 
+        if normalized_layout == "fit":
+            return LayoutDecisionReport(
+                requested_layout="fit", resolved_layout="fit",
+                layout_safety_status="safe", layout_safety_mode=_read_layout_safety_mode(),
+                scene_class="source_preserved", speaker_count_peak=0,
+            )
+
         if diarization_index and normalized_layout in {"auto", "split"}:
             speaker_durations: dict[str, float] = {}
             for entry in diarization_index:
@@ -2399,6 +2428,12 @@ class VideoProcessor:
         resolved_layout: str,
         manual_center_x: float | None = None,
     ) -> dict[str, Any]:
+        if resolved_layout == "fit":
+            return {
+                "layout_validation_status": "source_preserved",
+                "opening_visibility_delay_ms": 0.0,
+                "suggested_start_time": start_time,
+            }
         if manual_center_x is not None:
             return {
                 "layout_validation_status": "manual",
@@ -2648,6 +2683,8 @@ class VideoProcessor:
         output_filename: str,
         cancel_event: threading.Event | None = None,
         require_audio: bool = False,
+        *,
+        fit_to_canvas: bool = False,
     ) -> dict:
         """Publish only a validated, complete cut; preserve old output on failure."""
         output_stem, output_ext = os.path.splitext(output_filename)
@@ -2655,7 +2692,7 @@ class VideoProcessor:
         try:
             report = self._cut_segment_only_to_path(
                 input_video, start_time, end_time, staged_output,
-                cancel_event=cancel_event, require_audio=require_audio,
+                cancel_event=cancel_event, require_audio=require_audio, fit_to_canvas=fit_to_canvas,
             )
             if cancel_event is not None and cancel_event.is_set():
                 raise RuntimeError("Job cancelled by user")
@@ -2673,6 +2710,8 @@ class VideoProcessor:
         output_filename: str,
         cancel_event: threading.Event | None = None,
         require_audio: bool = False,
+        *,
+        fit_to_canvas: bool = False,
     ) -> dict:
         duration = end_time - start_time
         logger.info("✂️ Zaman kesimi: {} - {} sn (orijinal boyut) → {}", start_time, end_time, output_filename)
@@ -2733,6 +2772,12 @@ class VideoProcessor:
         else:
             cmd_cpu.append("-an")
         cmd_cpu.append(output_filename)
+
+        if fit_to_canvas:
+            # Preserve all source edges and the display aspect ratio. Subtitle
+            # burn still runs downstream on the complete portrait canvas.
+            for command in (cmd_nvenc, cmd_cpu):
+                command[-1:-1] = ["-vf", SOURCE_FIT_FILTER, "-pix_fmt", "yuv420p"]
 
         cut_timeout = self._compute_ffmpeg_timeout(duration, start_time=start_time, minimum=300)
         result = self._run_command_with_cancel(cmd_nvenc, timeout=cut_timeout, cancel_event=cancel_event)

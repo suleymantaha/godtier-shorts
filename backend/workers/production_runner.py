@@ -6,6 +6,7 @@ import mimetypes
 import os
 import shutil
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Protocol
 from uuid import UUID, uuid4
@@ -15,7 +16,11 @@ from sqlalchemy import select
 from backend.core.usage_metering import UsageMeter, UsageSnapshot
 from backend.db.models import Asset, AssetKind, Job, JobEvent, JobUsageMetric, Project, SourceType, JobStatus, User, UserStatus
 from backend.db.session import get_session_factory
-from backend.workers.gpu_tasks import DeterministicJobError, TransientJobError
+from backend.services.storage.upload_reservations import (
+    UploadQuotaExceeded, reserve_storage_in_session,
+)
+from backend.services.storage.object_store import UploadValidationError
+from backend.workers.gpu_tasks import DeterministicJobError, PostRenderStorageQuotaError, TransientJobError
 
 
 ProgressReporter = Callable[[int, str], Awaitable[None]]
@@ -235,15 +240,30 @@ class SqlAlchemyProductionJobRepository:
     async def publish_output(self, *, upload, **kwargs) -> None:
         context: ProductionJobContext = kwargs["context"]
         factory = get_session_factory()
+        # Commit the durable charge before remote I/O: rollback, cancellation,
+        # and an uncertain upload outcome must never make those bytes free.
         async with factory() as session, session.begin():
-            # Purge uses the same lock order. Hold the fence until the upload
-            # finishes so a tombstone cannot commit while a writer is in flight.
-            user = await session.scalar(select(User).where(User.id == context.user_id).with_for_update())
-            if user is None or user.status is not UserStatus.ACTIVE:
-                raise DeterministicJobError("Account is not active")
-            job = await session.scalar(select(Job).where(Job.id == context.job_id, Job.user_id == context.user_id).with_for_update())
-            if job is None or job.status is not JobStatus.PROCESSING:
-                raise DeterministicJobError("Job is not processing")
+            await self._lock_publication(session, context)
+            await self._check_existing_output(session, **kwargs)
+            try:
+                await reserve_storage_in_session(
+                    session, user_id=context.user_id, storage_key=kwargs["storage_key"],
+                    content_type=kwargs["content_type"], size_bytes=kwargs["source"].stat().st_size,
+                    expires_at=datetime.now(timezone.utc), allow_existing=True,
+                )
+            except UploadQuotaExceeded as exc:
+                raise PostRenderStorageQuotaError(
+                    "Output storage limit reached after rendering. Reserved render credits were charged; "
+                    "free storage capacity before submitting another job."
+                ) from exc
+            except UploadValidationError as exc:
+                raise DeterministicJobError(str(exc)) from exc
+        async with factory() as session, session.begin():
+            # Revalidate after charge commit and keep the purge fence until the
+            # actual write finishes. Purge uses the same User -> Job lock order.
+            await self._lock_publication(session, context)
+            if await self._check_existing_output(session, **kwargs):
+                return
             task = asyncio.create_task(upload())
             try:
                 await asyncio.shield(task)
@@ -258,6 +278,28 @@ class SqlAlchemyProductionJobRepository:
                 task.result()
                 raise
             await self._record_output(session, **kwargs)
+
+    async def _lock_publication(self, session, context) -> None:
+        user = await session.scalar(select(User).where(User.id == context.user_id).with_for_update())
+        if user is None or user.status is not UserStatus.ACTIVE:
+            raise DeterministicJobError("Account is not active")
+        job = await session.scalar(select(Job).where(
+            Job.id == context.job_id, Job.user_id == context.user_id,
+            Job.project_id == context.project_id).with_for_update())
+        if job is None or job.status is not JobStatus.PROCESSING:
+            raise DeterministicJobError("Job is not processing")
+
+    async def _check_existing_output(self, session, **kwargs) -> bool:
+        existing = await session.scalar(select(Asset).where(Asset.storage_key == kwargs["storage_key"]))
+        if existing is None:
+            return False
+        context = kwargs["context"]
+        if (existing.user_id != context.user_id or existing.job_id != context.job_id
+                or existing.project_id != context.project_id or existing.kind is not AssetKind.SHORT
+                or existing.size_bytes != kwargs["source"].stat().st_size
+                or existing.sha256 != kwargs["sha256"] or existing.mime_type != kwargs["content_type"]):
+            raise DeterministicJobError("Output conflicts with existing asset")
+        return True
 
     async def _record_output(self, session, **kwargs) -> None:
         context: ProductionJobContext = kwargs["context"]

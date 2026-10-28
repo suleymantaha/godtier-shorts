@@ -9,8 +9,8 @@ DEFAULT_AUTO_DURATION_MIN: Final[float] = 120.0
 DEFAULT_AUTO_DURATION_MAX: Final[float] = 180.0
 DEFAULT_DURATION_BOUNDARY_TOLERANCE_SECONDS: Final[float] = 0.5
 
-VALID_RENDER_LAYOUTS: Final[tuple[str, str]] = ("single", "split")
-VALID_REQUEST_LAYOUTS: Final[tuple[str, str, str]] = ("auto", *VALID_RENDER_LAYOUTS)
+VALID_RENDER_LAYOUTS: Final[tuple[str, ...]] = ("single", "split", "fit")
+VALID_REQUEST_LAYOUTS: Final[tuple[str, ...]] = ("auto", *VALID_RENDER_LAYOUTS)
 SOURCE_DURATION_TOLERANCE_SECONDS: Final[float] = 0.1
 
 

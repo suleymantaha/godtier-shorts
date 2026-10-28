@@ -100,6 +100,13 @@ describe('AutoCutEditor page flow', () => {
     expect(previewBandWrapper.style.bottom).toBe('');
   });
 
+  it('shows the full source in the fit preview', () => {
+    controllerState.value = createController({ layout: 'fit' });
+    render(<AutoCutEditor />);
+    expect(screen.getByTestId('subtitle-preview-media')).toHaveClass('object-contain');
+    expect(screen.getByTestId('subtitle-preview-media')).not.toHaveClass('object-cover');
+  });
+
   it('shows generated clips summary and forwards the library CTA', () => {
     controllerState.value = createController({
       currentJob: {

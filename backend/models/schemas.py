@@ -21,7 +21,7 @@ VALID_STYLES = {
     "PODCAST", "CORPORATE", "HIGHCARE", "CYBER_PUNK", "STORY_TELLER",
     "GLOW_KARAOKE", "VIRAL", "POP", "CLEAN", "BOLD", "MINIMAL",
 }
-VALID_LAYOUTS = {"auto", "single", "split"}
+VALID_LAYOUTS = {"auto", "single", "split", "fit"}
 VALID_ANIMATIONS = {"default", "pop", "shake", "slide_up", "fade", "typewriter", "none"}
 
 

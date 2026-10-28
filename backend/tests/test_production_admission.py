@@ -119,17 +119,30 @@ def test_deleted_account_cannot_publish_worker_output(monkeypatch):
     upload.assert_not_awaited()
 
 
-def test_publish_cancellation_retains_fence_until_upload_stops(monkeypatch):
+def test_publish_cancellation_retains_fence_until_upload_stops(monkeypatch, tmp_path):
     from backend.workers import production_runner
     async def scenario():
-        session = Session([SimpleNamespace(status=UserStatus.ACTIVE), SimpleNamespace(status=JobStatus.PROCESSING)])
+        session = Session([
+            SimpleNamespace(status=UserStatus.ACTIVE), SimpleNamespace(status=JobStatus.PROCESSING), None,
+            SimpleNamespace(status=UserStatus.ACTIVE), SimpleNamespace(status=JobStatus.PROCESSING), None,
+        ])
         monkeypatch.setattr(production_runner, "get_session_factory", lambda: lambda: session)
+        reserve = AsyncMock()
+        monkeypatch.setattr(production_runner, "reserve_storage_in_session", reserve)
+        source = tmp_path / "render.mp4"
+        source.write_bytes(b"rendered output")
         started, finish = asyncio.Event(), asyncio.Event()
         async def upload():
             started.set()
             await finish.wait()
-        task = asyncio.create_task(production_runner.SqlAlchemyProductionJobRepository().publish_output(context=SimpleNamespace(user_id=uuid4(), job_id=uuid4()), upload=upload))
+        task = asyncio.create_task(production_runner.SqlAlchemyProductionJobRepository().publish_output(
+            context=SimpleNamespace(user_id=uuid4(), job_id=uuid4(), project_id=uuid4()),
+            upload=upload, source=source, storage_key="outputs/test/render.mp4",
+            content_type="video/mp4", sha256="test-sha256",
+        ))
         await started.wait()
+        reserve.assert_awaited_once()
+        assert session.committed
         task.cancel()
         await asyncio.sleep(0)
         assert not session.rolled_back and not task.done()

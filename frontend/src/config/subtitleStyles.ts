@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 import { tSafe } from '../i18n';
 
-export type SubtitleLayout = 'single' | 'split';
+export type SubtitleLayout = 'single' | 'split' | 'fit';
 export type RequestedSubtitleLayout = 'auto' | SubtitleLayout;
 export type SubtitleSurface = 'overlay' | 'preview';
 export type SubtitleSafeAreaProfile = 'default' | 'lower_third_safe';
@@ -580,5 +580,5 @@ export function getSubtitleBoxStyle(
 }
 
 export function resolvePreviewLayout(layout?: RequestedSubtitleLayout | string | null): SubtitleLayout {
-  return layout === 'split' ? 'split' : 'single';
+  return layout === 'fit' ? 'fit' : layout === 'split' ? 'split' : 'single';
 }

@@ -142,7 +142,7 @@ def resolve_subtitle_render_plan(
         )
 
     canvas_width, canvas_height = probe_video_canvas(source_video)
-    resolved_layout = "single" if normalized_layout == "auto" else normalized_layout
+    resolved_layout = "single" if normalized_layout in {"auto", "fit"} else normalized_layout
     fallback_reason: str | None = None
     if resolved_layout == "split":
         if canvas_width == LOGICAL_CANVAS_WIDTH and canvas_height == LOGICAL_CANVAS_HEIGHT:

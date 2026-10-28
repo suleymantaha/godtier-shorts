@@ -336,6 +336,7 @@ export const tr: TranslationSchema = {
       layoutAuto: 'Auto',
       layoutSingle: 'Single',
       layoutSplit: 'Split',
+      layoutFit: 'Tam kaynak (siyah bantlı)',
       engineLocal: 'Yerel (Ollama)',
       engineLmstudio: 'Yerel (LM Studio)',
       engineCloud: 'Bulut (OpenRouter)',
@@ -394,6 +395,7 @@ export const tr: TranslationSchema = {
       auto: 'Auto',
       single: 'Single',
       split: 'Split',
+      fit: 'Tam kaynak (siyah bantlı)',
     },
     result: {
       title: 'Üretilen klip',

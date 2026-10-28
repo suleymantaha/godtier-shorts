@@ -18,6 +18,10 @@ class DeterministicJobError(RuntimeError):
     pass
 
 
+class PostRenderStorageQuotaError(DeterministicJobError):
+    """GPU work finished, so publication rejection must consume reserved credits."""
+
+
 class TransientJobError(RuntimeError):
     pass
 
@@ -29,6 +33,7 @@ class WorkerJobStore(Protocol):
     async def complete(self, job_id: UUID) -> None: ...
     async def fail(self, job_id: UUID, code: str, message: str) -> None: ...
     async def settle(self, job_id: UUID) -> None: ...
+    async def settle_failure(self, job_id: UUID, code: str, message: str) -> None: ...
     async def release(self, job_id: UUID) -> None: ...
 
 
@@ -68,6 +73,9 @@ class GpuJobWorker:
         heartbeat_task = asyncio.create_task(heartbeat_loop())
         try:
             await self._runner(request, report)
+        except PostRenderStorageQuotaError as exc:
+            await self._store.settle_failure(job_id, "OUTPUT_STORAGE_QUOTA_EXCEEDED", str(exc))
+            return
         except DeterministicJobError as exc:
             await self._store.fail(job_id, "DETERMINISTIC_ERROR", str(exc))
             await self._store.release(job_id)
@@ -155,6 +163,25 @@ class SqlAlchemyWorkerJobStore:
         if amount > 0:
             await ledger.settle(user_id, job_id, amount, f"settle:worker:{job_id}")
 
+    async def settle_failure(self, job_id: UUID, code: str, message: str) -> None:
+        """Charge and mark ERROR atomically: recovery must never see paid success."""
+        factory = get_session_factory()
+        async with factory() as session, session.begin():
+            user_id = await session.scalar(select(Job.user_id).where(Job.id == job_id))
+            # Match admission/deletion's outer User fence. The ledger then takes
+            # its existing wallet -> Job locks; never invert them here.
+            await session.scalar(select(User).where(User.id == user_id).with_for_update())
+            job = await session.get(Job, job_id)
+            if job is None:
+                raise DeterministicJobError("Job not found")
+            if job.status is JobStatus.ERROR and job.error_code == code and job.settled_credits > 0:
+                return
+            if job.status is not JobStatus.PROCESSING or job.reserved_credits <= 0:
+                raise DeterministicJobError("Job has no active credit reservation")
+            await ledger.settle_in_session(
+                session, user_id, job_id, job.reserved_credits, f"settle:worker:{job_id}")
+            await self._finish_in_session(session, job_id, JobStatus.ERROR, code, message)
+
     async def release(self, job_id: UUID) -> None:
         user_id, amount = await self._reservation(job_id)
         if amount > 0:
@@ -163,13 +190,16 @@ class SqlAlchemyWorkerJobStore:
     async def _finish(self, job_id: UUID, status: JobStatus, code: str | None, message: str) -> None:
         factory = get_session_factory()
         async with factory() as session, session.begin():
-            job = await self._locked_job(session, job_id)
-            job.status, job.last_message = status, message
-            job.error_code = code
-            job.error_message = message if code else None
-            job.progress = 100 if status is JobStatus.COMPLETED else job.progress
-            job.finished_at = datetime.now(timezone.utc)
-            session.add(JobEvent(job_id=job.id, status=status, progress=job.progress, message=message, source="gpu-worker"))
+            await self._finish_in_session(session, job_id, status, code, message)
+
+    async def _finish_in_session(self, session, job_id, status, code, message) -> None:
+        job = await self._locked_job(session, job_id)
+        job.status, job.last_message = status, message
+        job.error_code = code
+        job.error_message = message if code else None
+        job.progress = 100 if status is JobStatus.COMPLETED else job.progress
+        job.finished_at = datetime.now(timezone.utc)
+        session.add(JobEvent(job_id=job.id, status=status, progress=job.progress, message=message, source="gpu-worker"))
 
 
 async def run_gpu_job(ctx: dict[str, Any], job_id: str) -> None:

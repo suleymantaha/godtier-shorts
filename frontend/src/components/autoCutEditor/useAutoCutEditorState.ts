@@ -13,7 +13,7 @@ export interface StoredAutoCutSession {
 }
 
 function resolveInitialLayout(layout: StoredAutoCutSession['layout']): RequestedSubtitleLayout {
-  return layout === 'single' || layout === 'split' ? layout : 'auto';
+  return layout === 'fit' || layout === 'single' || layout === 'split' ? layout : 'auto';
 }
 
 function resolveInitialTimingState(initialSession: StoredAutoCutSession | null) {

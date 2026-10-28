@@ -279,7 +279,7 @@ function EnabledPreview({
             <video
               aria-hidden="true"
               autoPlay
-              className="absolute inset-0 h-full w-full object-cover opacity-50 saturate-150"
+              className={layout === 'fit' ? "absolute inset-0 h-full w-full object-contain bg-black" : "absolute inset-0 h-full w-full object-cover opacity-50 saturate-150"}
               data-testid="subtitle-preview-media"
               loop
               muted

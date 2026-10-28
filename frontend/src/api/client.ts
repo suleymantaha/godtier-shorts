@@ -734,7 +734,7 @@ export const editorApi = {
             num_clips?: number;
             cut_points?: number[];
             cut_as_short?: boolean;
-            layout?: 'auto' | 'single' | 'split';
+            layout?: 'auto' | 'single' | 'split' | 'fit';
             duration_min?: number;
             duration_max?: number;
         },
