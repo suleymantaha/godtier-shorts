@@ -28,6 +28,34 @@
 - Production secret'ları repo/.env dosyasına commit edilmeyecek.
 - Her task TDD + bağımsız test + küçük commit ile ilerleyecek.
 
+## Delivery Status
+
+Aşağıdaki tablo git merge geçmişinden türetilmiştir ve bu planın tek güvenilir
+ilerleme kaydıdır. Task gövdelerindeki `- [ ]` kutuları Task 5'ten itibaren
+güncellenmemiştir; çelişki durumunda bu tablo geçerlidir.
+
+| Task | Durum | Kaynak |
+| --- | --- | --- |
+| 1–7 Production config, PostgreSQL/Alembic, Clerk isolation, credit ledger, pricing, iyzico subscription + webhook | Tamamlandı | PR #13 |
+| 8 Free viral scan | Tamamlandı | PR #14 |
+| 9 Source URL SSRF policy | Tamamlandı | PR #15 |
+| 10 Abuse risk engine v1 | Tamamlandı | PR #16 |
+| 11 Cloudflare Turnstile | Tamamlandı | PR #17 |
+| 12 Private object storage | Tamamlandı | PR #18 |
+| 13 Redis/ARQ distributed queue | Tamamlandı | PR #19 |
+| 14 Jobs route refactor | Tamamlandı | PR #20 |
+| 15 GPU worker container | Tamamlandı | PR #21 |
+| 16 GPU cost telemetry | Tamamlandı | PR #22 |
+| 17 Landing + pricing + paywall | Tamamlandı | PR #23 |
+| 18 Billing/usage UI | Tamamlandı | PR #24 |
+| 19 Security headers + CORS | Tamamlandı | PR #25 |
+| 20 API rate limiting | Tamamlandı | PR #26 |
+| 21 Audit + admin panel | Tamamlandı | PR #27 |
+| 22 Observability | Tamamlandı | PR #28 |
+| 23 CI/CD | Tamamlandı | bkz. [CI/CD ve Production Deploy](../../operations/ci-cd-and-deployment.md) |
+| 24 Cloud deployment | Açık | — |
+| 25 Launch E2E acceptance suite | Açık | — |
+
 ---
 
 # 1. ÜRÜN VE PARA KAZANMA MODELİ

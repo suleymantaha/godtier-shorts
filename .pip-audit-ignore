@@ -1,0 +1,10 @@
+# Advisories that pip-audit must not fail the build on.
+#
+# Every entry needs a fix-unavailable justification and a review owner. If an
+# upstream fix ships, remove the line instead of bumping the review date.
+#
+# PYSEC-2026-139 — torch: local deserialization in the pt2 loading handler.
+#   No fixed release exists upstream. The GPU worker only loads checkpoints we
+#   ship in the image (/models) and never user-supplied .pt/pickle payloads, so
+#   the local attack vector is not reachable from product input.
+PYSEC-2026-139
