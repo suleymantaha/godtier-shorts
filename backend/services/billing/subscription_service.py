@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+from collections.abc import AsyncIterator
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -191,6 +193,10 @@ class SubscriptionRepository(Protocol):
 
     async def get_subscription(self, user_id: UUID) -> LocalSubscription | None: ...
 
+    def locked_subscription(
+        self, user_id: UUID,
+    ) -> AbstractAsyncContextManager[LocalSubscription | None]: ...
+
     async def set_status(self, subscription_id: UUID, status: SubscriptionStatus) -> None: ...
 
     async def change_plan(self, subscription_id: UUID, subscription: LocalSubscription) -> None: ...
@@ -222,16 +228,21 @@ class SqlAlchemySubscriptionRepository:
             return None
         return LocalPlan(id=plan.id, code=plan.code, active=plan.active)
 
-    async def get_subscription(self, user_id: UUID) -> LocalSubscription | None:
-        row = (
-            await self._session.execute(
-                select(Subscription, Plan.code)
-                .join(Plan, Plan.id == Subscription.plan_id)
-                .where(Subscription.user_id == user_id)
-                .order_by(Subscription.created_at.desc())
-                .limit(1)
+    async def get_subscription(
+        self, user_id: UUID, *, for_update: bool = False,
+    ) -> LocalSubscription | None:
+        statement = (
+            select(Subscription, Plan.code)
+            .join(Plan, Plan.id == Subscription.plan_id)
+            .where(Subscription.user_id == user_id)
+            .order_by(Subscription.created_at.desc())
+            .limit(1)
+        )
+        if for_update:
+            statement = statement.with_for_update(of=Subscription).execution_options(
+                populate_existing=True,
             )
-        ).first()
+        row = (await self._session.execute(statement)).first()
         if row is None:
             return None
         subscription, plan_code = row
@@ -244,6 +255,18 @@ class SqlAlchemySubscriptionRepository:
             plan_id=subscription.plan_id,
             grace_until=subscription.entitlement_grace_until,
         )
+
+    @asynccontextmanager
+    async def locked_subscription(
+        self, user_id: UUID,
+    ) -> AsyncIterator[LocalSubscription | None]:
+        # Same row lock as webhook/admin writers, held across provider verification.
+        try:
+            yield await self.get_subscription(user_id, for_update=True)
+            await self._session.commit()
+        except BaseException:
+            await self._session.rollback()
+            raise
 
     async def set_status(self, subscription_id: UUID, status: SubscriptionStatus) -> None:
         await self._session.execute(
@@ -285,10 +308,9 @@ class SqlAlchemySubscriptionRepository:
             )
             .on_conflict_do_update(
                 index_elements=[Subscription.provider_subscription_ref],
-                set_={
-                    "plan_id": subscription.plan_id,
-                    "status": subscription.status,
-                },
+                # Existing references were already created by checkout/webhook.
+                # Ownership is checked without replaying an old status or plan.
+                set_={"provider_subscription_ref": Subscription.provider_subscription_ref},
                 where=Subscription.user_id == subscription.user_id,
             )
         )
@@ -467,7 +489,7 @@ class SqlAlchemySubscriptionRepository:
             )
             .on_conflict_do_update(
                 index_elements=[Subscription.provider_subscription_ref],
-                set_={"plan_id": subscription.plan_id, "status": subscription.status},
+                set_={"provider_subscription_ref": Subscription.provider_subscription_ref},
                 where=Subscription.user_id == subscription.user_id,
             )
         )
@@ -580,34 +602,34 @@ class SubscriptionService:
         return checkout
 
     async def get_status(self, user_id: UUID) -> SubscriptionSnapshot:
-        subscription = await self._repository.get_subscription(user_id)
-        if subscription is None:
-            raise SubscriptionServiceError("subscription bulunamadi")
-        provider = await self._provider.get_subscription(subscription.provider_reference)
-        if provider.reference_code != subscription.provider_reference:
-            raise SubscriptionServiceError("provider subscription eslesmesi gecersiz")
-        interval = self._plan_references.verify_provider_references(
-            subscription.plan_code,
-            provider.product_reference_code,
-            provider.pricing_plan_reference_code,
-        )
-        try:
-            status = PROVIDER_STATUS_MAP[provider.status]
-        except KeyError as exc:
-            raise SubscriptionServiceError("provider subscription status gecersiz") from exc
-        if (
-            subscription.status is SubscriptionStatus.PAST_DUE
-            and status is SubscriptionStatus.ACTIVE
-        ):
-            status = SubscriptionStatus.PAST_DUE
-        if status is not subscription.status:
-            await self._repository.set_status(subscription.id, status)
-        return SubscriptionSnapshot(
-            subscription.plan_code,
-            interval,
-            status,
-            grace_until=subscription.grace_until,
-        )
+        async with self._repository.locked_subscription(user_id) as subscription:
+            if subscription is None:
+                raise SubscriptionServiceError("subscription bulunamadi")
+            provider = await self._provider.get_subscription(subscription.provider_reference)
+            if provider.reference_code != subscription.provider_reference:
+                raise SubscriptionServiceError("provider subscription eslesmesi gecersiz")
+            interval = self._plan_references.verify_provider_references(
+                subscription.plan_code,
+                provider.product_reference_code,
+                provider.pricing_plan_reference_code,
+            )
+            try:
+                status = PROVIDER_STATUS_MAP[provider.status]
+            except KeyError as exc:
+                raise SubscriptionServiceError("provider subscription status gecersiz") from exc
+            if (
+                subscription.status is SubscriptionStatus.PAST_DUE
+                and status is SubscriptionStatus.ACTIVE
+            ):
+                status = SubscriptionStatus.PAST_DUE
+            if status is not subscription.status:
+                await self._repository.set_status(subscription.id, status)
+            return SubscriptionSnapshot(
+                subscription.plan_code,
+                interval,
+                status,
+                grace_until=subscription.grace_until,
+            )
 
     async def change_plan(
         self,
@@ -615,51 +637,51 @@ class SubscriptionService:
         plan_code: str,
         interval: BillingInterval,
     ) -> SubscriptionSnapshot:
-        subscription = await self._repository.get_subscription(user_id)
-        if subscription is None:
-            raise SubscriptionServiceError("subscription bulunamadi")
-        target_plan = await self._repository.get_plan(plan_code)
-        if target_plan is None or not target_plan.active:
-            raise SubscriptionServiceError("aktif plan bulunamadi")
-        provider = await self._provider.get_subscription(subscription.provider_reference)
-        current_interval = self._plan_references.verify_provider_references(
-            subscription.plan_code,
-            provider.product_reference_code,
-            provider.pricing_plan_reference_code,
-        )
-        if current_interval is not interval:
-            raise SubscriptionServiceError("plan degisikligi odeme araligi ile eslesmiyor")
-        target_pricing_reference = self._plan_references.pricing_reference(plan_code, interval)
-        self._plan_references.verify_provider_references(
-            plan_code,
-            provider.product_reference_code,
-            target_pricing_reference,
-        )
-        upgraded_reference = await self._provider.upgrade_subscription(
-            subscription.provider_reference,
-            target_pricing_reference,
-        )
-        upgraded = await self._provider.get_subscription(upgraded_reference)
-        verified_interval = self._plan_references.verify_provider_references(
-            plan_code,
-            upgraded.product_reference_code,
-            upgraded.pricing_plan_reference_code,
-        )
-        try:
-            status = PROVIDER_STATUS_MAP[upgraded.status]
-        except KeyError as exc:
-            raise SubscriptionServiceError("provider subscription status gecersiz") from exc
-        changed = LocalSubscription(
-            id=subscription.id,
-            user_id=user_id,
-            provider_reference=upgraded.reference_code,
-            plan_code=plan_code,
-            status=status,
-            plan_id=target_plan.id,
-            grace_until=subscription.grace_until,
-        )
-        await self._repository.change_plan(subscription.id, changed)
-        return SubscriptionSnapshot(plan_code, verified_interval, status, subscription.grace_until)
+        async with self._repository.locked_subscription(user_id) as subscription:
+            if subscription is None:
+                raise SubscriptionServiceError("subscription bulunamadi")
+            target_plan = await self._repository.get_plan(plan_code)
+            if target_plan is None or not target_plan.active:
+                raise SubscriptionServiceError("aktif plan bulunamadi")
+            provider = await self._provider.get_subscription(subscription.provider_reference)
+            current_interval = self._plan_references.verify_provider_references(
+                subscription.plan_code,
+                provider.product_reference_code,
+                provider.pricing_plan_reference_code,
+            )
+            if current_interval is not interval:
+                raise SubscriptionServiceError("plan degisikligi odeme araligi ile eslesmiyor")
+            target_pricing_reference = self._plan_references.pricing_reference(plan_code, interval)
+            self._plan_references.verify_provider_references(
+                plan_code,
+                provider.product_reference_code,
+                target_pricing_reference,
+            )
+            upgraded_reference = await self._provider.upgrade_subscription(
+                subscription.provider_reference,
+                target_pricing_reference,
+            )
+            upgraded = await self._provider.get_subscription(upgraded_reference)
+            verified_interval = self._plan_references.verify_provider_references(
+                plan_code,
+                upgraded.product_reference_code,
+                upgraded.pricing_plan_reference_code,
+            )
+            try:
+                status = PROVIDER_STATUS_MAP[upgraded.status]
+            except KeyError as exc:
+                raise SubscriptionServiceError("provider subscription status gecersiz") from exc
+            changed = LocalSubscription(
+                id=subscription.id,
+                user_id=user_id,
+                provider_reference=upgraded.reference_code,
+                plan_code=plan_code,
+                status=status,
+                plan_id=target_plan.id,
+                grace_until=subscription.grace_until,
+            )
+            await self._repository.change_plan(subscription.id, changed)
+            return SubscriptionSnapshot(plan_code, verified_interval, status, subscription.grace_until)
 
     async def confirm_checkout(self, token: str) -> SubscriptionSnapshot:
         token_hash = hashlib.sha256(token.strip().encode()).hexdigest()
@@ -711,8 +733,8 @@ class SubscriptionService:
         return SubscriptionSnapshot(plan.code, interval, status)
 
     async def cancel(self, user_id: UUID) -> SubscriptionSnapshot:
-        subscription = await self._repository.get_subscription(user_id)
-        if subscription is None:
-            raise SubscriptionServiceError("subscription bulunamadi")
-        await self._provider.cancel_subscription(subscription.provider_reference)
-        return await self.get_status(user_id)
+        async with self._repository.locked_subscription(user_id) as subscription:
+            if subscription is None:
+                raise SubscriptionServiceError("subscription bulunamadi")
+            await self._provider.cancel_subscription(subscription.provider_reference)
+            return await self.get_status(user_id)

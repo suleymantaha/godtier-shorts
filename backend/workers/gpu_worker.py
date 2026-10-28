@@ -158,5 +158,6 @@ class WorkerSettings:
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
     max_jobs = 1
+    allow_abort_jobs = True
     job_timeout = 6 * 60 * 60
     max_tries = 3

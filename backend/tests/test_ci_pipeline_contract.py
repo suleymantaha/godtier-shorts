@@ -48,6 +48,28 @@ def test_pr_gate_runs_tests_security_and_both_production_image_builds() -> None:
     assert {"verify", "security", "docker-api", "docker-gpu"} <= set(workflow["jobs"])
 
 
+def test_pr_gate_installs_ffmpeg_before_media_tests() -> None:
+    steps = _load_workflow(VERIFY_WORKFLOW)["jobs"]["verify"]["steps"]
+    install = next((i for i, step in enumerate(steps) if "apt-get install -y ffmpeg" in str(step.get("run", ""))), None)
+    verify = next(i for i, step in enumerate(steps) if "scripts/verify.sh" in str(step.get("run", "")))
+
+    assert install is not None and install < verify
+
+
+def test_pr_gate_exercises_account_purge_on_postgres() -> None:
+    env = _load_workflow(VERIFY_WORKFLOW)["jobs"]["verify"]["env"]
+
+    assert env["ACCOUNT_PURGE_TEST_DATABASE_URL"] == env["TEST_DATABASE_URL"]
+
+
+def test_verify_avoids_duplicate_push_and_pr_runs_for_feature_branches() -> None:
+    workflow = _load_workflow(VERIFY_WORKFLOW)
+    triggers = workflow.get("on", workflow.get(True))
+
+    assert triggers["push"]["branches"] == ["main"]
+    assert "pull_request" in triggers
+
+
 def test_pr_gate_security_job_audits_dependencies_and_migrations() -> None:
     script = _job_script(_load_workflow(VERIFY_WORKFLOW)["jobs"]["security"])
 

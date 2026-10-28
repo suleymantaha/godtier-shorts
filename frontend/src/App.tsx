@@ -24,7 +24,7 @@ function AuthStateCard({
 function App() {
   const { t } = useTranslation();
   const auth = useResilientAuth();
-  const controller = useAppShellController(auth.canUseBackend, auth.identityKey);
+  const controller = useAppShellController(auth.canUseBackend, auth.identityKey, auth.canAccessApp);
 
   return (
     <>

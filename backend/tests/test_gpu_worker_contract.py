@@ -1,16 +1,24 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from uuid import uuid4
 
 import pytest
 from arq import Retry
+from arq.worker import Worker
 
 from backend.workers.gpu_tasks import (
     DeterministicJobError,
     GpuJobWorker,
     TransientJobError,
 )
+from backend.workers.gpu_worker import WorkerSettings
+
+
+def test_gpu_worker_accepts_abort_requests_used_by_account_purge() -> None:
+    assert inspect.signature(Worker).parameters["allow_abort_jobs"].default is False
+    assert WorkerSettings.allow_abort_jobs is True
 
 
 class FakeStore:

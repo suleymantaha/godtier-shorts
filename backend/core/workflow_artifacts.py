@@ -41,8 +41,9 @@ class ProgressStepMapper:
 
 
 def resolve_layout_safety_mode() -> str:
-    raw = os.getenv("LAYOUT_SAFETY_MODE", "shadow").strip().lower()
-    return raw if raw in VALID_LAYOUT_SAFETY_MODES else "shadow"
+    default = "enforce" if os.getenv("APP_ENV", "development").strip().lower() == "production" else "shadow"
+    raw = os.getenv("LAYOUT_SAFETY_MODE", default).strip().lower()
+    return raw if raw in VALID_LAYOUT_SAFETY_MODES else default
 
 
 def build_layout_review_item(

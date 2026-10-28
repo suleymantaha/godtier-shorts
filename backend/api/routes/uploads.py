@@ -24,6 +24,10 @@ from backend.services.storage.object_store import (
 )
 from backend.services.storage.r2_store import R2ObjectStore, SqlAlchemyAssetRepository
 from backend.services.storage.validated_uploads import upload_project_id
+from backend.services.storage.upload_reservations import (
+    SqlAlchemyUploadReservations,
+    UploadQuotaExceeded,
+)
 
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -75,6 +79,7 @@ async def get_object_store(
         client=client,
         bucket_name=os.environ["R2_BUCKET_NAME"],
         asset_repository=SqlAlchemyAssetRepository(session),
+        upload_reservations=SqlAlchemyUploadReservations(),
     )
 
 
@@ -104,6 +109,8 @@ async def presign_upload(
             payload.content_type,
             payload.size_bytes,
         )
+    except UploadQuotaExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     except UploadValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ObjectStoreError as exc:

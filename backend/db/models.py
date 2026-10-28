@@ -444,3 +444,17 @@ class AuditLog(Base):
     ip_hash: Mapped[str | None] = mapped_column(String(64))
     metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", JSON_VALUE, nullable=False, default=dict)
     created_at: Mapped[datetime] = _created_at()
+
+
+class UploadReservation(Base):
+    """Durable charge for an issued PUT, retained until storage finality is proven."""
+
+    __tablename__ = "upload_reservations"
+    __table_args__ = (CheckConstraint("size_bytes > 0", name="upload_size_positive"),)
+
+    storage_key: Mapped[str] = mapped_column(Text, primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    content_type: Mapped[str] = mapped_column(String(160), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = _created_at()

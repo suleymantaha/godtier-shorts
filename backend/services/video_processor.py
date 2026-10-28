@@ -159,8 +159,9 @@ def _clamp01(value: float) -> float:
 
 
 def _read_layout_safety_mode() -> str:
-    raw = os.getenv("LAYOUT_SAFETY_MODE", "shadow").strip().lower()
-    return raw if raw in {"off", "shadow", "enforce"} else "shadow"
+    default = "enforce" if os.getenv("APP_ENV", "development").strip().lower() == "production" else "shadow"
+    raw = os.getenv("LAYOUT_SAFETY_MODE", default).strip().lower()
+    return raw if raw in {"off", "shadow", "enforce"} else default
 
 
 def _box_iou(box_a: tuple[float, float, float, float], box_b: tuple[float, float, float, float]) -> float:

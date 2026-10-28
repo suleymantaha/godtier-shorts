@@ -7,6 +7,8 @@ import backend.api.server as server_module
 import backend.config as config_module
 from backend.api.server import create_app
 from backend.runtime_validation import validate_runtime_configuration
+from backend.core.workflow_artifacts import resolve_layout_safety_mode
+from backend.services.video_processor import _read_layout_safety_mode
 
 
 PRODUCTION_API_ENV = {
@@ -37,6 +39,32 @@ PRODUCTION_API_ENV = {
 def _set_production_api_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for name, value in PRODUCTION_API_ENV.items():
         monkeypatch.setenv(name, value)
+
+
+def test_production_defaults_to_enforced_layout_safety(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_production_api_env(monkeypatch)
+    monkeypatch.delenv("LAYOUT_SAFETY_MODE", raising=False)
+
+    assert resolve_layout_safety_mode() == "enforce"
+    assert _read_layout_safety_mode() == "enforce"
+
+
+def test_production_rejects_disabled_layout_safety(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_production_api_env(monkeypatch)
+    monkeypatch.setenv("LAYOUT_SAFETY_MODE", "shadow")
+
+    with pytest.raises(RuntimeError, match="LAYOUT_SAFETY_MODE"):
+        validate_runtime_configuration()
+
+
+@pytest.mark.parametrize("value", ["0", "invalid"])
+def test_upload_storage_quota_requires_positive_integer(
+    monkeypatch: pytest.MonkeyPatch, value: str,
+) -> None:
+    monkeypatch.setenv("UPLOAD_STORAGE_QUOTA_BYTES", value)
+
+    with pytest.raises(RuntimeError, match="UPLOAD_STORAGE_QUOTA_BYTES"):
+        validate_runtime_configuration()
 
 
 def test_validate_runtime_configuration_accepts_defaults(monkeypatch: pytest.MonkeyPatch) -> None:

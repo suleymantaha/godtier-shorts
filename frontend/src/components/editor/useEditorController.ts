@@ -26,6 +26,8 @@ import {
   type ResolvedEditorSessionState,
 } from './helpers';
 
+const FAILED_EDITOR_JOB_STATUSES = new Set<Job['status']>(['error', 'cancelled', 'review_required', 'empty']);
+
 export interface EditorProps {
   mode?: 'master' | 'clip';
   onClose?: () => void;
@@ -281,10 +283,10 @@ function useTrackEditorJobEffect({ jobs, state }: Pick<EditorEffectsParams, 'job
       return;
     }
 
-    if (job.status === 'error' || job.status === 'cancelled') {
+    if (FAILED_EDITOR_JOB_STATUSES.has(job.status)) {
       setProcessing(false);
       setTranscribing(false);
-      setError(job.last_message || 'İşlem başarısız.');
+      setError(job.error || job.last_message || 'İşlem başarısız.');
       setCurrentJobId(null);
     }
   }, [

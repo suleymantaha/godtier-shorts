@@ -286,6 +286,21 @@ describe('App navigation and workspace restoration', () => {
   });
 });
 
+describe('App signed-out auth routes', () => {
+  it.each(['/sign-in', '/sign-up'])('preserves signed-out auth route %s', async (path) => {
+    resilientAuthState.status = 'signed_out';
+    resilientAuthState.canAccessApp = false;
+    resilientAuthState.canUseBackend = false;
+    resilientAuthState.identityKey = null;
+    window.history.replaceState({}, '', `${path}?redirect_url=%2Fsocial`);
+    render(<App />);
+    if (path === '/sign-in') await screen.findByText('SignIn');
+    await waitFor(() => expect(window.location.pathname).toBe(path));
+    expect(window.location.search).toBe('?redirect_url=%2Fsocial');
+  });
+
+});
+
 describe('App auth and fallback rendering', () => {
   it('clears locked subtitle targets when opening subtitle mode from navigation', async () => {
     localStorage.setItem(AUTH_IDENTITY_STORAGE_KEY, 'user-1');

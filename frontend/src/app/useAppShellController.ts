@@ -113,14 +113,17 @@ function usePersistedAppShellStateEffect(
   viewMode: AppViewMode,
   editingClip: Clip | null,
   subtitleTargetClip: Clip | null,
+  canAccessApp: boolean,
 ) {
   useEffect(() => {
     persistAppState(viewMode, editingClip, subtitleTargetClip);
-    syncViewModeToUrl(viewMode);
-  }, [editingClip, subtitleTargetClip, viewMode]);
+    if (canAccessApp) {
+      syncViewModeToUrl(viewMode);
+    }
+  }, [canAccessApp, editingClip, subtitleTargetClip, viewMode]);
 }
 
-export function useAppShellController(canUseBackend = true, identityKey: string | null = null) {
+export function useAppShellController(canUseBackend = true, identityKey: string | null = null, canAccessApp = true) {
   useWebSocket(canUseBackend);
   const wsStatus = useJobStore((store) => store.wsStatus);
   const [viewMode, setViewMode] = useState<AppViewMode>(() => readAppState().viewMode);
@@ -161,7 +164,7 @@ export function useAppShellController(canUseBackend = true, identityKey: string 
     setSubtitleTargetClip,
     setViewMode,
   });
-  usePersistedAppShellStateEffect(viewMode, editingClip, subtitleTargetClip);
+  usePersistedAppShellStateEffect(viewMode, editingClip, subtitleTargetClip, canAccessApp);
 
   return {
     closeEditor,
