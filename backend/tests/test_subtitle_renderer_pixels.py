@@ -14,7 +14,9 @@ from backend.services.subtitle_renderer import SubtitleRenderer
 from backend.services.subtitle_styles import StyleManager
 
 
-def _render_frames(tmp_path: Path, *, layout: str, words: list[str]) -> bytes:
+def _render_frames(
+    tmp_path: Path, *, layout: str, words: list[str], font_name: str | None = None,
+) -> bytes:
     executable = resolve_ffmpeg()
     if not shutil.which(executable):
         pytest.skip("FFmpeg is required for the libass pixel regression")
@@ -32,7 +34,10 @@ def _render_frames(tmp_path: Path, *, layout: str, words: list[str]) -> bytes:
             for index, word in enumerate(words)
         ],
     }]), encoding="utf-8")
-    renderer = SubtitleRenderer(StyleManager.get_preset("HORMOZI"), layout=layout)
+    style = StyleManager.get_preset("HORMOZI")
+    if font_name is not None:
+        style = style.model_copy(update={"font_name": font_name})
+    renderer = SubtitleRenderer(style, layout=layout)
     renderer.generate_ass_file(str(transcript), str(tmp_path / "subtitle.ass"))
     # Render all frames across the pop's growth, peak, and settled size. Using a
     # relative ASS path also avoids platform-specific drive/colon filter escaping.
@@ -47,10 +52,15 @@ def _render_frames(tmp_path: Path, *, layout: str, words: list[str]) -> bytes:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("layout", ["split", "single"])
+@pytest.mark.parametrize("font_name", [None, "DejaVu Sans", "Godtier Missing Font"])
 def test_long_turkish_word_stays_inside_frame_at_animation_peak(
-    tmp_path: Path, layout: str,
+    tmp_path: Path, layout: str, font_name: str | None,
 ) -> None:
-    frames = _render_frames(tmp_path, layout=layout, words=["Döndüremiyorum"])
+    # The requested preset font is not bundled. Exercise a common Linux font
+    # and libass fallback as well as the platform's normal preset resolution.
+    frames = _render_frames(
+        tmp_path, layout=layout, words=["Döndüremiyorum"], font_name=font_name,
+    )
     frame_bytes = 1080 * 1920
     visible_frames = 0
     for offset in range(0, len(frames), frame_bytes):
@@ -64,6 +74,23 @@ def test_long_turkish_word_stays_inside_frame_at_animation_peak(
         assert min(columns) >= 86, f"left glyph edge {min(columns)} at frame {offset // frame_bytes}"
         assert max(columns) < 994, f"right glyph edge {max(columns)} at frame {offset // frame_bytes}"
     assert visible_frames >= 5, "Expected visible subtitles across the animation"
+
+
+@pytest.mark.integration
+def test_wide_fallback_font_is_clamped_below_estimated_overflow_threshold(
+    tmp_path: Path,
+) -> None:
+    # The heuristic estimates this line below the limit, while libass draws
+    # DejaVu Sans beyond both horizontal safe margins at the pop peak.
+    frames = _render_frames(
+        tmp_path, layout="single", words=["MMMMMMMM"], font_name="DejaVu Sans",
+    )
+    frame_bytes = 1080 * 1920
+    peak = frames[frame_bytes:2 * frame_bytes]
+    columns = [index % 1080 for index, value in enumerate(peak) if value > 32]
+    assert columns
+    assert min(columns) >= 86
+    assert max(columns) < 994
 
 
 @pytest.mark.integration

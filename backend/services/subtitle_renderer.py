@@ -51,9 +51,14 @@ SPLIT_HARD_OVERFLOW_RATIO = 1.0
 SINGLE_MIN_FONT_SCALE = 0.72
 SPLIT_MIN_FONT_SCALE = 0.82
 SPLIT_FONT_CLAMP_MARGIN = 0.995
+# Preset fonts are not bundled: libass may select a wider fallback (for
+# example DejaVu Sans on Linux). Reserve width when clamping long chunks;
+# the character heuristic alone underestimates that font's animation peak.
+FONT_FALLBACK_WIDTH_RESERVE = 1.20
 SMALL_GAP_BRIDGE_THRESHOLD = 0.18
 NARROW_CHARACTERS = set("ilı!:;'|")
 WIDE_LOWER_CHARACTERS = set("mw")
+WIDE_UPPER_CHARACTERS = set("MW")
 PUNCTUATION_CHARACTERS = set(".,?")
 
 
@@ -395,6 +400,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 units += 0.52
             elif char in WIDE_LOWER_CHARACTERS:
                 units += 0.62
+            elif char in WIDE_UPPER_CHARACTERS:
+                units += 0.85
             elif char.isalpha():
                 units += 0.58 if char.isupper() else 0.49
             else:
@@ -461,7 +468,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     ) -> float:
         lines = self._chunk_lines(chunk, line_break_after=line_break_after)
         peak_scale = self._animation_width_scale()
-        widest = max((self._estimate_line_width_ratio(line) for line in lines if line), default=0.0) * peak_scale
+        widest = (
+            max((self._estimate_line_width_ratio(line) for line in lines if line), default=0.0)
+            * peak_scale * FONT_FALLBACK_WIDTH_RESERVE
+        )
         if widest <= 1.0:
             return 1.0
         desired_scale = (1.0 / widest) * SPLIT_FONT_CLAMP_MARGIN
@@ -608,16 +618,18 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             overflow_metrics = retry_metrics
             overflow_strategy = "conservative_line_break"
 
-        if overflow_metrics["subtitle_overflow_detected"]:
-            chunk_font_scales = self._resolve_single_chunk_font_scales(chunks, line_breaks=line_breaks)
-            if chunk_font_scales:
-                retry_metrics = self._estimate_chunk_overflow(
-                    chunks,
-                    line_breaks=line_breaks,
-                    font_scales=chunk_font_scales,
-                )
-                overflow_metrics = retry_metrics
-                overflow_strategy = self._promote_overflow_strategy(overflow_strategy, "single_font_clamp")
+        # The heuristic can rate a line below 1.0 while a wider libass fallback
+        # font still crosses the pixel margin. Apply the reserved clamp even
+        # when no heuristic overflow was detected.
+        chunk_font_scales = self._resolve_single_chunk_font_scales(chunks, line_breaks=line_breaks)
+        if chunk_font_scales:
+            retry_metrics = self._estimate_chunk_overflow(
+                chunks,
+                line_breaks=line_breaks,
+                font_scales=chunk_font_scales,
+            )
+            overflow_metrics = retry_metrics
+            overflow_strategy = self._promote_overflow_strategy(overflow_strategy, "single_font_clamp")
 
         return chunks, {
             **overflow_metrics,
