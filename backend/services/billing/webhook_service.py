@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Protocol
@@ -151,6 +152,15 @@ class WebhookSubscription:
     currency: str
 
 
+@dataclass(frozen=True, slots=True)
+class WebhookUpdate:
+    status: SubscriptionStatus
+    grace_until: datetime | None
+    grant_credits: int
+    payment_amount_minor: int
+    payment_currency: str
+
+
 class WebhookRepository(Protocol):
     async def claim_event(self, event_key: str, payload_hash: str) -> bool: ...
 
@@ -231,11 +241,7 @@ class SqlAlchemyWebhookRepository:
         payload_hash: str,
         notification: WebhookNotification,
         subscription: WebhookSubscription,
-        status: SubscriptionStatus,
-        grace_until: datetime | None,
-        grant_credits: int,
-        payment_amount_minor: int,
-        payment_currency: str,
+        resolve_update: Callable[[], Awaitable[WebhookUpdate]],
     ) -> bool:
         async with self._session.begin():
             event = await self._session.scalar(
@@ -264,6 +270,15 @@ class SqlAlchemyWebhookRepository:
             if local is None:
                 raise WebhookError("webhook subscription sahipligi gecersiz")
 
+            # Serialize provider reads with all webhook writes for this subscription.
+            # A snapshot obtained before this lock can be stale after another order commits.
+            update = await resolve_update()
+            status = update.status
+            grace_until = update.grace_until
+            grant_credits = update.grant_credits
+            payment_amount_minor = update.payment_amount_minor
+            payment_currency = update.payment_currency
+
             payment_status = (
                 PaymentStatus.SUCCEEDED
                 if notification.event_type == "subscription.order.success"
@@ -274,6 +289,7 @@ class SqlAlchemyWebhookRepository:
                 .where(Payment.provider_payment_id == notification.order_reference)
                 .with_for_update()
             )
+            repeated_payment = payment is not None and payment.status is payment_status
             if payment is None:
                 payment = Payment(
                     user_id=subscription.user_id,
@@ -298,9 +314,22 @@ class SqlAlchemyWebhookRepository:
                     currency=payment_currency,
                 )
 
-            local.status = status
-            local.entitlement_grace_until = grace_until
-            if grant_credits:
+            # Payment identity also covers deliveries processed before canonical event keys.
+            terminal = local.status in {
+                SubscriptionStatus.CANCELLED, SubscriptionStatus.EXPIRED,
+            }
+            if not repeated_payment and not terminal:
+                if (
+                    status is SubscriptionStatus.PAST_DUE
+                    and local.status is SubscriptionStatus.PAST_DUE
+                    and local.entitlement_grace_until is not None
+                ):
+                    # A provider sync can mark UNPAID before the first failure delivery.
+                    # Only a persisted deadline anchors an already-started grace window.
+                    grace_until = local.entitlement_grace_until
+                local.status = status
+                local.entitlement_grace_until = grace_until
+            if grant_credits and not repeated_payment and not terminal:
                 await grant_in_session(
                     self._session,
                     subscription.user_id,
@@ -347,19 +376,20 @@ class IyzicoWebhookService:
         if not self._verifier.verify(notification, signature):
             raise WebhookSignatureError("iyzico webhook imzasi gecersiz")
 
-        try:
-            canonical_payload = json.dumps(
-                dict(payload),
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            )
-        except (TypeError, ValueError) as exc:
-            raise WebhookPayloadError("iyzico webhook payload JSON olmali") from exc
-        payload_hash = hashlib.sha256(canonical_payload.encode()).hexdigest()
-        should_process = await self._repository.claim_event(
-            notification.event_reference, payload_hash
+        # Delimited signed fields avoid relying on mutable delivery metadata.
+        event_identity = json.dumps(
+            [
+                notification.merchant_id,
+                notification.event_type,
+                notification.subscription_reference,
+                notification.order_reference,
+                notification.customer_reference,
+            ],
+            separators=(",", ":"),
         )
+        event_key = hashlib.sha256(event_identity.encode()).hexdigest()
+        payload_hash = event_key
+        should_process = await self._repository.claim_event(event_key, payload_hash)
         if not should_process:
             return WebhookResult(processed=False)
 
@@ -368,6 +398,18 @@ class IyzicoWebhookService:
         )
         if local is None:
             raise WebhookError("webhook subscription bulunamadi")
+        processed = await self._repository.apply_event(
+            event_key=event_key,
+            payload_hash=payload_hash,
+            notification=notification,
+            subscription=local,
+            resolve_update=lambda: self._resolve_update(notification, local),
+        )
+        return WebhookResult(processed=processed)
+
+    async def _resolve_update(
+        self, notification: WebhookNotification, local: WebhookSubscription,
+    ) -> WebhookUpdate:
         provider = await self._provider.get_subscription(
             notification.subscription_reference
         )
@@ -387,6 +429,11 @@ class IyzicoWebhookService:
             provider.pricing_plan_reference_code,
         )
 
+        try:
+            status = PROVIDER_STATUS_MAP[provider.status]
+        except KeyError as exc:
+            raise SubscriptionServiceError("provider subscription status gecersiz") from exc
+
         is_success = notification.event_type == "subscription.order.success"
         if is_success:
             if (
@@ -394,12 +441,6 @@ class IyzicoWebhookService:
                 or "SUCCESS" not in provider_order.payment_statuses
             ):
                 raise WebhookError("provider payment order durumu gecersiz")
-            try:
-                status = PROVIDER_STATUS_MAP[provider.status]
-            except KeyError as exc:
-                raise SubscriptionServiceError(
-                    "provider subscription status gecersiz"
-                ) from exc
             if status is not SubscriptionStatus.ACTIVE:
                 raise WebhookError("basarili odeme aktif subscription ile dogrulanamadi")
             grace_until = None
@@ -411,19 +452,17 @@ class IyzicoWebhookService:
                 or "SUCCESS" in provider_order.payment_statuses
             ):
                 raise WebhookError("provider payment order durumu gecersiz")
-            status = SubscriptionStatus.PAST_DUE
-            grace_until = datetime.now(timezone.utc) + timedelta(days=self._grace_days)
+            grace_until = (
+                datetime.now(timezone.utc) + timedelta(days=self._grace_days)
+                if status is SubscriptionStatus.PAST_DUE
+                else None
+            )
             grant_credits = 0
 
-        processed = await self._repository.apply_event(
-            event_key=notification.event_reference,
-            payload_hash=payload_hash,
-            notification=notification,
-            subscription=local,
+        return WebhookUpdate(
             status=status,
             grace_until=grace_until,
             grant_credits=grant_credits,
             payment_amount_minor=provider_order.amount_minor,
             payment_currency=provider_order.currency,
         )
-        return WebhookResult(processed=processed)

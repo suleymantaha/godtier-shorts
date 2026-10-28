@@ -27,7 +27,7 @@ RESOLUTION_ALIASES = {
     "2160": "2160p",
     "4k": "2160p",
 }
-VALID_LAYOUTS = {"auto", "single", "split"}
+VALID_LAYOUTS = {"auto", "single", "split", "fit"}
 
 
 class PricingError(ValueError):

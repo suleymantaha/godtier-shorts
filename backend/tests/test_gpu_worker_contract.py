@@ -1,16 +1,24 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from uuid import uuid4
 
 import pytest
 from arq import Retry
+from arq.worker import Worker
 
 from backend.workers.gpu_tasks import (
     DeterministicJobError,
     GpuJobWorker,
     TransientJobError,
 )
+from backend.workers.gpu_worker import WorkerSettings
+
+
+def test_gpu_worker_accepts_abort_requests_used_by_account_purge() -> None:
+    assert inspect.signature(Worker).parameters["allow_abort_jobs"].default is False
+    assert WorkerSettings.allow_abort_jobs is True
 
 
 class FakeStore:
@@ -87,4 +95,12 @@ def test_unexpected_failure_is_recorded_and_remains_observable() -> None:
     asyncio.run(GpuJobWorker(store, FakePublisher(), runner).execute(uuid4()))
 
     assert any(event[:2] == ("fail", "UNEXPECTED_WORKER_ERROR") for event in store.events)
+    assert store.events[-1][0] == "release"
+
+
+def test_last_transient_attempt_fails_and_releases_reservation():
+    store = FakeStore()
+    async def runner(_request, _report): raise TransientJobError("r2 timeout")
+    asyncio.run(GpuJobWorker(store, FakePublisher(), runner).execute(uuid4(), retry_count=2))
+    assert any(event[:2] == ("fail", "RETRY_EXHAUSTED") for event in store.events)
     assert store.events[-1][0] == "release"

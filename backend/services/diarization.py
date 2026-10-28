@@ -15,6 +15,7 @@ import bisect
 import functools
 import importlib.util
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -341,14 +342,14 @@ def transcript_has_speaker_labels(transcript_json_path: str) -> bool:
     for seg in segments:
         if not isinstance(seg, dict):
             continue
-        speaker = str(seg.get("speaker", "")).strip()
-        if speaker and speaker != "Unknown":
+        speaker = str(seg.get("speaker") or "").strip()
+        if speaker and speaker.lower() != "unknown":
             return True
         for word in seg.get("words", []) or []:
             if not isinstance(word, dict):
                 continue
-            word_speaker = str(word.get("speaker", "")).strip()
-            if word_speaker and word_speaker != "Unknown":
+            word_speaker = str(word.get("speaker") or "").strip()
+            if word_speaker and word_speaker.lower() != "unknown":
                 return True
     return False
 
@@ -627,6 +628,49 @@ class DiarizationEntry(TypedDict):
     speaker: str
 
 
+def speaker_intervals(segments: list[dict[str, Any]]) -> list[DiarizationEntry]:
+    """Prefer reliable word labels; use segment labels in uncovered gaps only."""
+    def label(value: object) -> str | None:
+        speaker = str(value or "").strip()
+        return speaker if speaker and speaker.lower() != "unknown" else None
+
+    def bounds(item: dict) -> tuple[float, float] | None:
+        try:
+            start, end = float(item["start"]), float(item["end"])
+        except (KeyError, ValueError, TypeError):
+            return None
+        return (start, end) if math.isfinite(start) and math.isfinite(end) and end > start else None
+
+    index: list[DiarizationEntry] = []
+    for segment in segments:
+        if not isinstance(segment, dict) or (window := bounds(segment)) is None:
+            continue
+        start, end = window
+        fallback = label(segment.get("speaker"))
+        words: list[DiarizationEntry] = []
+        for word in segment.get("words", []) or []:
+            if not isinstance(word, dict) or (word_window := bounds(word)) is None:
+                continue
+            speaker = label(word.get("speaker"))
+            word_start, word_end = max(start, word_window[0]), min(end, word_window[1])
+            if "speaker" in word and word_end > word_start:
+                # Explicit Unknown blocks fallback; an absent label may use its segment.
+                words.append({"start": word_start, "end": word_end, "speaker": speaker or ""})
+        cursor = start
+        for word in sorted(words, key=lambda entry: entry["start"]):
+            if fallback and word["start"] > cursor:
+                index.append({"start": cursor, "end": word["start"], "speaker": fallback})
+            # Avoid double-counting overlapping word timestamps.
+            word_start = max(cursor, word["start"])
+            if word["end"] > word_start:
+                if word["speaker"]:
+                    index.append({**word, "start": word_start})
+                cursor = word["end"]
+        if fallback and cursor < end:
+            index.append({"start": cursor, "end": end, "speaker": fallback})
+    return sorted(index, key=lambda entry: entry["start"])
+
+
 
 def build_diarization_index(transcript_json_path: str) -> list[DiarizationEntry]:
     """
@@ -642,12 +686,7 @@ def build_diarization_index(transcript_json_path: str) -> list[DiarizationEntry]
         logger.warning("Diarization indeksi yuklenemedi: {}", exc)
         return []
 
-    index: list[DiarizationEntry] = []
-    for seg in segments:
-        speaker = str(seg.get("speaker", "Unknown"))
-        if speaker == "Unknown":
-            continue
-        index.append({"start": float(seg["start"]), "end": float(seg["end"]), "speaker": speaker})
+    index = speaker_intervals(segments) if isinstance(segments, list) else []
 
     if not index:
         logger.debug("Diarization indeksi bos — tum segmentler Unknown.")
@@ -671,9 +710,10 @@ def speaker_at(index: list[DiarizationEntry], t: float) -> str | None:
     pos = bisect.bisect_right(starts, t) - 1
     if pos < 0:
         return None
-    entry = index[pos]
-    if entry["start"] <= t <= entry["end"]:
-        return entry["speaker"]
+    # A shorter overlapping turn can end while an earlier turn is still active.
+    for entry in reversed(index[:pos + 1]):
+        if entry["start"] <= t <= entry["end"]:
+            return entry["speaker"]
     return None
 
 

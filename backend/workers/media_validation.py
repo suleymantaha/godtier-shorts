@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import math
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -9,6 +11,7 @@ from uuid import UUID
 
 from backend.core.render_quality import probe_media
 from backend.services.storage.object_store import validate_upload_metadata
+from backend.services.storage.validated_uploads import persist_validated_upload
 
 
 ALLOWED_CONTAINERS = {"mov", "mp4", "m4a", "3gp", "3g2", "mj2"}
@@ -78,8 +81,20 @@ async def validate_uploaded_media(
             raise ValueError("Uploaded media size changed before validation")
         probe_data = await asyncio.to_thread(probe_media, str(local_path))
         validate_probe_result(probe_data)
+        duration = float(probe_data["format"].get("duration") or 0)
+        if not math.isfinite(duration) or duration <= 0:
+            raise ValueError("Uploaded media has no valid duration")
+        def checksum() -> str:
+            with local_path.open("rb") as source:
+                return hashlib.file_digest(source, "sha256").hexdigest()
+        sha256 = await asyncio.to_thread(checksum)
+        project_id = await persist_validated_upload(
+            user_id=parsed_user_id, storage_key=storage_key, content_type=content_type,
+            size_bytes=size_bytes, duration_seconds=math.ceil(duration), sha256=sha256,
+        )
     return {
         "status": "validated",
+        "project_id": str(project_id),
         "user_id": str(parsed_user_id),
         "storage_key": storage_key,
         "content_type": content_type,

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import asyncio
 from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
@@ -13,6 +16,7 @@ from backend.api.error_handlers import register_exception_handlers
 from backend.api.routes import account
 from backend.services.ownership import build_owner_scoped_project_id, ensure_project_manifest
 from backend.services.social.store import SocialStore
+from backend.db.models import UserRole, UserStatus
 
 
 def _build_app() -> FastAPI:
@@ -103,3 +107,42 @@ def test_account_deletion_purges_only_callers_subject_data_and_logs_event(
     assert social_store.get_credential(_static_subject("token-a"), "postiz") is None
     assert social_store.get_credential(_static_subject("token-b"), "postiz") is not None
     assert any("account_data_purged" in message for message in messages)
+
+
+def test_production_unconfigured_deletion_never_reports_purged(monkeypatch, auth_headers):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    response = TestClient(_build_app()).request(
+        "DELETE", "/api/account/me/data", headers=auth_headers["a"], json={"confirm": "DELETE"})
+    assert response.status_code == 202
+    assert response.json()["status"] == "deletion_pending"
+
+
+@pytest.mark.parametrize("method,path,user_status,allowed", [
+    ("DELETE", "/api/account/me/data", UserStatus.DELETED, True),
+    ("DELETE", "/api/account/me/data", UserStatus.SUSPENDED, False),
+    ("POST", "/api/account/me/data", UserStatus.DELETED, False),
+    ("POST", "/api/start-job", UserStatus.DELETED, False),
+    ("GET", "/api/uploads/private", UserStatus.DELETED, False),
+])
+def test_tombstoned_identity_can_only_retry_own_deletion(monkeypatch, method, path, user_status, allowed):
+    from fastapi import HTTPException, Request
+    from fastapi.security import HTTPAuthorizationCredentials
+    from backend.api import security
+
+    monkeypatch.setenv("DATABASE_URL", "configured")
+    auth = security.AuthContext(subject="owner", roles={"member"}, token_type="jwt", auth_mode="clerk_jwt")
+    monkeypatch.setattr(security, "_authenticate_token", lambda *args, **kwargs: auth)
+
+    async def identity(*args, **kwargs):
+        return SimpleNamespace(id=uuid4(), status=user_status, role=UserRole.USER)
+
+    monkeypatch.setattr(security, "get_or_create_user", identity)
+    request = Request({"type": "http", "method": method, "path": path, "headers": []})
+    credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="verified-test-token")
+    if allowed:
+        assert asyncio.run(security.authenticate_request(request, credentials)).subject == "owner"
+    else:
+        with pytest.raises(HTTPException) as failure:
+            asyncio.run(security.authenticate_request(request, credentials))
+        assert failure.value.status_code == 403

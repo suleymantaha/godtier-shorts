@@ -90,4 +90,77 @@ describe('AccountDeletionCard', () => {
     expect(clearClientAccountStateMock).toHaveBeenCalledTimes(1);
     expect(hardReloadPageMock).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['upload_url_expiry', 'Wait at least 120 seconds'],
+    ['storage_finalization_unverified', 'Deletion is pending'],
+    ['subscription_cancellation_required', 'Cancel your active subscription'],
+    ['future_pending_reason', 'Deletion is pending'],
+  ])('keeps the signed-in account available for retry when deletion is pending: %s', async (reason, guidance) => {
+    deleteMyDataMock.mockResolvedValue({
+      status: 'deletion_pending',
+      summary: { status: 'deletion_pending', reason, deletion_fenced: true, retry_after_seconds: 120 },
+    });
+    render(<AccountDeletionCard />);
+    fireEvent.change(screen.getByLabelText(/delete account confirmation/i), { target: { value: 'DELETE' } });
+    fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(guidance);
+    expect(screen.getByRole('button', { name: /retry data deletion/i })).toBeEnabled();
+    expect(userDeleteMock).not.toHaveBeenCalled();
+    expect(clearClientAccountStateMock).not.toHaveBeenCalled();
+    expect(hardReloadPageMock).not.toHaveBeenCalled();
+  });
+
+  it('retries pending deletion and deletes the Clerk account only after a purged response', async () => {
+    deleteMyDataMock.mockResolvedValueOnce({
+      status: 'deletion_pending',
+      summary: { status: 'deletion_pending', reason: 'storage_not_empty', deletion_fenced: true },
+    }).mockResolvedValueOnce({ status: 'purged', summary: { deleted_projects: 1 } });
+    userDeleteMock.mockResolvedValue(undefined);
+    render(<AccountDeletionCard />);
+    fireEvent.change(screen.getByLabelText(/delete account confirmation/i), { target: { value: 'DELETE' } });
+    fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /retry data deletion/i }));
+
+    await waitFor(() => expect(hardReloadPageMock).toHaveBeenCalledTimes(1));
+    expect(deleteMyDataMock).toHaveBeenCalledTimes(2);
+    expect(userDeleteMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a retry failure without deleting the Clerk account or clearing its session', async () => {
+    deleteMyDataMock.mockResolvedValueOnce({
+      status: 'deletion_pending',
+      summary: { status: 'deletion_pending', reason: 'worker_stop_unverified', deletion_fenced: true },
+    }).mockRejectedValueOnce(new Error('Session must be refreshed'));
+    render(<AccountDeletionCard />);
+    fireEvent.change(screen.getByLabelText(/delete account confirmation/i), { target: { value: 'DELETE' } });
+    fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /retry data deletion/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Session must be refreshed');
+    expect(userDeleteMock).not.toHaveBeenCalled();
+    expect(clearClientAccountStateMock).not.toHaveBeenCalled();
+    expect(hardReloadPageMock).not.toHaveBeenCalled();
+  });
+
+  it('can resubmit deletion after a remount and cleared local storage', async () => {
+    deleteMyDataMock.mockResolvedValue({
+      status: 'deletion_pending',
+      summary: { status: 'deletion_pending', reason: 'storage_finalization_unverified', deletion_fenced: true },
+    });
+    const firstMount = render(<AccountDeletionCard />);
+    fireEvent.change(screen.getByLabelText(/delete account confirmation/i), { target: { value: 'DELETE' } });
+    fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+    await screen.findByRole('button', { name: /retry data deletion/i });
+    firstMount.unmount();
+    localStorage.clear();
+    render(<AccountDeletionCard />);
+    fireEvent.change(screen.getByLabelText(/delete account confirmation/i), { target: { value: 'DELETE' } });
+    fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Deletion is pending');
+    expect(deleteMyDataMock).toHaveBeenCalledTimes(2);
+    expect(userDeleteMock).not.toHaveBeenCalled();
+    expect(clearClientAccountStateMock).not.toHaveBeenCalled();
+    expect(hardReloadPageMock).not.toHaveBeenCalled();
+  });
 });

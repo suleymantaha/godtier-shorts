@@ -28,6 +28,34 @@
 - Production secret'ları repo/.env dosyasına commit edilmeyecek.
 - Her task TDD + bağımsız test + küçük commit ile ilerleyecek.
 
+## Delivery Status
+
+Aşağıdaki tablo git merge geçmişinden türetilmiştir ve bu planın tek güvenilir
+ilerleme kaydıdır. Task gövdelerindeki `- [ ]` kutuları Task 5'ten itibaren
+güncellenmemiştir; çelişki durumunda bu tablo geçerlidir.
+
+| Task | Durum | Kaynak |
+| --- | --- | --- |
+| 1–7 Production config, PostgreSQL/Alembic, Clerk isolation, credit ledger, pricing, iyzico subscription + webhook | Tamamlandı | PR #13 |
+| 8 Free viral scan | Tamamlandı | PR #14 |
+| 9 Source URL SSRF policy | Tamamlandı | PR #15 |
+| 10 Abuse risk engine v1 | Tamamlandı | PR #16 |
+| 11 Cloudflare Turnstile | Tamamlandı | PR #17 |
+| 12 Private object storage | Tamamlandı | PR #18 |
+| 13 Redis/ARQ distributed queue | Tamamlandı | PR #19 |
+| 14 Jobs route refactor | Tamamlandı | PR #20 |
+| 15 GPU worker container | Tamamlandı | PR #21 |
+| 16 GPU cost telemetry | Tamamlandı | PR #22 |
+| 17 Landing + pricing + paywall | Tamamlandı | PR #23 |
+| 18 Billing/usage UI | Tamamlandı | PR #24 |
+| 19 Security headers + CORS | Tamamlandı | PR #25 |
+| 20 API rate limiting | Tamamlandı | PR #26 |
+| 21 Audit + admin panel | Tamamlandı | PR #27 |
+| 22 Observability | Tamamlandı | PR #28 |
+| 23 CI/CD | Tamamlandı | bkz. [CI/CD ve Production Deploy](../../operations/ci-cd-and-deployment.md) |
+| 24 Cloud deployment | Açık | — |
+| 25 Launch E2E acceptance suite | Açık | — |
+
 ---
 
 # 1. ÜRÜN VE PARA KAZANMA MODELİ
@@ -433,12 +461,12 @@ frontend/src/test/integration/billing-flow.test.tsx
 
 **Produces:** PostgreSQL/Redis/R2/iyzico/Turnstile config sözleşmesi ve CPU-only API container.
 
-- [x] SQLAlchemy, Alembic, asyncpg, redis, arq, boto3-compatible client ve iyzico HTTP client bağımlılıklarını ekle.
-- [x] `.env.example` içine `DATABASE_URL`, `REDIS_URL`, `R2_*`, `IYZICO_*`, `TURNSTILE_*`, `APP_ENV`, `WORKER_MODE` değişkenlerini ekle.
-- [x] `backend/config.py` içinde production validation ekle; prod'da eksik secret varsa fail-fast.
-- [x] CPU API image'ında Torch/YOLO model yüklemesinin startup'ı gereksiz yere GPU aramamasını garanti et.
-- [x] Docker healthcheck: `GET /health/live` ve `GET /health/ready`.
-- [x] Test: production config eksik secret ile başlamamalı; dev mod lokal çalışmaya devam etmeli.
+- [ ] SQLAlchemy, Alembic, asyncpg, redis, arq, boto3-compatible client ve iyzico HTTP client bağımlılıklarını ekle.
+- [ ] `.env.example` içine `DATABASE_URL`, `REDIS_URL`, `R2_*`, `IYZICO_*`, `TURNSTILE_*`, `APP_ENV`, `WORKER_MODE` değişkenlerini ekle.
+- [ ] `backend/config.py` içinde production validation ekle; prod'da eksik secret varsa fail-fast.
+- [ ] CPU API image'ında Torch/YOLO model yüklemesinin startup'ı gereksiz yere GPU aramamasını garanti et.
+- [ ] Docker healthcheck: `GET /health/live` ve `GET /health/ready`.
+- [ ] Test: production config eksik secret ile başlamamalı; dev mod lokal çalışmaya devam etmeli.
 
 **Commit:** `chore: add production runtime foundation`
 
@@ -448,11 +476,11 @@ frontend/src/test/integration/billing-flow.test.tsx
 
 **Produces:** `get_db_session()` async session factory ve ilk schema migration.
 
-- [x] Önce model constraints için failing tests yaz.
-- [x] UUID PK, unique webhook/payment/idempotency constraints ve FK'leri oluştur.
-- [x] İlk migration'ı oluştur ve boş DB'ye uygula.
-- [x] Migration downgrade/upgrade smoke test çalıştır.
-- [x] Lokal Docker Compose ile DB restart sonrası verinin kaldığını doğrula.
+- [ ] Önce model constraints için failing tests yaz.
+- [ ] UUID PK, unique webhook/payment/idempotency constraints ve FK'leri oluştur.
+- [ ] İlk migration'ı oluştur ve boş DB'ye uygula.
+- [ ] Migration downgrade/upgrade smoke test çalıştır.
+- [ ] Lokal Docker Compose ile DB restart sonrası verinin kaldığını doğrula.
 
 **Commit:** `feat: add postgres persistence model`
 
@@ -462,11 +490,11 @@ frontend/src/test/integration/billing-flow.test.tsx
 
 **Produces:** `get_or_create_user(clerk_subject)` ve DB user identity.
 
-- [x] Valid JWT -> internal `user_id` mapping testi.
-- [x] User A'nın User B project/job/asset endpoint'inden 404 aldığını test et.
-- [x] Admin/support/user role mapping ekle.
-- [x] Admin için step-up/MFA claim kontrolü ekle.
-- [x] Clerk bot protection dashboard ayarını launch checklist'e ekle.
+- [ ] Valid JWT -> internal `user_id` mapping testi.
+- [ ] User A'nın User B project/job/asset endpoint'inden 404 aldığını test et.
+- [ ] Admin/support/user role mapping ekle.
+- [ ] Admin için step-up/MFA claim kontrolü ekle.
+- [ ] Clerk bot protection dashboard ayarını launch checklist'e ekle.
 
 **Commit:** `feat: persist users and enforce ownership`
 
@@ -483,11 +511,11 @@ async def settle(user_id: UUID, job_id: UUID, actual_amount: int, idempotency_ke
 async def release(user_id: UUID, job_id: UUID, idempotency_key: str) -> None
 ```
 
-- [x] Aynı idempotency key iki kere balance değiştirmemeli.
-- [x] `reserve` DB transaction + row lock ile concurrent overspend'i engellemeli.
-- [x] 100 balance ile eşzamanlı iki `80` reservation'dan yalnız biri başarılı olmalı.
-- [x] Failed/cancelled job reservation release etmeli.
-- [x] Ledger satırları update/delete edilmemeli; düzeltmeler adjustment/refund satırı olmalı.
+- [ ] Aynı idempotency key iki kere balance değiştirmemeli.
+- [ ] `reserve` DB transaction + row lock ile concurrent overspend'i engellemeli.
+- [ ] 100 balance ile eşzamanlı iki `80` reservation'dan yalnız biri başarılı olmalı.
+- [ ] Failed/cancelled job reservation release etmeli.
+- [ ] Ledger satırları update/delete edilmemeli; düzeltmeler adjustment/refund satırı olmalı.
 
 **Commit:** `feat: add atomic credit ledger`
 

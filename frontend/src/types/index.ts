@@ -45,7 +45,7 @@ export interface ClipReadyEntry {
 }
 
 export type SubtitleAnimationType = 'default' | 'pop' | 'shake' | 'slide_up' | 'fade' | 'typewriter' | 'none';
-export type RequestedSubtitleLayout = 'auto' | 'single' | 'split';
+export type RequestedSubtitleLayout = 'auto' | 'single' | 'split' | 'fit';
 
 export interface Job {
     job_id: string;
@@ -558,7 +558,13 @@ export interface AccountDeletionSummary {
     scrubbed_grants: number;
 }
 
-export interface AccountDeletionResponse {
-    status: 'purged';
-    summary: AccountDeletionSummary;
+export interface PendingAccountDeletionSummary extends Partial<AccountDeletionSummary> {
+    status: 'deletion_pending';
+    reason: string;
+    deletion_fenced: boolean;
+    retry_after_seconds?: number;
 }
+
+export type AccountDeletionResponse =
+    | { status: 'purged'; summary: AccountDeletionSummary }
+    | { status: 'deletion_pending'; summary: PendingAccountDeletionSummary };

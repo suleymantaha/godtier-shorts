@@ -503,7 +503,7 @@ async def cancel_job(
     job = manager.jobs[job_id]
     if str(job.get("subject") or "") != auth.subject:
         raise HTTPException(status_code=404, detail="İş bulunamadı.")
-    if job["status"] in ("completed", "error", "cancelled", "review_required"):
+    if job["status"] in ("completed", "error", "cancelled", "empty", "review_required"):
         return {"status": "ignored", "message": f"İş zaten {job['status']} durumunda."}
 
     logger.warning(
@@ -520,10 +520,10 @@ async def cancel_job(
     if cancel_event is not None:
         cancel_event.set()
 
-    task = job.get("task_handle")
+    _mark_job_cancelled(job_id)
+    task = job.get("task_handle") or job.get("task")
     if task:
         task.cancel()
         return {"status": "success", "message": "İş iptal sinyali gönderildi."}
 
-    _mark_job_cancelled(job_id)
     return {"status": "success", "message": "İş iptal edildi."}

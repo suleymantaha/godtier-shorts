@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import uuid4
 
 from loguru import logger
 
@@ -40,8 +41,9 @@ class ProgressStepMapper:
 
 
 def resolve_layout_safety_mode() -> str:
-    raw = os.getenv("LAYOUT_SAFETY_MODE", "shadow").strip().lower()
-    return raw if raw in VALID_LAYOUT_SAFETY_MODES else "shadow"
+    default = "enforce" if os.getenv("APP_ENV", "development").strip().lower() == "production" else "shadow"
+    raw = os.getenv("LAYOUT_SAFETY_MODE", default).strip().lower()
+    return raw if raw in VALID_LAYOUT_SAFETY_MODES else default
 
 
 def build_layout_review_item(
@@ -105,14 +107,40 @@ def promote_render_bundle(
 ) -> Path:
     quarantine_path = Path(quarantine_output)
     public_output = project.outputs / Path(clip_filename).name
-    move_file_atomic(quarantine_path, public_output)
-
     quarantine_raw = quarantine_path.with_name(f"{quarantine_path.stem}_raw.mp4")
-    if quarantine_raw.exists():
-        move_file_atomic(
-            quarantine_raw,
-            project.outputs / f"{public_output.stem}_raw.mp4",
-        )
+    quarantine_metadata = quarantine_path.with_suffix(".json")
+    if not quarantine_path.is_file() or not quarantine_metadata.is_file():
+        raise FileNotFoundError("Rendered video or metadata is missing")
+
+    # The public MP4 is the gallery's visibility marker. Publish it last so
+    # sidecar failures cannot expose an incomplete clip. Preserve old sidecars
+    # until the new video commits, then discard their backups.
+    sidecars = (
+        (quarantine_raw, project.outputs / f"{public_output.stem}_raw.mp4"),
+        (quarantine_metadata, public_output.with_suffix(".json")),
+    )
+    backups: list[tuple[Path, Path]] = []
+    moved: list[tuple[Path, Path]] = []
+    try:
+        for source, destination in sidecars:
+            if destination.exists():
+                backup = quarantine_path.parent / f".{destination.name}.{uuid4().hex}.backup"
+                move_file_atomic(destination, backup)
+                backups.append((backup, destination))
+            if source.exists():
+                move_file_atomic(source, destination)
+                moved.append((source, destination))
+        move_file_atomic(quarantine_path, public_output)
+    except Exception:
+        for source, destination in reversed(moved):
+            if destination.exists():
+                move_file_atomic(destination, source)
+        for backup, destination in reversed(backups):
+            if backup.exists():
+                move_file_atomic(backup, destination)
+        raise
+    for backup, _ in backups:
+        cleanup_render_output(backup)
 
     return public_output
 
@@ -202,12 +230,13 @@ def commit_render_bundle(
     job_id: str | None = None,
     clip_event_port: ClipEventPort | None = None,
 ) -> str:
+    quarantine_path = Path(quarantine_output)
+    write_json_atomic(quarantine_path.with_suffix(".json"), clip_metadata, indent=4)
     public_output = promote_render_bundle(
         project=project,
         quarantine_output=quarantine_output,
         clip_filename=clip_filename,
     )
-    write_json_atomic(public_output.with_suffix(".json"), clip_metadata, indent=4)
     publish_clip_ready_event(
         subject=subject,
         job_id=job_id,

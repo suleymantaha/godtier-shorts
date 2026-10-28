@@ -245,30 +245,40 @@ async def settle(
     idempotency_key = _key(idempotency_key)
     factory = get_session_factory()
     async with factory() as session, session.begin():
-        claimed = await _claim_entry(
-            session,
-            user_id=user_id,
-            kind=LedgerKind.SETTLE,
-            amount=actual_amount,
-            job_id=job_id,
-            idempotency_key=idempotency_key,
-        )
-        if not claimed:
-            return
-        wallet = await _lock_wallet(session, user_id)
-        job = await _lock_job(session, user_id, job_id)
-        reserved_amount = job.reserved_credits
-        if reserved_amount <= 0:
-            raise NoActiveReservation("job icin aktif kredi rezervasyonu yok")
+        await settle_in_session(session, user_id, job_id, actual_amount, idempotency_key)
 
-        extra_charge = max(0, actual_amount - reserved_amount)
-        if wallet.available < extra_charge:
-            raise InsufficientCredits("settlement icin ek kredi yetersiz")
-        wallet.available -= extra_charge
-        wallet.available += max(0, reserved_amount - actual_amount)
-        wallet.reserved -= reserved_amount
-        job.reserved_credits = 0
-        job.settled_credits = actual_amount
+
+async def settle_in_session(
+    session: AsyncSession, user_id: UUID, job_id: UUID,
+    actual_amount: int, idempotency_key: str,
+) -> None:
+    """Settle within the caller's transaction, preserving ledger lock ordering."""
+    actual_amount = _settlement_amount(actual_amount)
+    idempotency_key = _key(idempotency_key)
+    claimed = await _claim_entry(
+        session,
+        user_id=user_id,
+        kind=LedgerKind.SETTLE,
+        amount=actual_amount,
+        job_id=job_id,
+        idempotency_key=idempotency_key,
+    )
+    if not claimed:
+        return
+    wallet = await _lock_wallet(session, user_id)
+    job = await _lock_job(session, user_id, job_id)
+    reserved_amount = job.reserved_credits
+    if reserved_amount <= 0:
+        raise NoActiveReservation("job icin aktif kredi rezervasyonu yok")
+
+    extra_charge = max(0, actual_amount - reserved_amount)
+    if wallet.available < extra_charge:
+        raise InsufficientCredits("settlement icin ek kredi yetersiz")
+    wallet.available -= extra_charge
+    wallet.available += max(0, reserved_amount - actual_amount)
+    wallet.reserved -= reserved_amount
+    job.reserved_credits = 0
+    job.settled_credits = actual_amount
 
 
 async def release(

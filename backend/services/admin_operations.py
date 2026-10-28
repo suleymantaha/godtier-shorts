@@ -159,26 +159,21 @@ class SqlAlchemyAdminService:
         audit: AuditContext,
     ) -> str:
         async with self._session.begin():
-            subscription = await self._session.get(Subscription, subscription_id)
-            if subscription is None:
-                raise AdminOperationError("subscription bulunamadi")
-            provider_reference = subscription.provider_subscription_ref
-        provider = await self._provider.get_subscription(provider_reference)
-        if provider.reference_code != provider_reference:
-            raise AdminOperationError("provider subscription eslesmesi gecersiz")
-        try:
-            provider_status = PROVIDER_STATUS_MAP[provider.status]
-        except KeyError as exc:
-            raise AdminOperationError("provider subscription status gecersiz") from exc
-
-        async with self._session.begin():
             locked = await self._session.scalar(
-                select(Subscription).where(Subscription.id == subscription_id).with_for_update()
+                select(Subscription).where(Subscription.id == subscription_id)
+                .with_for_update().execution_options(populate_existing=True)
             )
             if locked is None:
                 raise AdminOperationError("subscription bulunamadi")
-            if locked.provider_subscription_ref != provider_reference:
-                raise AdminOperationError("subscription provider referansi eszamanli degisti")
+            # Serialize the provider snapshot and write with webhook/status writers.
+            provider_reference = locked.provider_subscription_ref
+            provider = await self._provider.get_subscription(provider_reference)
+            if provider.reference_code != provider_reference:
+                raise AdminOperationError("provider subscription eslesmesi gecersiz")
+            try:
+                provider_status = PROVIDER_STATUS_MAP[provider.status]
+            except KeyError as exc:
+                raise AdminOperationError("provider subscription status gecersiz") from exc
             previous = locked.status.value
             locked.status = provider_status
             self._audit(

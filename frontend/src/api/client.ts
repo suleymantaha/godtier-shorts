@@ -7,6 +7,7 @@
  */
 
 import { useAuthRuntimeStore } from '../auth/runtime';
+import { AUTH_IDENTITY_STORAGE_KEY } from '../auth/isolation';
 import { getCachedToken, isTokenActive, resolveTokenExpiration } from '../auth/session';
 import { API_BASE, API_REQUEST_TIMEOUT_MS, API_RETRY_COUNT, CLERK_JWT_TEMPLATE } from '../config';
 import { extractApiErrorPayload, mergeApiHeaders } from './client.helpers';
@@ -48,7 +49,7 @@ import type {
 } from '../types';
 
 type ProjectsFetchStatus = 'good' | 'degraded' | 'unknown';
-const PROJECTS_CACHE_KEY = 'gts:projects-cache:v1';
+const PROJECTS_CACHE_PREFIX = 'gts:projects-cache:v2:';
 
 // ─── Kimlik Doğrulama (Clerk Token Injection) ──────────────────────────────────
 export let activeToken: string | null = null;
@@ -133,8 +134,9 @@ function hasUsableActiveToken(): boolean {
     return isTokenActive(activeToken, resolveTokenExpiration(activeToken));
 }
 
-function shouldRetry(error: unknown, attempt: number): boolean {
-    if (attempt >= API_RETRY_COUNT) {
+function shouldRetry(error: unknown, attempt: number, method = 'GET'): boolean {
+    // A lost mutation response does not establish whether the server accepted it.
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase()) || attempt >= API_RETRY_COUNT) {
         return false;
     }
 
@@ -171,11 +173,18 @@ function withPromiseTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<
 
 async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
     const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
+    // Multipart bodies may take hours at the supported upload limit. Keep the
+    // caller's cancellation signal, without the short JSON request deadline.
+    const timeoutId = init.body instanceof FormData ? null
+        : window.setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
+    const signal = init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal;
 
     try {
-        return await fetch(input, { ...init, signal: controller.signal });
+        return await fetch(input, { ...init, signal });
     } catch (error) {
+        if (init.signal?.aborted) {
+            throw error;
+        }
         if (error instanceof DOMException && error.name === 'AbortError') {
             throw createAppError(
                 'network_timeout',
@@ -198,7 +207,7 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit): Pr
             { cause: error, retryable: true },
         );
     } finally {
-        window.clearTimeout(timeoutId);
+        if (timeoutId !== null) window.clearTimeout(timeoutId);
     }
 }
 
@@ -268,9 +277,18 @@ function getReusableTokenWhenAllowed(forceRefresh: boolean): string | null {
     return getReusableToken();
 }
 
-function readProjectsCache(): ProjectSummary[] {
+function getProjectsCacheIdentity(): string | null {
     try {
-        const raw = localStorage.getItem(PROJECTS_CACHE_KEY);
+        return localStorage.getItem(AUTH_IDENTITY_STORAGE_KEY);
+    } catch {
+        return null;
+    }
+}
+
+function readProjectsCache(identity: string | null): ProjectSummary[] {
+    if (!identity || getProjectsCacheIdentity() !== identity) return [];
+    try {
+        const raw = localStorage.getItem(`${PROJECTS_CACHE_PREFIX}${encodeURIComponent(identity)}`);
         if (!raw) {
             return [];
         }
@@ -281,9 +299,10 @@ function readProjectsCache(): ProjectSummary[] {
     }
 }
 
-function writeProjectsCache(projects: ProjectSummary[]): void {
+function writeProjectsCache(projects: ProjectSummary[], identity: string | null): void {
+    if (!identity || getProjectsCacheIdentity() !== identity) return;
     try {
-        localStorage.setItem(PROJECTS_CACHE_KEY, JSON.stringify(projects));
+        localStorage.setItem(`${PROJECTS_CACHE_PREFIX}${encodeURIComponent(identity)}`, JSON.stringify(projects));
     } catch {
         // Storage cache is opportunistic only.
     }
@@ -526,7 +545,7 @@ async function requestJson<T>(path: string, init?: RequestInit, options?: ApiFet
             syncProtectedRequests(token);
             return response.json() as Promise<T>;
         } catch (error) {
-            if (!shouldRetry(error, attempt)) {
+            if (init?.signal?.aborted || !shouldRetry(error, attempt, init?.method)) {
                 throw error;
             }
 
@@ -602,12 +621,13 @@ export const clipsApi = {
         ),
 
     /** Yerel video yükle */
-    upload: (file: File): Promise<{ status: string; job_id: string; project_id?: string; message?: string }> => {
+    upload: (file: File, signal?: AbortSignal): Promise<{ status: string; job_id: string; project_id?: string; message?: string }> => {
         const form = new FormData();
         form.append('file', file);
         return requestJson<{ status: string; job_id: string; project_id?: string; message?: string }>('/api/upload', {
             method: 'POST',
             body: form,
+            signal,
         });
     },
 };
@@ -621,9 +641,13 @@ export const editorApi = {
         error: string | null;
         status: ProjectsFetchStatus;
     }> => {
+        const identity = getProjectsCacheIdentity();
         try {
             const response = await apiFetch<{ projects: ProjectSummary[] }>('/api/projects');
-            writeProjectsCache(response.projects);
+            if (getProjectsCacheIdentity() !== identity) {
+                return { projects: [], error: 'Oturum degisti. Projeleri yeniden yukleyin.', status: 'unknown' };
+            }
+            writeProjectsCache(response.projects, identity);
             return {
                 projects: response.projects,
                 error: null,
@@ -631,7 +655,8 @@ export const editorApi = {
             };
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Projeler alınamadı';
-            const cachedProjects = readProjectsCache();
+            const cachedProjects = isAppError(err) && ['network_timeout', 'network_offline', 'server_unavailable'].includes(err.code)
+                ? readProjectsCache(identity) : [];
             if (cachedProjects.length > 0) {
                 return {
                     projects: cachedProjects,
@@ -709,10 +734,11 @@ export const editorApi = {
             num_clips?: number;
             cut_points?: number[];
             cut_as_short?: boolean;
-            layout?: 'auto' | 'single' | 'split';
+            layout?: 'auto' | 'single' | 'split' | 'fit';
             duration_min?: number;
             duration_max?: number;
         },
+        signal?: AbortSignal,
     ): Promise<ManualCutUploadResponse> => {
         const form = new FormData();
         form.append('file', file);
@@ -737,6 +763,7 @@ export const editorApi = {
         return requestJson<ManualCutUploadResponse>('/api/manual-cut-upload', {
             method: 'POST',
             body: form,
+            signal,
         });
     },
 };

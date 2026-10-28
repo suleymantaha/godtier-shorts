@@ -385,6 +385,29 @@ describe('ClipGallery auth and refresh behavior', () => {
 });
 
 describe('ClipGallery stale refresh handling', () => {
+  it('keeps a successfully loaded empty gallery during a later refresh failure', async () => {
+    mockClipsResponse = { clips: [], total: 0 };
+    const { ClipGallery } = await import('../../components/ClipGallery');
+    render(<ClipGallery />);
+    expect(await screen.findByText(/no clips generated yet/i)).toBeInTheDocument();
+
+    mockShouldReject = true;
+    act(() => {
+      useJobStore.getState().markClipReady({
+        at: '2026-03-20T00:00:03.000Z',
+        clipName: 'clip-2.mp4',
+        job_id: 'manual_123',
+        message: 'Klip hazir',
+        progress: 95,
+        projectId: 'project-1',
+        uiTitle: 'Second',
+      });
+    });
+
+    expect(await screen.findByText(/library refresh failed/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /retry clip library/i })).not.toBeInTheDocument();
+  });
+
   it('shows a stale refresh warning when a later clip refresh fails after initial load', async () => {
     mockClipsResponse = {
       clips: [{

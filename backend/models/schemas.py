@@ -21,7 +21,7 @@ VALID_STYLES = {
     "PODCAST", "CORPORATE", "HIGHCARE", "CYBER_PUNK", "STORY_TELLER",
     "GLOW_KARAOKE", "VIRAL", "POP", "CLEAN", "BOLD", "MINIMAL",
 }
-VALID_LAYOUTS = {"auto", "single", "split"}
+VALID_LAYOUTS = {"auto", "single", "split", "fit"}
 VALID_ANIMATIONS = {"default", "pop", "shake", "slide_up", "fade", "typewriter", "none"}
 
 
@@ -100,15 +100,21 @@ class BatchJobRequest(BaseModel):
     style_name: str | None = None
     animation_type: str | None = None
     skip_subtitles: bool = False
-    num_clips: int | None = None
+    num_clips: int = Field(ge=1, le=20)
     auto_mode: bool = False
     project_id: str | None = None
-    duration_min: float | int | None = None
-    duration_max: float | int | None = None
-    start_time: float | None = None
-    end_time: float | None = None
+    duration_min: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    duration_max: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    start_time: float = Field(ge=0, allow_inf_nan=False)
+    end_time: float = Field(gt=0, allow_inf_nan=False)
     layout: str | None = None
     requested_layout: str | None = None
+
+    @model_validator(mode="after")
+    def validate_time_range(self) -> BatchJobRequest:
+        if self.end_time <= self.start_time:
+            raise ValueError("end_time must be greater than start_time")
+        return self
 
 
 class ClipTranscriptRecoveryRequest(BaseModel):
@@ -119,20 +125,32 @@ class ClipTranscriptRecoveryRequest(BaseModel):
 
 class ManualAutoCutRequest(BaseModel):
     project_id: str | None = None
-    start_time: float
-    end_time: float
+    num_clips: int = Field(default=1, ge=1, le=20)
+    start_time: float = Field(ge=0, allow_inf_nan=False)
+    end_time: float = Field(gt=0, allow_inf_nan=False)
     style: str | None = None
     style_name: str | None = None
     animation_type: str | None = None
     requested_layout: str | None = None
     cut_as_short: bool = True
-    duration_min: float | int | None = None
-    duration_max: float | int | None = None
+    duration_min: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    duration_max: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def validate_time_range(self) -> ManualAutoCutRequest:
+        if self.end_time <= self.start_time:
+            raise ValueError("end_time must be greater than start_time")
+        return self
 
 
 class ManualJobRequest(BaseModel):
     project_id: str | None = None
     clip_name: str | None = None
+    start_time: float = Field(ge=0, allow_inf_nan=False)
+    end_time: float = Field(gt=0, allow_inf_nan=False)
+    transcript: list[dict[str, Any]] | None = None
+    center_x: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
+    layout: str = "auto"
     cut_points: list[Any] = Field(default_factory=list)
     style: str | None = None
     style_name: str | None = None
@@ -140,6 +158,14 @@ class ManualJobRequest(BaseModel):
     requested_layout: str | None = None
     duration_min: float | int | None = None
     duration_max: float | int | None = None
+
+    @model_validator(mode="after")
+    def validate_time_range(self) -> ManualJobRequest:
+        if self.end_time <= self.start_time:
+            raise ValueError("end_time must be greater than start_time")
+        if self.layout not in VALID_LAYOUTS:
+            raise ValueError(f"unknown requested layout: {self.layout}")
+        return self
 
 
 class ProjectTranscriptRecoveryRequest(BaseModel):
@@ -149,7 +175,9 @@ class ProjectTranscriptRecoveryRequest(BaseModel):
 
 class ReburnRequest(BaseModel):
     project_id: str | None = None
-    clip_name: str | None = None
+    clip_name: str
+    transcript: list[dict[str, Any]]
+    style_name: str = "HORMOZI"
     style: str | None = None
     font_name: str | None = None
     font_size: int | None = None

@@ -17,3 +17,5 @@
 - YOLO weights are selected via `YOLO_MODEL_PATH` in environment config (default `yolo11x.pt` at repo root).
 - Optional pyannote speaker diarization labels transcript segments (`SPEAKER_*`) for active-speaker alignment during render.
 - Dialogue handling uses scenario buckets: A clear speech (labels+YOLO), B ambiguous speaker (review/split, avoid hard follow), C non-dialogue scenes (visual tracking without speaker identity claims).
+
+## Imported Claude Cowork project instructions

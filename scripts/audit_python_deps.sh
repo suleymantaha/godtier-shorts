@@ -10,4 +10,11 @@ if [[ ! -f requirements.lock ]]; then
   exit 1
 fi
 
-python -m pip_audit -r requirements.lock --no-deps --disable-pip --progress-spinner off
+IGNORE_ARGS=()
+while read -r line; do
+  line="${line%%#*}"
+  line="${line//[[:space:]]/}"
+  [[ -n "$line" ]] && IGNORE_ARGS+=(--ignore-vuln "$line")
+done < .pip-audit-ignore
+
+python -m pip_audit -r requirements.lock --no-deps --disable-pip --progress-spinner off "${IGNORE_ARGS[@]}"

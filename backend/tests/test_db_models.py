@@ -11,6 +11,7 @@ from backend.db.session import create_session_factory
 
 EXPECTED_TABLES = {
     "assets",
+    "upload_reservations",
     "audit_logs",
     "billing_checkout_sessions",
     "credit_ledger",
@@ -30,6 +31,7 @@ EXPECTED_TABLES = {
 
 UUID_PRIMARY_KEY_TABLES = EXPECTED_TABLES - {
     "audit_logs",
+    "upload_reservations",
     "credit_wallets",
     "job_events",
     "job_usage_metrics",

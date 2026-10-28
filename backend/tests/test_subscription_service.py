@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
@@ -47,6 +48,10 @@ class FakeRepository:
 
     async def get_subscription(self, user_id: UUID) -> LocalSubscription | None:
         return self.subscription if self.subscription and self.subscription.user_id == user_id else None
+
+    @asynccontextmanager
+    async def locked_subscription(self, user_id):
+        yield await self.get_subscription(user_id)
 
     async def set_status(self, subscription_id: UUID, status: SubscriptionStatus) -> None:
         assert self.subscription is not None
@@ -584,6 +589,161 @@ def test_sql_repository_serializes_concurrent_checkout_reservations_per_user() -
 
         results = await asyncio.gather(reserve("a"), reserve("b"))
         assert sorted(results) == ["blocked", "created"]
+        await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("writer", ["status", "admin"])
+def test_postgres_status_writers_cannot_overwrite_later_webhook(writer) -> None:
+    database_url = os.getenv("TEST_DATABASE_URL", "").strip()
+    if not database_url:
+        pytest.skip("TEST_DATABASE_URL is required for subscription writer concurrency")
+
+    async def scenario() -> None:
+        from backend.services.admin_operations import AuditContext, SqlAlchemyAdminService
+        from backend.services.billing.webhook_service import IyzicoWebhookService, SqlAlchemyWebhookRepository
+        from backend.tests.test_iyzico_webhook import FakeProvider, SUCCESS_PAYLOAD, _signature
+        from dataclasses import replace
+
+        factory = create_session_factory(database_url)
+        engine = factory.kw["bind"]
+        suffix = uuid4().hex
+        reference, order = f"writer-sub-{suffix}", f"writer-order-{suffix}"
+        ready, resume, webhook_read = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        async with factory() as session:
+            user = User(id=uuid4(), clerk_subject=f"writer-{suffix}")
+            plan = Plan(
+                id=uuid4(), code=f"writer-{suffix}", name="Writer test",
+                monthly_price_minor=9900, currency="TRY", monthly_compute_credits=100,
+                max_source_minutes_per_job=60, max_clips_per_job=10, max_active_jobs=2,
+                retention_days=30, priority=0, active=True,
+            )
+            session.add_all([user, plan])
+            await session.flush()
+            subscription = Subscription(
+                id=uuid4(), user_id=user.id, provider_subscription_ref=reference,
+                plan_id=plan.id, status=SubscriptionStatus.PENDING,
+            )
+            session.add(subscription)
+            await session.commit()
+            user_id, subscription_id, plan_code = user.id, subscription.id, plan.code
+
+        references = ('{"' + plan_code + '":{"product_reference_code":"product-creator",'
+                      '"monthly":"creator-monthly","yearly":"creator-yearly"}}')
+
+        class SlowProvider:
+            async def get_subscription(self, requested):
+                assert requested == reference
+                snapshot = ProviderSubscription(
+                    reference_code=reference, product_reference_code="product-creator",
+                    pricing_plan_reference_code="creator-monthly", status="UNPAID",
+                )
+                ready.set()
+                await asyncio.wait_for(resume.wait(), timeout=10)
+                return snapshot
+
+        class PaidProvider(FakeProvider):
+            async def get_subscription(self, requested):
+                assert requested == reference
+                snapshot = await super().get_subscription("sub-1")
+                webhook_read.set()
+                return replace(snapshot, reference_code=reference,
+                               orders={order: snapshot.orders["order-1"]})
+
+        async with factory() as writer_session, factory() as webhook_session:
+            if writer == "status":
+                service = SubscriptionService(
+                    SqlAlchemySubscriptionRepository(writer_session), SlowProvider(),
+                    PlanReferenceMap.from_json(references), "https://api.example.com/callback",
+                    "test-checkout-secret",
+                )
+                writer_task = asyncio.create_task(service.get_status(user_id))
+            else:
+                service = SqlAlchemyAdminService(writer_session, SlowProvider(), None)
+                writer_task = asyncio.create_task(service.sync_subscription(
+                    subscription_id, reason="Concurrency regression",
+                    audit=AuditContext(actor_id=None, request_id=f"writer-{suffix}"),
+                ))
+            await asyncio.wait_for(ready.wait(), timeout=10)
+            webhook = IyzicoWebhookService(
+                repository=SqlAlchemyWebhookRepository(webhook_session), provider=PaidProvider(),
+                merchant_id="3404590", secret_key="secret-key",
+                plan_references_json=references, grace_days=3,
+            )
+            payload = {**SUCCESS_PAYLOAD, "subscriptionReferenceCode": reference,
+                       "orderReferenceCode": order}
+            webhook_task = asyncio.create_task(webhook.handle(payload, _signature(payload)))
+            try:
+                # Before the fix, the webhook can commit while the first snapshot is pending.
+                await asyncio.wait_for(webhook_read.wait(), timeout=0.2)
+                await asyncio.wait_for(asyncio.shield(webhook_task), timeout=10)
+            except TimeoutError:
+                pass
+            finally:
+                resume.set()
+            await asyncio.wait_for(writer_task, timeout=10)
+            await asyncio.wait_for(webhook_task, timeout=10)
+        async with factory() as session:
+            current = await session.get(Subscription, subscription_id)
+            assert current.status is SubscriptionStatus.ACTIVE
+            assert current.entitlement_grace_until is None
+        await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("writer", ["upsert", "checkout"])
+@pytest.mark.parametrize("existing", [False, True])
+def test_postgres_subscription_creation_and_replay_preserve_authoritative_state(writer, existing) -> None:
+    database_url = os.getenv("TEST_DATABASE_URL", "").strip()
+    if not database_url:
+        pytest.skip("TEST_DATABASE_URL is required for checkout replay test")
+
+    async def scenario() -> None:
+        from backend.db.models import BillingCheckoutSession, BillingCheckoutStatus
+        factory = create_session_factory(database_url)
+        engine = factory.kw["bind"]
+        suffix = uuid4().hex
+        async with factory() as session:
+            user = User(id=uuid4(), clerk_subject=f"checkout-replay-{suffix}")
+            plans = [Plan(
+                id=uuid4(), code=f"replay-{index}-{suffix}", name="Replay test",
+                monthly_price_minor=9900, currency="TRY", monthly_compute_credits=100,
+                max_source_minutes_per_job=60, max_clips_per_job=10, max_active_jobs=2,
+                retention_days=30, priority=0, active=True,
+            ) for index in range(2)]
+            session.add_all([user, *plans])
+            await session.flush()
+            current = Subscription(
+                id=uuid4(), user_id=user.id, provider_subscription_ref=f"replay-{suffix}",
+                plan_id=plans[1].id, status=SubscriptionStatus.CANCELLED,
+            )
+            checkout = BillingCheckoutSession(
+                id=uuid4(), user_id=user.id, plan_id=plans[0].id, interval="monthly",
+                idempotency_key_hash=suffix * 2, request_fingerprint=suffix * 2,
+                status=BillingCheckoutStatus.READY,
+            )
+            session.add(checkout)
+            if existing:
+                session.add(current)
+            await session.commit()
+            old_snapshot = LocalSubscription(
+                id=uuid4(), user_id=user.id, provider_reference=current.provider_subscription_ref,
+                plan_code=plans[0].code, plan_id=plans[0].id, status=SubscriptionStatus.ACTIVE,
+            )
+            repository = SqlAlchemySubscriptionRepository(session)
+            if writer == "upsert":
+                await repository.upsert_subscription(old_snapshot)
+            else:
+                await repository.consume_checkout(checkout.id, old_snapshot)
+                await session.refresh(checkout)
+                assert checkout.status is BillingCheckoutStatus.CONSUMED
+            current = await session.scalar(select(Subscription).where(
+                Subscription.provider_subscription_ref == old_snapshot.provider_reference,
+            ).execution_options(populate_existing=True))
+            assert current.status is (SubscriptionStatus.CANCELLED if existing else SubscriptionStatus.ACTIVE)
+            assert current.plan_id == plans[1 if existing else 0].id
         await engine.dispose()
 
     asyncio.run(scenario())

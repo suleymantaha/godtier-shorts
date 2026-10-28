@@ -2,14 +2,27 @@
 
 from __future__ import annotations
 
+import math
 from typing import Final
 
 DEFAULT_AUTO_DURATION_MIN: Final[float] = 120.0
 DEFAULT_AUTO_DURATION_MAX: Final[float] = 180.0
 DEFAULT_DURATION_BOUNDARY_TOLERANCE_SECONDS: Final[float] = 0.5
 
-VALID_RENDER_LAYOUTS: Final[tuple[str, str]] = ("single", "split")
-VALID_REQUEST_LAYOUTS: Final[tuple[str, str, str]] = ("auto", *VALID_RENDER_LAYOUTS)
+VALID_RENDER_LAYOUTS: Final[tuple[str, ...]] = ("single", "split", "fit")
+VALID_REQUEST_LAYOUTS: Final[tuple[str, ...]] = ("auto", *VALID_RENDER_LAYOUTS)
+SOURCE_DURATION_TOLERANCE_SECONDS: Final[float] = 0.1
+
+
+def validate_source_window(start_time: float, end_time: float, source_duration: float) -> None:
+    """Reject windows that FFmpeg would silently truncate or render empty."""
+    if not math.isfinite(start_time) or not math.isfinite(end_time) or start_time < 0 or end_time <= start_time:
+        raise ValueError("Invalid video cut time range")
+    if math.isfinite(source_duration) and source_duration > 0:
+        if start_time >= source_duration:
+            raise ValueError("Video cut starts at or after source duration")
+        if end_time > source_duration + SOURCE_DURATION_TOLERANCE_SECONDS:
+            raise ValueError("Video cut ends after source duration")
 
 
 def ensure_valid_requested_layout(layout: str | None, *, default: str = "auto") -> str:

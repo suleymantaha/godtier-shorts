@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import tempfile
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -22,7 +23,7 @@ from pydantic import ValidationError
 
 from backend.config import (
     TEMP_DIR, VIDEO_METADATA, ProjectPaths,
-    get_project_path, sanitize_project_name,
+    get_project_path, sanitize_clip_name, sanitize_project_name,
 )
 from backend.api.clip_events import build_api_clip_event_port
 from backend.api.websocket import manager, thread_safe_broadcast
@@ -42,7 +43,9 @@ from backend.api.routes.clips import (
     resolve_project_transcript_state,
 )
 from backend.core.external_tools import ffmpeg as resolve_ffmpeg
+from backend.core.workflow_common import run_blocking
 from backend.core.media_ops import build_shifted_transcript_segments
+from backend.core.cut_points import parse_cut_points
 from backend.core.render_contracts import resolve_duration_range
 from backend.core.orchestrator import GodTierShortsCreator
 from backend.core.exceptions import AppError, InvalidInputError, JobExecutionError, RenderReviewRequiredError
@@ -64,6 +67,41 @@ DEFAULT_MANUAL_CUT_LAYOUT = "auto"
 CLIP_RECOVERY_JOB_PREFIX = "cliprecover"
 
 
+def _check_job_cancelled(job_id: str) -> None:
+    event = manager.jobs.get(job_id, {}).get("cancel_event")
+    if event is not None and event.is_set():
+        raise asyncio.CancelledError
+
+
+def _broadcast_editor_job(payload: dict, job_id: str) -> None:
+    if manager.jobs.get(job_id, {}).get("status") != "cancelled":
+        thread_safe_broadcast(payload, job_id)
+
+
+def _attach_editor_task(job_id: str, task: asyncio.Task) -> None:
+    manager.jobs[job_id]["task"] = task
+    manager.jobs[job_id]["task_handle"] = task
+
+    def completed(done: asyncio.Task) -> None:
+        job = manager.jobs.get(job_id)
+        if job is None:
+            return
+        if done.cancelled():
+            job["cancel_event"].set()
+            job["status"] = "cancelled"
+            job["last_message"] = "İş iptal edildi."
+            thread_safe_broadcast({"status": "cancelled", "message": job["last_message"]}, job_id)
+        elif (error := done.exception()) is not None:
+            _finalize_background_job_error(job_id, "Düzenleme işlemi başarısız", error)
+
+    task.add_done_callback(completed)
+
+
+def _require_production_project(project_id: str | None) -> None:
+    if os.getenv("APP_ENV", "development").strip().lower() == "production" and not project_id:
+        raise InvalidInputError("Production düzenleme işlemleri için project_id zorunlu")
+
+
 def _read_job_timeout_seconds(env_var: str, default: float) -> float:
     raw = os.getenv(env_var)
     if raw is None:
@@ -80,13 +118,29 @@ MANUAL_CUT_UPLOAD_TIMEOUT_SECONDS = _read_job_timeout_seconds("MANUAL_CUT_UPLOAD
 PROCESS_MANUAL_TIMEOUT_SECONDS = _read_job_timeout_seconds("PROCESS_MANUAL_TIMEOUT_SECONDS", 900.0)
 
 
-async def _await_with_job_timeout(awaitable, *, timeout_seconds: float, timeout_message: str):
-    if timeout_seconds <= 0:
-        return await awaitable
+async def _await_with_job_timeout(
+    awaitable, *, timeout_seconds: float, timeout_message: str,
+    cancel_event: threading.Event | None = None,
+):
+    task = asyncio.ensure_future(awaitable)
     try:
-        return await asyncio.wait_for(awaitable, timeout=timeout_seconds)
-    except asyncio.TimeoutError as exc:
-        raise JobExecutionError(timeout_message, details=f"{timeout_seconds:.0f}s timeout") from exc
+        done, _ = await asyncio.wait({task}, timeout=timeout_seconds if timeout_seconds > 0 else None)
+        if done:
+            result = await task
+            if cancel_event is not None and cancel_event.is_set():
+                raise asyncio.CancelledError
+            return result
+        if cancel_event is not None:
+            cancel_event.set()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        raise JobExecutionError(timeout_message, details=f"{timeout_seconds:.0f}s timeout")
+    except asyncio.CancelledError:
+        if cancel_event is not None:
+            cancel_event.set()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        raise
 
 
 def _map_background_job_error(default_message: str, exc: Exception) -> JobExecutionError:
@@ -100,6 +154,8 @@ def _map_background_job_error(default_message: str, exc: Exception) -> JobExecut
 
 
 def _finalize_background_job_error(job_id: str, default_message: str, exc: Exception) -> None:
+    if manager.jobs.get(job_id, {}).get("status") == "cancelled":
+        return
     mapped_error = _map_background_job_error(default_message, exc)
     logger.exception("{} ({}): {}", default_message, job_id, mapped_error.message)
     finalize_job_error(job_id, mapped_error)
@@ -209,6 +265,7 @@ def _recover_clip_transcript_from_source(
     clip_name: str,
     project_id: str | None,
     progress_callback,
+    cancel_event: threading.Event | None = None,
 ) -> None:
     payload, video_path, metadata_path, _resolved_project_id = load_clip_payload(clip_name, project_id)
     raw_video_path = video_path.with_name(f"{video_path.stem}_raw.mp4")
@@ -229,9 +286,12 @@ def _recover_clip_transcript_from_source(
             audio_file=audio_temp,
             output_json=transcript_temp,
             status_callback=progress_callback,
+            cancel_event=cancel_event,
         )
         with open(transcript_temp, "r", encoding="utf-8") as f:
             transcript_data = json.load(f)
+        if cancel_event is not None and cancel_event.is_set():
+            raise RuntimeError("Transcript recovery cancelled")
         _write_clip_metadata(metadata_path, payload, transcript_data)
         progress_callback("Yeni klip transkripti kaydedildi.", 90)
     finally:
@@ -274,22 +334,22 @@ async def _run_auto_clip_transcript_recovery(
         try:
             manager.jobs[job_id]["recovery_strategy"] = "project_slice"
             manager.jobs[job_id]["last_message"] = "Proje transkriptinden klip metadata kurtarılıyor..."
-            thread_safe_broadcast(
+            _broadcast_editor_job(
                 {"message": "Proje transkriptinden klip metadata kurtarılıyor...", "progress": 1, "status": "processing"},
                 job_id,
             )
-            await asyncio.to_thread(
+            await run_blocking(
                 _recover_clip_transcript_from_project,
                 clip_name,
                 project_id,
-                lambda msg, pct: thread_safe_broadcast({"message": msg, "progress": pct}, job_id),
+                lambda msg, pct: _broadcast_editor_job({"message": msg, "progress": pct}, job_id),
             )
             return "project_slice"
         except (RuntimeError, ValueError, OSError, InvalidInputError, JobExecutionError) as exc:
             if not can_transcribe_source:
                 raise
             logger.warning("Project slice recovery failed for {}: {}", clip_name, exc)
-            thread_safe_broadcast(
+            _broadcast_editor_job(
                 {
                     "message": "Proje dilimi bos veya gecersiz. Kaynak videodan transkripsiyona geciliyor...",
                     "progress": 45,
@@ -304,15 +364,16 @@ async def _run_auto_clip_transcript_recovery(
     async with manager.gpu_lock:
         manager.jobs[job_id]["recovery_strategy"] = "transcribe_source"
         manager.jobs[job_id]["last_message"] = "Kaynak videodan transkript çıkarılıyor..."
-        thread_safe_broadcast(
+        _broadcast_editor_job(
             {"message": "Kaynak videodan transkript çıkarılıyor...", "progress": 50, "status": "processing"},
             job_id,
         )
-        await asyncio.to_thread(
+        await run_blocking(
             _recover_clip_transcript_from_source,
             clip_name,
             project_id,
-            lambda msg, pct: thread_safe_broadcast({"message": msg, "progress": pct}, job_id),
+            lambda msg, pct: _broadcast_editor_job({"message": msg, "progress": pct}, job_id),
+            cancel_event=manager.jobs[job_id]["cancel_event"],
         )
     return "transcribe_source"
 
@@ -324,6 +385,7 @@ async def process_batch_clips(
     auth: AuthContext = Depends(require_policy("process_batch")),
 ) -> dict:
     """Seçilen aralıkta AI ile toplu klip üretir."""
+    _require_production_project(request.project_id)
     if request.project_id:
         try:
             request.project_id = sanitize_project_name(request.project_id)
@@ -344,6 +406,7 @@ async def process_batch_clips(
         "created_at": time.time(),
         "project_id": request.project_id,
         "subject": auth.subject,
+        "cancel_event": threading.Event(),
     }
     manager.seed_job_timeline(
         job_id,
@@ -354,15 +417,16 @@ async def process_batch_clips(
     )
 
     async def _run() -> None:
-        thread_safe_broadcast({"message": "İşlem sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
+        _broadcast_editor_job({"message": "İşlem sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
         try:
             async with manager.processing_lock:
                 manager.jobs[job_id]["status"] = "processing"
                 manager.jobs[job_id]["last_message"] = "Toplu üretim başladı..."
-                thread_safe_broadcast({"message": "Toplu üretim başladı...", "progress": 1, "status": "processing"}, job_id)
-                cb = lambda s: thread_safe_broadcast(s, job_id)
+                _broadcast_editor_job({"message": "Toplu üretim başladı...", "progress": 1, "status": "processing"}, job_id)
+                cb = lambda s: _broadcast_editor_job(s, job_id)
                 orchestrator = GodTierShortsCreator(
                     ui_callback=cb,
+                    cancel_event=manager.jobs[job_id]["cancel_event"],
                     subject=auth.subject,
                     clip_event_port=build_api_clip_event_port(),
                     gpu_stage_lock=manager.gpu_lock,
@@ -380,8 +444,7 @@ async def process_batch_clips(
                         transcript_data = []
 
                     output_paths = await _await_with_job_timeout(
-                        asyncio.to_thread(
-                            orchestrator.run_batch_manual_clips,
+                        orchestrator.run_batch_manual_clips_async(
                             start_t=request.start_time,
                             end_t=request.end_time,
                             num_clips=request.num_clips,
@@ -393,7 +456,9 @@ async def process_batch_clips(
                             animation_type=request.animation_type,
                             project_id=request.project_id,
                             layout=request.layout,
+                            skip_subtitles=request.skip_subtitles,
                         ),
+                        cancel_event=manager.jobs[job_id]["cancel_event"],
                         timeout_seconds=PROCESS_BATCH_TIMEOUT_SECONDS,
                         timeout_message="Toplu üretim zaman aşımına uğradı",
                     )
@@ -404,6 +469,7 @@ async def process_batch_clips(
                         manager.jobs[job_id]["output_paths"] = output_paths
                         manager.jobs[job_id]["output_path"] = output_paths[0]
                         manager.jobs[job_id]["num_clips"] = len(output_paths)
+                    _check_job_cancelled(job_id)
                     finalize_job_success(job_id, "Toplu klip üretimi tamamlandı.")
                 except RenderReviewRequiredError as exc:
                     safe_outputs = list(exc.output_paths or [])
@@ -422,31 +488,15 @@ async def process_batch_clips(
                 except Exception as exc:
                     _finalize_background_job_error(job_id, "Toplu üretim başarısız", exc)
                 finally:
-                    await asyncio.to_thread(orchestrator.cleanup_gpu)
+                    await run_blocking(orchestrator.cleanup_gpu)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             _finalize_background_job_error(job_id, "Toplu üretim başarısız", exc)
 
     task = asyncio.create_task(_run())
-    manager.jobs[job_id]["task"] = task
+    _attach_editor_task(job_id, task)
     return {"status": "started", "job_id": job_id}
-
-
-def _parse_cut_points(raw: str | None) -> list[float] | None:
-    """Parse cut_points JSON string. Returns sorted list or None."""
-    if not raw or not raw.strip():
-        return None
-    try:
-        pts = json.loads(raw)
-        if not isinstance(pts, list) or len(pts) < 2:
-            return None
-        nums = [float(x) for x in pts if isinstance(x, (int, float))]
-        if len(nums) < 2:
-            return None
-        return sorted(set(nums))
-    except (json.JSONDecodeError, ValueError, TypeError):
-        return None
 
 
 @router.post("/manual-cut-upload")
@@ -468,7 +518,13 @@ async def manual_cut_upload(
 ) -> dict:
     """Video + zaman aralığı ile otomatik manual cut üretir. cut_points veya num_clips>1 ile çoklu klip."""
     try:
-        request = ManualAutoCutRequest(start_time=start_time, end_time=end_time)
+        request = ManualAutoCutRequest(
+            start_time=start_time,
+            end_time=end_time,
+            num_clips=num_clips,
+            duration_min=duration_min,
+            duration_max=duration_max,
+        )
     except ValidationError as exc:
         raise InvalidInputError("İstek doğrulaması başarısız", details=json.loads(exc.json())) from exc
     try:
@@ -486,9 +542,9 @@ async def manual_cut_upload(
 
     resolved_duration_min, resolved_duration_max = resolve_duration_range(duration_min, duration_max)
 
-    pts = _parse_cut_points(cut_points)
+    pts = parse_cut_points(cut_points, start_time=request.start_time, end_time=request.end_time)
     use_cut_points = pts is not None and len(pts) >= 2
-    num_clips = max(1, min(20, num_clips))
+    num_clips = request.num_clips
     is_batch = not use_cut_points and num_clips > 1
 
     project, project_id, _is_cached = prepare_uploaded_project(file, owner_subject=auth.subject)
@@ -511,6 +567,7 @@ async def manual_cut_upload(
         "num_clips": num_clips,
         "layout": layout,
         "subject": auth.subject,
+        "cancel_event": threading.Event(),
     }
     manager.seed_job_timeline(
         job_id,
@@ -521,25 +578,26 @@ async def manual_cut_upload(
     )
 
     async def _run() -> None:
-        thread_safe_broadcast({"message": "İşlem sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
+        _broadcast_editor_job({"message": "İşlem sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
         try:
             async with manager.processing_lock:
                 manager.jobs[job_id]["status"] = "processing"
                 manager.jobs[job_id]["last_message"] = "Video hazırlanıyor..."
-                thread_safe_broadcast({"message": "Video hazırlanıyor...", "progress": 1, "status": "processing"}, job_id)
+                _broadcast_editor_job({"message": "Video hazırlanıyor...", "progress": 1, "status": "processing"}, job_id)
 
-                await asyncio.to_thread(
+                await run_blocking(
                     ensure_project_transcript,
                     project,
-                    lambda msg, pct: thread_safe_broadcast({"message": msg, "progress": pct}, job_id),
+                    lambda msg, pct: _broadcast_editor_job({"message": msg, "progress": pct}, job_id),
                 )
 
                 with open(project.transcript, "r", encoding="utf-8") as f:
                     transcript_data = json.load(f)
 
-                cb = lambda s: thread_safe_broadcast(s, job_id)
+                cb = lambda s: _broadcast_editor_job(s, job_id)
                 orchestrator = GodTierShortsCreator(
                     ui_callback=cb,
+                    cancel_event=manager.jobs[job_id]["cancel_event"],
                     subject=auth.subject,
                     clip_event_port=build_api_clip_event_port(),
                     gpu_stage_lock=manager.gpu_lock,
@@ -559,6 +617,7 @@ async def manual_cut_upload(
                                 skip_subtitles=skip_subtitles,
                                 cut_as_short=cut_as_short,
                             ),
+                            cancel_event=manager.jobs[job_id]["cancel_event"],
                             timeout_seconds=MANUAL_CUT_UPLOAD_TIMEOUT_SECONDS,
                             timeout_message="Otomatik manual cut zaman aşımına uğradı",
                         )
@@ -568,7 +627,7 @@ async def manual_cut_upload(
                             manager.jobs[job_id]["last_message"] = "Kesim tamamlandı ancak çıktı üretilemedi."
                             manager.jobs[job_id]["output_paths"] = []
                             manager.jobs[job_id]["output_path"] = None
-                            thread_safe_broadcast({"message": "Kesim tamamlandı ancak çıktı üretilemedi.", "progress": 100}, job_id)
+                            _broadcast_editor_job({"message": "Kesim tamamlandı ancak çıktı üretilemedi.", "progress": 100}, job_id)
                             return
 
                         first_name = os.path.basename(output_paths[0])
@@ -594,6 +653,7 @@ async def manual_cut_upload(
                                 skip_subtitles=skip_subtitles,
                                 cut_as_short=cut_as_short,
                             ),
+                            cancel_event=manager.jobs[job_id]["cancel_event"],
                             timeout_seconds=MANUAL_CUT_UPLOAD_TIMEOUT_SECONDS,
                             timeout_message="Otomatik manual cut zaman aşımına uğradı",
                         )
@@ -603,7 +663,7 @@ async def manual_cut_upload(
                             manager.jobs[job_id]["last_message"] = "Toplu kesim tamamlandı ancak çıktı üretilemedi."
                             manager.jobs[job_id]["output_paths"] = []
                             manager.jobs[job_id]["output_path"] = None
-                            thread_safe_broadcast({"message": "Toplu kesim tamamlandı ancak çıktı üretilemedi.", "progress": 100}, job_id)
+                            _broadcast_editor_job({"message": "Toplu kesim tamamlandı ancak çıktı üretilemedi.", "progress": 100}, job_id)
                             return
 
                         first_name = os.path.basename(output_paths[0])
@@ -628,6 +688,7 @@ async def manual_cut_upload(
                                 skip_subtitles=skip_subtitles,
                                 cut_as_short=cut_as_short,
                             ),
+                            cancel_event=manager.jobs[job_id]["cancel_event"],
                             timeout_seconds=MANUAL_CUT_UPLOAD_TIMEOUT_SECONDS,
                             timeout_message="Otomatik manual cut zaman aşımına uğradı",
                         )
@@ -638,6 +699,8 @@ async def manual_cut_upload(
                             manager.jobs[job_id]["output_url"] = build_secure_clip_url(project_id, final_name)
                             manager.jobs[job_id]["output_paths"] = [output_path]
                             manager.jobs[job_id]["num_clips"] = 1
+
+                    _check_job_cancelled(job_id)
 
                     finalize_job_success(job_id, "Otomatik manual cut işlemi tamamlandı.")
                 except RenderReviewRequiredError as exc:
@@ -657,14 +720,14 @@ async def manual_cut_upload(
                 except Exception as exc:
                     _finalize_background_job_error(job_id, "Otomatik manual cut başarısız", exc)
                 finally:
-                    await asyncio.to_thread(orchestrator.cleanup_gpu)
+                    await run_blocking(orchestrator.cleanup_gpu)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             _finalize_background_job_error(job_id, "Otomatik manual cut başarısız", exc)
 
     task = asyncio.create_task(_run())
-    manager.jobs[job_id]["task"] = task
+    _attach_editor_task(job_id, task)
     return {
         "status": "started",
         "job_id": job_id,
@@ -712,6 +775,7 @@ async def save_transcript(
     auth: AuthContext = Depends(require_policy("save_transcript")),
 ) -> dict:
     """Arayüzden gelen düzenlenmiş transkripti projeye veya varsayılana kaydeder."""
+    _require_production_project(project_id)
     if project_id:
         try:
             project_id = sanitize_project_name(project_id)
@@ -759,6 +823,7 @@ async def recover_project_transcript(
         "created_at": time.time(),
         "project_id": request.project_id,
         "subject": auth.subject,
+        "cancel_event": threading.Event(),
     }
     manager.seed_job_timeline(
         job_id,
@@ -769,20 +834,21 @@ async def recover_project_transcript(
     )
 
     async def _run() -> None:
-        thread_safe_broadcast({"message": "İşlem sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
+        _broadcast_editor_job({"message": "İşlem sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
         try:
             async with manager.processing_lock:
                 manager.jobs[job_id]["status"] = "processing"
                 manager.jobs[job_id]["last_message"] = "Proje transkripti yeniden çıkarılıyor..."
-                thread_safe_broadcast(
+                _broadcast_editor_job(
                     {"message": "Proje transkripti yeniden çıkarılıyor...", "progress": 1, "status": "processing"},
                     job_id,
                 )
-                await asyncio.to_thread(
+                await run_blocking(
                     ensure_project_transcript,
                     project,
-                    lambda msg, pct: thread_safe_broadcast({"message": msg, "progress": pct}, job_id),
+                    lambda msg, pct: _broadcast_editor_job({"message": msg, "progress": pct}, job_id),
                 )
+            _check_job_cancelled(job_id)
             finalize_job_success(job_id, "Proje transkripti hazır.")
         except (RuntimeError, ValueError, OSError) as exc:
             mapped_error = JobExecutionError("Proje transkripti üretilemedi", details=str(exc))
@@ -790,7 +856,7 @@ async def recover_project_transcript(
             finalize_job_error(job_id, mapped_error)
 
     task = asyncio.create_task(_run())
-    manager.jobs[job_id]["task"] = task
+    _attach_editor_task(job_id, task)
     return {"status": "started", "job_id": job_id}
 
 
@@ -838,6 +904,7 @@ async def recover_clip_transcript(
         "clip_name": request.clip_name,
         "recovery_strategy": selected_strategy,
         "subject": auth.subject,
+        "cancel_event": threading.Event(),
     }
     manager.seed_job_timeline(
         job_id,
@@ -848,7 +915,7 @@ async def recover_clip_transcript(
     )
 
     async def _run() -> None:
-        thread_safe_broadcast({"message": "Kurtarma sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
+        _broadcast_editor_job({"message": "Kurtarma sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
         try:
             async with manager.processing_lock:
                 if request.strategy == "auto":
@@ -864,23 +931,26 @@ async def recover_clip_transcript(
                     async with manager.gpu_lock:
                         manager.jobs[job_id]["status"] = "processing"
                         manager.jobs[job_id]["last_message"] = "Kaynak videodan transkript çıkarılıyor..."
-                        thread_safe_broadcast({"message": "Kaynak videodan transkript çıkarılıyor...", "progress": 1, "status": "processing"}, job_id)
-                        await asyncio.to_thread(
+                        _broadcast_editor_job({"message": "Kaynak videodan transkript çıkarılıyor...", "progress": 1, "status": "processing"}, job_id)
+                        await run_blocking(
                             _recover_clip_transcript_from_source,
                             request.clip_name,
                             effective_project_id,
-                            lambda msg, pct: thread_safe_broadcast({"message": msg, "progress": pct}, job_id),
+                            lambda msg, pct: _broadcast_editor_job({"message": msg, "progress": pct}, job_id),
+                            cancel_event=manager.jobs[job_id]["cancel_event"],
                         )
                 else:
                     manager.jobs[job_id]["status"] = "processing"
                     manager.jobs[job_id]["last_message"] = "Proje transkriptinden klip metadata kurtarılıyor..."
-                    thread_safe_broadcast({"message": "Proje transkriptinden klip metadata kurtarılıyor...", "progress": 1, "status": "processing"}, job_id)
-                    await asyncio.to_thread(
+                    _broadcast_editor_job({"message": "Proje transkriptinden klip metadata kurtarılıyor...", "progress": 1, "status": "processing"}, job_id)
+                    await run_blocking(
                         _recover_clip_transcript_from_project,
                         request.clip_name,
                         effective_project_id,
-                        lambda msg, pct: thread_safe_broadcast({"message": msg, "progress": pct}, job_id),
+                        lambda msg, pct: _broadcast_editor_job({"message": msg, "progress": pct}, job_id),
                     )
+
+            _check_job_cancelled(job_id)
 
             finalize_job_success(job_id, "Klip transkripti kurtarma tamamlandı.")
         except (RuntimeError, ValueError, OSError, InvalidInputError, JobExecutionError) as exc:
@@ -889,7 +959,7 @@ async def recover_clip_transcript(
             finalize_job_error(job_id, mapped_error)
 
     task = asyncio.create_task(_run())
-    manager.jobs[job_id]["task"] = task
+    _attach_editor_task(job_id, task)
     return {"status": "started", "job_id": job_id}
 
 
@@ -900,6 +970,7 @@ async def process_manual_clip(
     auth: AuthContext = Depends(require_policy("process_manual")),
 ) -> dict:
     """Kullanıcının elle seçtiği aralığı işler."""
+    _require_production_project(request.project_id)
     if request.project_id:
         try:
             request.project_id = sanitize_project_name(request.project_id)
@@ -920,6 +991,7 @@ async def process_manual_clip(
         "created_at": time.time(),
         "project_id": request.project_id,
         "subject": auth.subject,
+        "cancel_event": threading.Event(),
     }
     manager.seed_job_timeline(
         job_id,
@@ -930,15 +1002,16 @@ async def process_manual_clip(
     )
 
     async def _run() -> None:
-        thread_safe_broadcast({"message": "İşlem sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
+        _broadcast_editor_job({"message": "İşlem sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
         try:
             async with manager.processing_lock:
                 manager.jobs[job_id]["status"] = "processing"
                 manager.jobs[job_id]["last_message"] = "Manuel render başladı..."
-                thread_safe_broadcast({"message": "Manuel render başladı...", "progress": 1, "status": "processing"}, job_id)
-                cb = lambda s: thread_safe_broadcast(s, job_id)
+                _broadcast_editor_job({"message": "Manuel render başladı...", "progress": 1, "status": "processing"}, job_id)
+                cb = lambda s: _broadcast_editor_job(s, job_id)
                 orchestrator = GodTierShortsCreator(
                     ui_callback=cb,
+                    cancel_event=manager.jobs[job_id]["cancel_event"],
                     subject=auth.subject,
                     clip_event_port=build_api_clip_event_port(),
                     gpu_stage_lock=manager.gpu_lock,
@@ -955,6 +1028,7 @@ async def process_manual_clip(
                             center_x=request.center_x,
                             layout=request.layout,
                         ),
+                        cancel_event=manager.jobs[job_id]["cancel_event"],
                         timeout_seconds=PROCESS_MANUAL_TIMEOUT_SECONDS,
                         timeout_message="Manuel render zaman aşımına uğradı",
                     )
@@ -965,6 +1039,7 @@ async def process_manual_clip(
                         manager.jobs[job_id]["output_path"] = output_path
                         manager.jobs[job_id]["output_paths"] = [output_path]
                         manager.jobs[job_id]["num_clips"] = 1
+                    _check_job_cancelled(job_id)
                     finalize_job_success(job_id, "Manuel render tamamlandı.")
                 except RenderReviewRequiredError as exc:
                     safe_outputs = list(exc.output_paths or [])
@@ -983,14 +1058,14 @@ async def process_manual_clip(
                 except Exception as exc:
                     _finalize_background_job_error(job_id, "Manuel render başarısız", exc)
                 finally:
-                    await asyncio.to_thread(orchestrator.cleanup_gpu)
+                    await run_blocking(orchestrator.cleanup_gpu)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             _finalize_background_job_error(job_id, "Manuel render başarısız", exc)
 
     task = asyncio.create_task(_run())
-    manager.jobs[job_id]["task"] = task
+    _attach_editor_task(job_id, task)
     return {"status": "started", "job_id": job_id}
 
 
@@ -1001,6 +1076,11 @@ async def reburn_clip(
     auth: AuthContext = Depends(require_policy("reburn")),
 ) -> dict:
     """Klibin altyazılarını yeniden basar."""
+    _require_production_project(request.project_id)
+    try:
+        request.clip_name = sanitize_clip_name(request.clip_name)
+    except ValueError as exc:
+        raise InvalidInputError(str(exc)) from exc
     if request.project_id:
         try:
             request.project_id = sanitize_project_name(request.project_id)
@@ -1021,6 +1101,7 @@ async def reburn_clip(
         "created_at": time.time(),
         "project_id": request.project_id,
         "subject": auth.subject,
+        "cancel_event": threading.Event(),
     }
     manager.seed_job_timeline(
         job_id,
@@ -1031,14 +1112,15 @@ async def reburn_clip(
     )
 
     async def _run() -> None:
-        thread_safe_broadcast({"message": "İşlem sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
+        _broadcast_editor_job({"message": "İşlem sırası bekleniyor...", "progress": 0, "status": "queued"}, job_id)
         async with manager.processing_lock:
             manager.jobs[job_id]["status"] = "processing"
             manager.jobs[job_id]["last_message"] = "Altyazı yeniden basım başladı..."
-            thread_safe_broadcast({"message": "Altyazı yeniden basım başladı...", "progress": 1, "status": "processing"}, job_id)
-            cb = lambda s: thread_safe_broadcast(s, job_id)
+            _broadcast_editor_job({"message": "Altyazı yeniden basım başladı...", "progress": 1, "status": "processing"}, job_id)
+            cb = lambda s: _broadcast_editor_job(s, job_id)
             orchestrator = GodTierShortsCreator(
                 ui_callback=cb,
+                cancel_event=manager.jobs[job_id]["cancel_event"],
                 subject=auth.subject,
                 clip_event_port=build_api_clip_event_port(),
                 gpu_stage_lock=manager.gpu_lock,
@@ -1051,14 +1133,15 @@ async def reburn_clip(
                     style_name=request.style_name,
                     animation_type=request.animation_type,
                 )
+                _check_job_cancelled(job_id)
                 finalize_job_success(job_id, "Altyazı yeniden basımı tamamlandı.")
-            except (RuntimeError, ValueError, OSError) as exc:
-                mapped_error = JobExecutionError("Reburn işlemi başarısız", details=str(exc))
-                logger.error(f"Reburn hatası ({job_id}): {mapped_error.message}")
-                finalize_job_error(job_id, mapped_error)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                _finalize_background_job_error(job_id, "Reburn işlemi başarısız", exc)
             finally:
-                await asyncio.to_thread(orchestrator.cleanup_gpu)
+                await run_blocking(orchestrator.cleanup_gpu)
 
     task = asyncio.create_task(_run())
-    manager.jobs[job_id]["task"] = task
+    _attach_editor_task(job_id, task)
     return {"status": "started", "job_id": job_id}

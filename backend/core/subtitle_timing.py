@@ -74,6 +74,8 @@ def normalize_word_payload(word: dict) -> dict | None:
         "end": end,
         "score": _coerce_float(word.get("score"), default=1.0) or 1.0,
     }
+    if "speaker" in word:
+        normalized["speaker"] = word["speaker"]
     segment_end = _coerce_float(word.get("segment_end"))
     if segment_end is not None:
         normalized["segment_end"] = segment_end

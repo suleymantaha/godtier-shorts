@@ -275,11 +275,26 @@ describe('api client auth flow - error and account mapping', () => {
       }),
     );
   });
+
+  it('preserves an HTTP 202 pending deletion response for the account UI', async () => {
+    const pending = {
+      status: 'deletion_pending',
+      summary: {
+        status: 'deletion_pending', reason: 'upload_url_expiry',
+        deletion_fenced: true, retry_after_seconds: 120,
+      },
+    };
+    vi.spyOn(global, 'fetch').mockResolvedValue(createJsonResponse(pending, 202));
+    const client = await loadClientModule();
+    client.setApiToken(createToken(300));
+    await expect(client.accountApi.deleteMyData()).resolves.toEqual(pending);
+  });
 });
 
 describe('api client projects fallback model', () => {
   beforeEach(() => {
     localStorage.clear();
+    localStorage.setItem('godtier-auth-identity', 'user-1');
     vi.restoreAllMocks();
     Object.defineProperty(window.navigator, 'onLine', {
       configurable: true,
@@ -305,7 +320,7 @@ describe('api client projects fallback model', () => {
       projects: [{ id: 'proj_1', has_master: true, has_transcript: true }],
       status: 'good',
     });
-    expect(localStorage.getItem('gts:projects-cache:v1')).toContain('proj_1');
+    expect(localStorage.getItem('gts:projects-cache:v2:user-1')).toContain('proj_1');
   });
 
   it('returns degraded status with cached projects when refresh fails', async () => {
@@ -315,7 +330,7 @@ describe('api client projects fallback model', () => {
       session: { getToken },
     };
     localStorage.setItem(
-      'gts:projects-cache:v1',
+      'gts:projects-cache:v2:user-1',
       JSON.stringify([{ id: 'proj_cached', has_master: true, has_transcript: true }]),
     );
     vi.spyOn(global, 'fetch').mockRejectedValue(new Error('boom'));

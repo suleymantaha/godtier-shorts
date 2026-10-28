@@ -155,15 +155,15 @@ def test_manual_snap_and_opening_validation_use_resolved_window_for_render_and_s
 
     asyncio.run(ManualClipWorkflow(typing.cast(typing.Any, ctx)).run(0.2, 2.9, _transcript(), output_name="manual.mp4", layout="auto"))
 
-    assert ctx.render_calls[0]["start_t"] == 1.0
+    assert ctx.render_calls[0]["start_t"] == 1.05
     assert ctx.render_calls[0]["end_t"] == 3.0
     assert ctx.render_calls[0]["initial_slot_centers"] == (320.0, 760.0)
     shifted_words = [word for segment in _FakeSubtitleRenderer.generated_payloads[0] for word in segment.get("words", [])]
     assert shifted_words[0]["word"] == "two"
     assert shifted_words[0]["start"] == 0.0
     assert ctx.committed_metadata is not None
-    assert ctx.committed_metadata["render_metadata"]["start_time"] == 1.0
-    assert ctx.committed_metadata["render_metadata"]["transcript_quality"]["boundary_snaps_applied"] == 1
+    assert ctx.committed_metadata["render_metadata"]["start_time"] == 1.05
+    assert ctx.committed_metadata["render_metadata"]["transcript_quality"]["boundary_snaps_applied"] == 0
 
 
 def test_manual_split_fallback_rebuilds_single_plan_with_resolved_window(monkeypatch, tmp_path: Path) -> None:
@@ -180,7 +180,7 @@ def test_manual_split_fallback_rebuilds_single_plan_with_resolved_window(monkeyp
     asyncio.run(ManualClipWorkflow(typing.cast(typing.Any, ctx)).run(0.2, 2.9, _transcript(), output_name="manual.mp4", layout="auto"))
 
     single_plan_call = [call for call in plan_calls if call["requested_layout"] == "single"][-1]
-    assert single_plan_call["start_t"] == 1.0
+    assert single_plan_call["start_t"] == 1.05
     assert single_plan_call["end_t"] == 3.0
     assert ctx.render_calls[-1]["layout"] == "single"
 
@@ -195,5 +195,28 @@ def test_manual_debug_artifacts_include_boundary_snap(monkeypatch, tmp_path: Pat
     boundary_snap = tmp_path / "debug" / "manual" / "boundary_snap.json"
     assert boundary_snap.exists()
     payload = json.loads(boundary_snap.read_text(encoding="utf-8"))
-    assert payload["snapped_start_time"] == 1.0
-    assert payload["boundary_snaps_applied"] == 1
+    assert payload["snapped_start_time"] == 1.05
+    assert payload["boundary_snaps_applied"] == 0
+
+
+def test_manual_preserves_caller_job_id_and_uses_unique_temp_paths(monkeypatch, tmp_path: Path) -> None:
+    import backend.core.workflows_manual as manual
+
+    ctx = _make_context(tmp_path)
+    _install_manual_fakes(monkeypatch, tmp_path, ctx)
+    commits = []
+    paths = []
+    original_write = manual.write_json_atomic
+
+    def capture_write(path, *args, **kwargs):
+        paths.append(path)
+        return original_write(path, *args, **kwargs)
+
+    monkeypatch.setattr(manual, "write_json_atomic", capture_write)
+    monkeypatch.setattr(manual, "commit_render_bundle", lambda **kwargs: commits.append(kwargs) or "manual.mp4")
+    for _ in range(2):
+        asyncio.run(ManualClipWorkflow(typing.cast(typing.Any, ctx)).run(
+            0.2, 2.9, _transcript(), job_id="actual-running-job", output_name="manual.mp4"))
+
+    assert [commit["job_id"] for commit in commits] == ["actual-running-job"] * 2
+    assert len(paths) == len(set(paths))

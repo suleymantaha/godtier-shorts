@@ -11,6 +11,12 @@ from backend.services.storage.object_store import (
     UploadValidationError,
 )
 from backend.services.storage.r2_store import R2ObjectStore
+from unittest.mock import AsyncMock
+from types import SimpleNamespace
+
+
+def reservations():
+    return SimpleNamespace(reserve=AsyncMock(), verify=AsyncMock())
 
 
 class FakeR2Client:
@@ -45,7 +51,7 @@ class FakeAssetRepository:
 def test_upload_url_uses_opaque_uuid_key_and_signed_content_type() -> None:
     client = FakeR2Client()
     user_id = uuid4()
-    store = R2ObjectStore(client=client, bucket_name="private-assets")
+    store = R2ObjectStore(upload_reservations=reservations(), client=client, bucket_name="private-assets")
 
     upload = asyncio.run(
         store.create_upload_url(user_id, "My Holiday Video.mp4", "video/mp4", 123)
@@ -54,7 +60,7 @@ def test_upload_url_uses_opaque_uuid_key_and_signed_content_type() -> None:
     assert upload.storage_key.startswith(f"uploads/{user_id}/")
     assert "My Holiday Video" not in upload.storage_key
     UUID(Path(upload.storage_key).stem)
-    assert upload.required_headers == {"Content-Type": "video/mp4"}
+    assert upload.required_headers == {"Content-Type": "video/mp4", "Content-Length": "123", "If-None-Match": "*"}
     assert client.presign_calls == [
         (
             "put_object",
@@ -62,6 +68,8 @@ def test_upload_url_uses_opaque_uuid_key_and_signed_content_type() -> None:
                 "Bucket": "private-assets",
                 "Key": upload.storage_key,
                 "ContentType": "video/mp4",
+                "ContentLength": 123,
+                "IfNoneMatch": "*",
             },
             900,
         )
@@ -81,6 +89,7 @@ def test_upload_url_rejects_invalid_media_metadata(
     filename: str, content_type: str, size_bytes: int
 ) -> None:
     store = R2ObjectStore(
+        upload_reservations=reservations(),
         client=FakeR2Client(), bucket_name="private-assets", max_upload_bytes=1024
     )
 
@@ -93,6 +102,7 @@ def test_upload_url_rejects_invalid_media_metadata(
 def test_download_url_requires_asset_ownership_and_defaults_to_ten_minutes() -> None:
     client = FakeR2Client()
     store = R2ObjectStore(
+        upload_reservations=reservations(),
         client=client,
         bucket_name="private-assets",
         asset_repository=FakeAssetRepository("assets/result.mp4"),
@@ -113,6 +123,7 @@ def test_download_url_requires_asset_ownership_and_defaults_to_ten_minutes() -> 
 def test_download_url_does_not_sign_another_users_asset() -> None:
     client = FakeR2Client()
     store = R2ObjectStore(
+        upload_reservations=reservations(),
         client=client,
         bucket_name="private-assets",
         asset_repository=FakeAssetRepository(None),
@@ -128,7 +139,7 @@ def test_internal_put_and_delete_keep_bucket_private(tmp_path: Path) -> None:
     source = tmp_path / "render.mp4"
     source.write_bytes(b"video")
     client = FakeR2Client()
-    store = R2ObjectStore(client=client, bucket_name="private-assets")
+    store = R2ObjectStore(upload_reservations=reservations(), client=client, bucket_name="private-assets")
 
     asyncio.run(store.put_internal("renders/opaque.mp4", source, "video/mp4"))
     asyncio.run(store.delete("renders/opaque.mp4"))
@@ -149,7 +160,7 @@ def test_internal_put_and_delete_keep_bucket_private(tmp_path: Path) -> None:
 def test_uploaded_object_metadata_is_verified_before_validation_job() -> None:
     user_id = uuid4()
     client = FakeR2Client()
-    store = R2ObjectStore(client=client, bucket_name="private-assets")
+    store = R2ObjectStore(upload_reservations=reservations(), client=client, bucket_name="private-assets")
     upload = asyncio.run(
         store.create_upload_url(user_id, "source.mp4", "video/mp4", 123)
     )
@@ -161,7 +172,7 @@ def test_uploaded_object_metadata_is_verified_before_validation_job() -> None:
 
 
 def test_uploaded_object_key_must_belong_to_authenticated_user() -> None:
-    store = R2ObjectStore(client=FakeR2Client(), bucket_name="private-assets")
+    store = R2ObjectStore(upload_reservations=reservations(), client=FakeR2Client(), bucket_name="private-assets")
 
     with pytest.raises(ObjectNotFoundError):
         asyncio.run(
@@ -169,3 +180,14 @@ def test_uploaded_object_key_must_belong_to_authenticated_user() -> None:
                 uuid4(), f"uploads/{uuid4()}/{uuid4()}.mp4"
             )
         )
+
+
+def test_real_sigv4_signature_binds_size_and_prevents_overwrite():
+    import boto3
+    from botocore.config import Config
+    from urllib.parse import urlparse, parse_qs
+    client = boto3.client("s3", endpoint_url="https://r2.invalid", aws_access_key_id="test", aws_secret_access_key="test", config=Config(signature_version="s3v4"), region_name="auto")
+    result = asyncio.run(R2ObjectStore(upload_reservations=reservations(), client=client, bucket_name="private").create_upload_url(uuid4(), "source.mp4", "video/mp4", 123))
+    headers = parse_qs(urlparse(result.url).query)["X-Amz-SignedHeaders"][0].split(";")
+    assert "content-length" in headers
+    assert "if-none-match" in headers

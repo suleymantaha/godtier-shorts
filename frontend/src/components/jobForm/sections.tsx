@@ -37,7 +37,7 @@ interface ControlGridSectionProps {
   numClipsId: string;
   onAnimationChange: Dispatch<SetStateAction<SubtitleAnimationType>>;
   onEngineChange: Dispatch<SetStateAction<string>>;
-  onLayoutChange: Dispatch<SetStateAction<'auto' | 'single' | 'split'>>;
+  onLayoutChange: Dispatch<SetStateAction<'auto' | 'single' | 'split' | 'fit'>>;
   onNumClipsChange: Dispatch<SetStateAction<number>>;
   onSkipSubtitlesChange: Dispatch<SetStateAction<boolean>>;
   onStyleChange: Dispatch<SetStateAction<StyleName>>;
@@ -301,7 +301,7 @@ function LayoutControlCard({
       id={layoutId}
       label={t('jobForm.frameLayout')}
       labelClassName="ml-1 block max-w-full text-sm font-medium leading-tight text-accent uppercase tracking-[0.16em]"
-      onChange={(value) => onLayoutChange(value === 'split' ? 'split' : value === 'single' ? 'single' : 'auto')}
+      onChange={(value) => onLayoutChange(value === 'fit' ? 'fit' : value === 'split' ? 'split' : value === 'single' ? 'single' : 'auto')}
       options={getLayoutSelectOptions()}
       value={layout}
     />

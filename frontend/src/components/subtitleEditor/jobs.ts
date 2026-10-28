@@ -167,7 +167,7 @@ function clearTrackedSubtitleSession(selectionKey: string | null) {
 }
 
 function resolveTerminalJobKey(job: Job): string | null {
-  if (job.status !== 'completed' && job.status !== 'error' && job.status !== 'cancelled') {
+  if (isActiveTrackedJob(job)) {
     return null;
   }
   return `${job.job_id}:${job.status}`;
@@ -301,7 +301,8 @@ export function useSubtitleJobTrackingEffect({
       return;
     }
 
-    if (currentJob.status === 'error' || currentJob.status === 'cancelled') {
+    if (currentJob.status === 'error' || currentJob.status === 'cancelled' || currentJob.status === 'review_required' || currentJob.status === 'empty') {
+      setSuccessMessage(null);
       handleFailedTrackedJob({
         currentJob,
         fetchJobs,

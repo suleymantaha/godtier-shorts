@@ -28,6 +28,9 @@ export function BillingPage() {
   const [selectedPlan, setSelectedPlan] = useState<BillingPlan | null>(null);
   const [customer, setCustomer] = useState<CheckoutCustomer>(emptyCustomer);
   const [hostedForm, setHostedForm] = useState<string | null>(null);
+  const hasManageableSubscription = Boolean(account?.subscription
+    && account.subscription.status !== 'expired'
+    && account.subscription.status !== 'cancelled');
 
   const load = useCallback(async () => {
     setError(null);
@@ -107,8 +110,8 @@ export function BillingPage() {
         </section>
 
         <section className="glass-card rounded-3xl border border-white/10 p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-xl font-bold">Planı yönet</h3><p className="mt-1 text-sm text-muted-foreground">Fiyatlar ve haklar backend plan kataloğundan gelir.</p></div>{account.subscription && account.subscription.status !== 'cancelled' ? <button disabled={busy} type="button" onClick={() => void cancelSubscription()} className="rounded-xl border border-red-400/40 px-4 py-2 text-sm text-red-200 disabled:opacity-50">Aboneliği iptal et</button> : null}</div>
-          <div className="mt-5 grid gap-4 md:grid-cols-3">{account.plans.map((plan) => { const current = account.subscription?.plan.code === plan.code; return <button disabled={busy || current} type="button" key={plan.code} onClick={() => account.subscription ? void changePlan(plan) : setSelectedPlan(plan)} className="rounded-2xl border border-white/10 p-5 text-left hover:border-primary/50 disabled:cursor-default disabled:opacity-70"><strong className="text-lg">{plan.name}</strong><p className="mt-2 text-2xl font-bold text-primary">{money(plan.monthly_price_minor, plan.currency)}<span className="text-xs font-normal text-muted-foreground"> / ay</span></p><p className="mt-3 text-sm text-muted-foreground">{plan.monthly_compute_credits} compute kredisi · {plan.max_source_minutes_per_job} dk/iş</p><span className="mt-4 inline-block text-sm font-semibold text-primary">{current ? 'Mevcut plan' : 'Bu plana geç'}</span></button>; })}</div>
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-xl font-bold">Planı yönet</h3><p className="mt-1 text-sm text-muted-foreground">Fiyatlar ve haklar backend plan kataloğundan gelir.</p></div>{hasManageableSubscription ? <button disabled={busy} type="button" onClick={() => void cancelSubscription()} className="rounded-xl border border-red-400/40 px-4 py-2 text-sm text-red-200 disabled:opacity-50">Aboneliği iptal et</button> : null}</div>
+          <div className="mt-5 grid gap-4 md:grid-cols-3">{account.plans.map((plan) => { const current = hasManageableSubscription && account.subscription?.plan.code === plan.code; return <button disabled={busy || current} type="button" key={plan.code} onClick={() => hasManageableSubscription ? void changePlan(plan) : setSelectedPlan(plan)} className="rounded-2xl border border-white/10 p-5 text-left hover:border-primary/50 disabled:cursor-default disabled:opacity-70"><strong className="text-lg">{plan.name}</strong><p className="mt-2 text-2xl font-bold text-primary">{money(plan.monthly_price_minor, plan.currency)}<span className="text-xs font-normal text-muted-foreground"> / ay</span></p><p className="mt-3 text-sm text-muted-foreground">{plan.monthly_compute_credits} compute kredisi · {plan.max_source_minutes_per_job} dk/iş</p><span className="mt-4 inline-block text-sm font-semibold text-primary">{current ? 'Mevcut plan' : 'Bu plana geç'}</span></button>; })}</div>
         </section>
 
         {selectedPlan ? <CheckoutForm plan={selectedPlan} customer={customer} setCustomer={setCustomer} busy={busy} onSubmit={startCheckout} onClose={() => { setSelectedPlan(null); setHostedForm(null); }} hostedForm={hostedForm} /> : null}

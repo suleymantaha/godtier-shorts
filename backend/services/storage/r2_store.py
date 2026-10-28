@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Protocol
 from uuid import UUID, uuid4
@@ -21,6 +22,7 @@ from backend.services.storage.object_store import (
     UploadValidationError,
     validate_upload_metadata,
 )
+from backend.services.storage.upload_reservations import UploadReservations
 
 
 class AssetRepository(Protocol):
@@ -52,6 +54,7 @@ class R2ObjectStore:
         bucket_name: str,
         asset_repository: AssetRepository | None = None,
         max_upload_bytes: int = UPLOAD_MAX_FILE_SIZE,
+        upload_reservations: UploadReservations | None = None,
     ) -> None:
         if not bucket_name.strip():
             raise ValueError("R2 bucket name is required")
@@ -59,6 +62,7 @@ class R2ObjectStore:
         self._bucket_name = bucket_name
         self._assets = asset_repository
         self._max_upload_bytes = max_upload_bytes
+        self._upload_reservations = upload_reservations
 
     async def create_upload_url(
         self, user_id: UUID, filename: str, content_type: str, size_bytes: int
@@ -68,6 +72,15 @@ class R2ObjectStore:
         )
         normalized_type = content_type.strip().lower()
         storage_key = f"uploads/{user_id}/{uuid4()}{extension}"
+        if self._upload_reservations is None:
+            raise ObjectStoreError("Durable upload admission is required")
+        await self._upload_reservations.reserve(
+            user_id=user_id, storage_key=storage_key, content_type=normalized_type,
+            size_bytes=size_bytes,
+            expires_at=datetime.now(timezone.utc) + timedelta(seconds=DEFAULT_UPLOAD_URL_EXPIRES_SECONDS),
+        )
+        # Retain the charge even if signing fails: the signer may have succeeded
+        # before transport failure. Never infer that a PUT capability did not escape.
         try:
             url = await asyncio.to_thread(
                 self._client.generate_presigned_url,
@@ -76,6 +89,8 @@ class R2ObjectStore:
                     "Bucket": self._bucket_name,
                     "Key": storage_key,
                     "ContentType": normalized_type,
+                    "ContentLength": size_bytes,
+                    "IfNoneMatch": "*",
                 },
                 ExpiresIn=DEFAULT_UPLOAD_URL_EXPIRES_SECONDS,
             )
@@ -84,7 +99,7 @@ class R2ObjectStore:
         return PresignedUpload(
             url=url,
             storage_key=storage_key,
-            required_headers={"Content-Type": normalized_type},
+            required_headers={"Content-Type": normalized_type, "Content-Length": str(size_bytes), "If-None-Match": "*"},
             expires_seconds=DEFAULT_UPLOAD_URL_EXPIRES_SECONDS,
         )
 
@@ -159,6 +174,11 @@ class R2ObjectStore:
         filename = Path(storage_key).name
         validate_upload_metadata(
             filename, content_type, size_bytes, self._max_upload_bytes
+        )
+        if self._upload_reservations is None:
+            raise ObjectStoreError("Durable upload admission is required")
+        await self._upload_reservations.verify(
+            user_id=user_id, storage_key=storage_key, content_type=content_type, size_bytes=size_bytes,
         )
         return UploadedObjectMetadata(
             storage_key=storage_key,

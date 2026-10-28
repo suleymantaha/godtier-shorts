@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from uuid import uuid4
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -101,6 +103,7 @@ def test_complete_upload_verifies_r2_metadata_then_enqueues_media_validation() -
     assert response.json() == {
         "validation_job_id": "validation-job-1",
         "status": "queued",
+        "project_id": str(uploads.upload_project_id(app.state.test_user_id, storage_key)),
     }
 
 
@@ -124,3 +127,28 @@ def test_upload_routes_require_authentication() -> None:
     )
 
     assert response.status_code == 401
+
+
+def test_upload_status_moves_from_queued_to_validated_project():
+    queue = FakeValidationQueue()
+    queue.status = AsyncMock(return_value="queued")
+    app = _app(FakeObjectStore(), queue)
+    project_id = uuid4()
+    session = SimpleNamespace(scalar=AsyncMock(side_effect=[None, SimpleNamespace(project_id=project_id)]))
+    app.dependency_overrides[uploads.get_db_session] = lambda: session
+    key = f"uploads/{app.state.test_user_id}/opaque.mp4"
+    client = TestClient(app)
+    assert client.get("/api/uploads/status", params={"storage_key": key}).json()["status"] == "queued"
+    result = client.get("/api/uploads/status", params={"storage_key": key}).json()
+    assert result["status"] == "validated" and result["project_id"] == str(project_id)
+
+
+def test_upload_status_exposes_failed_validation_and_hides_foreign_key():
+    queue = FakeValidationQueue()
+    queue.status = AsyncMock(return_value="failed")
+    app = _app(FakeObjectStore(), queue)
+    app.dependency_overrides[uploads.get_db_session] = lambda: SimpleNamespace(scalar=AsyncMock(return_value=None))
+    client = TestClient(app)
+    key = f"uploads/{app.state.test_user_id}/opaque.mp4"
+    assert client.get("/api/uploads/status", params={"storage_key": key}).json()["status"] == "failed"
+    assert client.get("/api/uploads/status", params={"storage_key": f"uploads/{uuid4()}/opaque.mp4"}).status_code == 404

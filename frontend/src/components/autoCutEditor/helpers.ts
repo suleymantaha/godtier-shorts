@@ -2,7 +2,7 @@ import type { RequestedSubtitleLayout, StyleName, SubtitleAnimationType } from '
 import { tSafe } from '../../i18n';
 import type { Job } from '../../types';
 
-const TERMINAL_JOB_STATUSES = new Set<Job['status']>(['completed', 'cancelled', 'error', 'review_required']);
+const TERMINAL_JOB_STATUSES = new Set<Job['status']>(['completed', 'cancelled', 'error', 'empty', 'review_required']);
 
 export interface AutoCutJobStateInput {
   currentJob: Job | null;
@@ -127,7 +127,8 @@ export function getMarkerAdditionResult({
 export function getRangeForLoadedMetadata(mediaDuration: number, previousStart: number, previousEnd: number): LoadedMetadataRange {
   const maxStart = Math.max(0, mediaDuration - 0.5);
   const startTime = Math.max(0, Math.min(previousStart, maxStart));
-  const endTime = previousEnd > 0 && previousEnd <= mediaDuration ? previousEnd : Math.min(60, mediaDuration);
+  const preferredEnd = previousEnd > 0 && previousEnd <= mediaDuration ? previousEnd : Math.min(60, mediaDuration);
+  const endTime = Math.min(mediaDuration, Math.max(startTime + 0.5, preferredEnd));
 
   return { endTime, startTime };
 }
@@ -137,7 +138,7 @@ function resolveAutoCutErrorMessage(currentJob: Job | null, requestError: string
     return requestError;
   }
 
-  if (currentJob?.status !== 'cancelled' && currentJob?.status !== 'error') {
+  if (currentJob?.status !== 'cancelled' && currentJob?.status !== 'error' && currentJob?.status !== 'empty') {
     return null;
   }
 

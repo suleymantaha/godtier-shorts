@@ -4,6 +4,7 @@ import asyncio
 from uuid import uuid4
 
 import pytest
+from unittest.mock import AsyncMock
 
 from backend.workers import media_validation
 
@@ -29,11 +30,13 @@ def test_media_validation_worker_downloads_to_scratch_and_runs_ffprobe(
         media_validation,
         "probe_media",
         lambda _path: {
-            "format": {"format_name": "mov,mp4,m4a,3gp,3g2,mj2"},
+            "format": {"format_name": "mov,mp4,m4a,3gp,3g2,mj2", "duration": "12.2"},
             "streams": [{"codec_type": "video"}],
         },
     )
 
+    persist = AsyncMock(return_value=uuid4())
+    monkeypatch.setattr(media_validation, "persist_validated_upload", persist, raising=False)
     result = asyncio.run(
         media_validation.validate_uploaded_media(
             {"r2_client": FakeR2Client(payload), "r2_bucket_name": "private-assets"},
@@ -46,6 +49,9 @@ def test_media_validation_worker_downloads_to_scratch_and_runs_ffprobe(
 
     assert result["status"] == "validated"
     assert result["storage_key"] == storage_key
+    assert result["project_id"] == str(persist.return_value)
+    assert persist.call_args.kwargs["duration_seconds"] == 13
+    assert len(persist.call_args.kwargs["sha256"]) == 64
 
 
 def test_media_validation_rejects_file_without_video_stream() -> None:

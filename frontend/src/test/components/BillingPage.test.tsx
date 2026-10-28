@@ -54,6 +54,17 @@ describe('BillingPage', () => {
     window.history.replaceState({}, '', '/?tab=billing&success=true');
   });
 
+  it.each(['expired', 'cancelled'] as const)('opens checkout for a %s subscription including its previous plan', async (status) => {
+    getAccountMock.mockResolvedValue({ ...account, subscription: { ...account.subscription!, status } });
+    const { BillingPage } = await import('../../pages/BillingPage');
+    const user = userEvent.setup();
+    render(<BillingPage />);
+    await user.click(await screen.findByRole('button', { name: /Creator/ }));
+    expect(await screen.findByLabelText('Ad')).toBeInTheDocument();
+    expect(changePlanMock).not.toHaveBeenCalled();
+    expect(checkoutMock).not.toHaveBeenCalled();
+  });
+
   it('treats checkout return parameters only as a refresh signal', async () => {
     const { BillingPage } = await import('../../pages/BillingPage');
     render(<BillingPage />);

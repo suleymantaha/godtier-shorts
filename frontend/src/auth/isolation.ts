@@ -5,6 +5,7 @@ export const AUTH_IDENTITY_STORAGE_KEY = 'godtier-auth-identity';
 export const JOB_HISTORY_STORAGE_KEY = 'godtier-job-history';
 
 const USER_SCOPED_PREFIXES = [
+  'gts:projects-cache:',
   'godtier-editor-clip-session:',
   'social-share-buffer:',
 ];

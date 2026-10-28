@@ -2,6 +2,7 @@ name: Verify
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
@@ -13,6 +14,8 @@ jobs:
     timeout-minutes: 45
     env:
       TEST_DATABASE_URL: postgresql+asyncpg://godtier_test:task2-test-password@127.0.0.1:5432/godtier_test
+      ACCOUNT_PURGE_TEST_DATABASE_URL: postgresql+asyncpg://godtier_test:task2-test-password@127.0.0.1:5432/godtier_test
+      TEST_REDIS_URL: redis://127.0.0.1:6379/15
 
     services:
       postgres:
@@ -20,11 +23,20 @@ jobs:
         env:
           POSTGRES_DB: godtier_test
           POSTGRES_USER: godtier_test
-          POSTGRES_PASSWORD: task2-test-password
+          POSTGRES_PASSWORD: task2-test-password  # pragma: allowlist secret
         ports:
           - 5432:5432
         options: >-
           --health-cmd "pg_isready -U godtier_test -d godtier_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping | grep PONG"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -38,7 +50,7 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: requirements.lock
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -47,8 +59,22 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Install FFmpeg for media regression tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
+      - name: Verify dependency locks
+        run: |
+          python -m pip install uv==0.12.22
+          python scripts/generate_requirements_lock.py
+          git ls-files --error-unmatch requirements.lock requirements-api.lock
+          git diff --exit-code -- requirements.lock requirements-api.lock
+
       - name: Install backend dependencies
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install -r requirements.lock
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -56,3 +82,112 @@ jobs:
 
       - name: Run repository verification gate
         run: bash scripts/verify.sh
+
+      - name: Enforce coverage thresholds
+        run: bash scripts/check_coverage.sh
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            coverage/backend/
+            frontend/coverage/
+          if-no-files-found: ignore
+
+  security:
+    name: Security and static checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install audit tooling
+        run: python -m pip install pip-audit
+
+      - name: Audit locked Python dependencies
+        run: bash scripts/audit_python_deps.sh
+
+      - name: Audit frontend dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+      - name: Reject destructive schema migrations
+        run: python scripts/check_migration_safety.py
+
+      - name: Scan tracked files for committed secrets
+        run: python scripts/check_committed_secrets.py
+
+  docker-api:
+    name: Build API image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build CPU control-plane image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.api
+          load: true
+          tags: godtier-shorts-api:ci
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+      - name: Assert the control plane image stays CPU-only
+        run: |
+          docker run --rm --entrypoint python godtier-shorts-api:ci -c "
+          import importlib.util, alembic, uvicorn
+          assert importlib.util.find_spec('torch') is None, 'GPU packages leaked into the API image'
+          assert importlib.util.find_spec('ultralytics') is None, 'GPU packages leaked into the API image'
+          print('api image ok')
+          "
+
+  docker-gpu:
+    name: Build GPU worker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Free runner disk space for the CUDA image
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo rm -rf /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          df -h /
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build GPU worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.gpu
+          load: true
+          tags: godtier-shorts-gpu:ci
+          cache-from: type=gha,scope=gpu
+          cache-to: type=gha,scope=gpu,mode=max

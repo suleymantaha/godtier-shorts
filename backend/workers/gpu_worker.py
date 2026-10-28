@@ -7,17 +7,21 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from arq.connections import RedisSettings
+from arq import func
 from loguru import logger
-from sqlalchemy import exists, select
+from sqlalchemy import exists, select, tuple_
 
-from backend.db.models import Job, JobEvent, JobStatus
+from backend.db.models import Job, JobEvent, JobStatus, User, UserStatus
 from backend.db.session import get_session_factory
 from backend.config import LOGS_DIR
 from backend.observability import capture_exception, configure_error_reporting, configure_logging
 from backend.observability.monitor import GPU_WORKER_HEARTBEAT_KEY
-from backend.services.queue.client import ArqQueueClient
+from backend.services.queue.client import ArqQueueClient, QueueDispatchError
+from backend.services.billing import ledger
 from backend.workers.gpu_tasks import GpuJobWorker, SqlAlchemyWorkerJobStore, run_gpu_job
 from backend.workers.media_validation import validate_uploaded_media
+
+RECOVERY_BATCH_SIZE = 10
 
 
 async def recover_stuck_jobs(store, queue, *, stale_after_seconds: int = 300) -> int:
@@ -47,6 +51,8 @@ async def _heartbeat_loop(ctx: dict[str, Any]) -> None:
             await publish_worker_heartbeat(
                 ctx["redis"], worker_id=worker_id, ttl_seconds=ttl
             )
+            await reconcile_failed_reservations()
+            await recover_dispatchable_jobs(ArqQueueClient(ctx["redis"]), cursor=ctx.setdefault("gpu_recovery_cursor", {}))
         except Exception as exc:
             logger.bind(event="gpu_worker_heartbeat_failed", worker_id=worker_id).error(
                 "gpu worker heartbeat failed"
@@ -58,7 +64,8 @@ async def _heartbeat_loop(ctx: dict[str, Any]) -> None:
             continue
 
 
-async def recover_dispatchable_jobs(queue: ArqQueueClient, *, stale_seconds: int = 300) -> int:
+async def recover_dispatchable_jobs(queue: ArqQueueClient, *, stale_seconds: int = 300,
+                                    cursor: dict[str, Any] | None = None) -> int:
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_seconds)
     factory = get_session_factory()
     async with factory() as session, session.begin():
@@ -72,26 +79,79 @@ async def recover_dispatchable_jobs(queue: ArqQueueClient, *, stale_seconds: int
         statement = (
             select(Job)
             .where(
-                (Job.status == JobStatus.QUEUED)
-                | (
+                exists(select(User.id).where(
+                    User.id == Job.user_id, User.status == UserStatus.ACTIVE,
+                )),
+                (
+                    (Job.reserved_credits > 0)
+                    & (
+                        (Job.status == JobStatus.QUEUED)
+                        | (
+                            (Job.status == JobStatus.PROCESSING)
+                            & (Job.started_at < cutoff)
+                            & ~recent_heartbeat
+                        )
+                    )
+                ) | (
                     (Job.status == JobStatus.PROCESSING)
-                    & (Job.started_at < cutoff)
-                    & ~recent_heartbeat
+                    & (Job.reserved_credits == 0)
+                    & (Job.settled_credits > 0)
                 )
             )
-            .with_for_update(skip_locked=True)
         )
-        jobs = list((await session.scalars(statement)).all())
+        # Select oldest jobs without locks before applying the User -> Job order.
+        # Limiting users first would starve older work owned by higher UUIDs.
+        scan = statement.order_by(Job.created_at, Job.id)
+        if cursor and cursor.get("after") is not None:
+            scan = scan.where(tuple_(Job.created_at, Job.id) > cursor["after"])
+        page = list((await session.scalars(scan.limit(RECOVERY_BATCH_SIZE))).all())
+        candidates = [job.id for job in page]
+        if cursor is not None:
+            cursor["after"] = (page[-1].created_at, page[-1].id) if page else None
+        user_ids = list((await session.scalars(
+            select(User.id).where(
+                User.status == UserStatus.ACTIVE,
+                User.id.in_(select(Job.user_id).where(Job.id.in_(candidates))),
+            ).order_by(User.id).with_for_update(skip_locked=True)
+        )).all())
+        statement = statement.where(Job.id.in_(candidates), Job.user_id.in_(user_ids)).order_by(
+            Job.created_at, Job.id,
+        ).limit(RECOVERY_BATCH_SIZE).with_for_update(skip_locked=True)
+        jobs = list((await session.scalars(statement.execution_options(populate_existing=True))).all())
+        job_ids = []
+        dispatch_started = asyncio.get_running_loop().time()
         for job in jobs:
+            if asyncio.get_running_loop().time() - dispatch_started >= 5:
+                break  # Commit this prefix; heartbeat retries the untouched backlog.
+            if job.status is JobStatus.PROCESSING and job.reserved_credits == 0 and job.settled_credits > 0:
+                job.status = JobStatus.COMPLETED
+                job.progress = 100
+                job.finished_at = datetime.now(timezone.utc)
+                job.last_message = "Recovered completion after credit settlement"
+                session.add(JobEvent(job_id=job.id, status=job.status, progress=100, message=job.last_message, source="recovery"))
+                continue
             if job.status is JobStatus.PROCESSING:
                 job.status = JobStatus.QUEUED
                 job.started_at = None
                 job.last_message = "Recovered after stale worker heartbeat"
                 session.add(JobEvent(job_id=job.id, status=JobStatus.QUEUED, progress=job.progress, message=job.last_message, source="recovery"))
-        job_ids = [job.id for job in jobs]
-    for job_id in job_ids:
-        await queue.enqueue_gpu_job(job_id)
+            # Keep the fence through enqueue, with at most one 5s wait past budget.
+            async with asyncio.timeout(5):
+                await queue.enqueue_gpu_job(job.id)
+            job_ids.append(job.id)
     return len(job_ids)
+
+
+async def reconcile_failed_reservations() -> int:
+    """Repair a crash between terminal failure and reservation release."""
+    factory = get_session_factory()
+    async with factory() as session:
+        jobs = list((await session.scalars(select(Job).where(
+            Job.status == JobStatus.ERROR, Job.reserved_credits > 0,
+        ))).all())
+    for job in jobs:
+        await ledger.release(job.user_id, job.id, f"release:worker:{job.id}")
+    return len(jobs)
 
 
 async def startup(ctx: dict[str, Any]) -> None:
@@ -104,7 +164,14 @@ async def startup(ctx: dict[str, Any]) -> None:
         runner = build_production_runner()
     queue = ArqQueueClient(ctx["redis"])
     ctx["gpu_job_worker"] = GpuJobWorker(SqlAlchemyWorkerJobStore(), queue, runner)
-    await recover_dispatchable_jobs(queue)
+    await reconcile_failed_reservations()
+    try:
+        await recover_dispatchable_jobs(queue, cursor=ctx.setdefault("gpu_recovery_cursor", {}))
+    except (TimeoutError, QueueDispatchError) as exc:
+        logger.bind(event="gpu_worker_initial_recovery_deferred").warning(
+            "Initial recovery dispatch deferred to heartbeat"
+        )
+        capture_exception(exc)
     ctx["gpu_heartbeat_stop"] = asyncio.Event()
     ctx["gpu_heartbeat_task"] = asyncio.create_task(_heartbeat_loop(ctx))
 
@@ -119,10 +186,11 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 
 class WorkerSettings:
-    functions = [run_gpu_job, validate_uploaded_media]
+    functions = [run_gpu_job, func(validate_uploaded_media, timeout=300, keep_result=86400)]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
     max_jobs = 1
+    allow_abort_jobs = True
     job_timeout = 6 * 60 * 60
     max_tries = 3

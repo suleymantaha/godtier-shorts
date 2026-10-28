@@ -16,6 +16,16 @@ def test_normalize_subtitle_text_collapses_unicode_variants() -> None:
     assert normalize_subtitle_text("A\u200bb\u200cc …  ’x’  — test") == "Abc ... 'x' - test"
 
 
+def test_canonicalize_preserves_word_speaker_switch_and_explicit_unknown() -> None:
+    segment = {"start": 0, "end": 3, "text": "one two three", "speaker": "SPEAKER_00", "words": [
+        {"word": "one", "start": 0, "end": 1, "speaker": "SPEAKER_00"},
+        {"word": "two", "start": 1, "end": 2, "speaker": "SPEAKER_01"},
+        {"word": "three", "start": 2, "end": 3, "speaker": "Unknown"},
+    ]}
+    words = canonicalize_transcript_segments([segment])[0]["words"]
+    assert [word.get("speaker") for word in words] == ["SPEAKER_00", "SPEAKER_01", "Unknown"]
+
+
 def test_snap_segment_boundaries_uses_word_coverage_gating() -> None:
     segments = [
         {

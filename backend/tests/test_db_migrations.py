@@ -32,10 +32,21 @@ def _offline_sql(revision: str, *, downgrade: bool = False) -> str:
     return output.getvalue().lower()
 
 
-def test_audit_log_immutability_migration_is_the_schema_head() -> None:
+def test_upload_reservations_follow_account_deletion_at_schema_head() -> None:
     script = ScriptDirectory.from_config(_alembic_config())
 
-    assert script.get_heads() == ["0007_immutable_audit_logs"]
+    assert script.get_heads() == ["0009_upload_reservations"]
+    assert script.get_revision("0009_upload_reservations").down_revision == "0008_account_deletion"
+    assert script.get_revision("0008_account_deletion").down_revision == "0007_immutable_audit_logs"
+
+
+def test_account_deletion_timestamps_have_reversible_migration() -> None:
+    upgrade = _offline_sql("head")
+    downgrade = _offline_sql("head:0007_immutable_audit_logs", downgrade=True)
+
+    for column in ("deletion_requested_at", "data_purged_at"):
+        assert f"alter table users add column {column} timestamp with time zone" in upgrade
+        assert f"alter table users drop column {column}" in downgrade
 
 
 def test_audit_logs_are_append_only() -> None:
@@ -73,3 +84,12 @@ def test_postgres_upgrade_downgrade_round_trip_has_no_schema_drift() -> None:
     command.check(config)
     command.downgrade(config, "base")
     command.upgrade(config, "head")
+
+
+def test_upload_reservations_have_reversible_storage_charge_migration():
+    upgrade = _offline_sql("head")
+    downgrade = _offline_sql("head:0008_account_deletion", downgrade=True)
+    assert "create table upload_reservations" in upgrade
+    assert "check (size_bytes > 0)" in upgrade
+    assert "references users (id) on delete restrict" in upgrade
+    assert "drop table upload_reservations" in downgrade

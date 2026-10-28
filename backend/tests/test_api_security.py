@@ -1,5 +1,7 @@
 """Auth ve policy helper testleri."""
 import pytest
+import jwt
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
@@ -12,7 +14,53 @@ from backend.api.security import (
     require_policy,
     validate_auth_configuration,
 )
+from backend.api import security
 from backend.services.ownership import build_subject_hash
+
+
+@pytest.mark.parametrize(
+    "claims",
+    [
+        {"sub": "user_123"},
+        {"aud": "godtier-shorts-api", "sub": ""},
+        {"aud": "godtier-shorts-api"},
+    ],
+)
+def test_clerk_jwt_requires_audience_and_subject(monkeypatch: pytest.MonkeyPatch, claims: dict):
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+    class SigningKey:
+        key = private_key.public_key()
+
+    class JwksClient:
+        def get_signing_key_from_jwt(self, _token: str):
+            return SigningKey()
+
+    monkeypatch.setattr(security, "_get_jwks_client", lambda *_args: JwksClient())
+    token = jwt.encode({**claims, "iss": "https://issuer.example"}, private_key, algorithm="RS256")
+    with pytest.raises(ValueError, match="JWT verification failed"):
+        security._decode_jwt(token, "https://issuer.example", "godtier-shorts-api")
+
+
+def test_clerk_jwt_accepts_valid_audience_and_subject(monkeypatch: pytest.MonkeyPatch):
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+    class SigningKey:
+        key = private_key.public_key()
+
+    class JwksClient:
+        def get_signing_key_from_jwt(self, _token: str):
+            return SigningKey()
+
+    monkeypatch.setattr(security, "_get_jwks_client", lambda *_args: JwksClient())
+    token = jwt.encode(
+        {"aud": "godtier-shorts-api", "sub": "user_123", "iss": "https://issuer.example"},
+        private_key,
+        algorithm="RS256",
+    )
+
+    auth = security._decode_jwt(token, "https://issuer.example", "godtier-shorts-api")
+    assert auth.subject == "user_123"
 
 
 def test_authenticate_with_static_token(monkeypatch: pytest.MonkeyPatch):

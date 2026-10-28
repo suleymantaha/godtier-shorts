@@ -51,8 +51,11 @@ def validate_runtime_configuration() -> None:
     """Fail fast on malformed runtime configuration values."""
     app_env = _validate_choice("APP_ENV", "development", APP_ENV_CHOICES)
     worker_mode = _validate_choice("WORKER_MODE", "local", WORKER_MODE_CHOICES)
+    if app_env == "production" and os.getenv("LAYOUT_SAFETY_MODE", "enforce").strip().lower() != "enforce":
+        raise RuntimeError("Production icin LAYOUT_SAFETY_MODE=enforce gerekli")
     _validate_optional_port("API_PORT")
     upload_limit = _validate_optional_positive_int("UPLOAD_MAX_FILE_SIZE")
+    _validate_optional_positive_int("UPLOAD_STORAGE_QUOTA_BYTES")
     request_limit = _validate_optional_positive_int("REQUEST_BODY_HARD_LIMIT_BYTES")
     _validate_optional_positive_int("SOCIAL_SCHEDULER_POLL_SECONDS")
     _validate_optional_positive_int("SOCIAL_SCHEDULER_CONCURRENCY")

@@ -340,6 +340,7 @@ export const en = {
       layoutAuto: 'Auto',
       layoutSingle: 'Single',
       layoutSplit: 'Split',
+      layoutFit: 'Full source (letterbox)',
       engineLocal: 'Local (Ollama)',
       engineLmstudio: 'Local (LM Studio)',
       engineCloud: 'Cloud (OpenRouter)',
@@ -398,6 +399,7 @@ export const en = {
       auto: 'Auto',
       single: 'Single',
       split: 'Split',
+      fit: 'Full source (letterbox)',
     },
     result: {
       title: 'Generated clip',
@@ -799,6 +801,10 @@ export const en = {
     action: 'Delete account',
     genericError: 'The account deletion could not be completed.',
     partialError: 'App data was deleted, but account deletion could not be completed.',
+    pending: 'Deletion is pending. Complete removal of your data has not been verified. Keep your account signed in and retry data deletion later.',
+    pendingUpload: 'Deletion is pending while existing upload links expire. Wait at least {{seconds}} seconds before retrying. Your account has not been deleted.',
+    pendingSubscription: 'Deletion is pending. Cancel your active subscription before retrying data deletion. Your account has not been deleted.',
+    retry: 'Retry data deletion',
   },
   previewPage: {
     eyebrow: 'Viral Scan',

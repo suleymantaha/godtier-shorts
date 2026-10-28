@@ -21,6 +21,10 @@ class FakeRepository:
     async def load_context(self, _request):
         return self.context
 
+    async def publish_output(self, *, upload, **kwargs):
+        await upload()
+        await self.record_output(**kwargs)
+
     async def record_output(self, **kwargs):
         self.outputs.append(kwargs)
 

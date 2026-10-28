@@ -139,3 +139,15 @@ def test_redis_failure_marks_job_failed_and_releases_reservation() -> None:
 
     assert events == ["durable_job", "reserve", "enqueue", "job_error", "release"]
     assert len(jobs.failed) == 1
+
+
+def test_atomically_reserved_job_is_not_reserved_again():
+    events = []
+    class AtomicJobs(FakeJobs):
+        async def create_queued(self, **kwargs):
+            assert kwargs["estimated_credits"] == 20
+            events.append("atomic_create_and_reserve")
+            return DurableJob(uuid4(), created=True, reserved=True)
+    service = DistributedJobService(AtomicJobs(events), FakeCredits(events), FakeQueue(events))
+    asyncio.run(service.submit(user_id=uuid4(), project_id=uuid4(), job_type="full_render", request={}, estimated_credits=20, idempotency_key="atomic"))
+    assert events == ["atomic_create_and_reserve", "enqueue"]
